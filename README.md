@@ -1,24 +1,24 @@
-# Cpaw
+# Claude Paw
 
 Use Claude Code from QQ / WeChat Work (企业微信).
 
-Cpaw wraps the [Claude Code SDK](https://www.npmjs.com/package/@anthropic-ai/claude-code) and exposes it as a chatbot on messaging platforms. Multi-turn conversations, session management, and a collect mode that merges concurrent messages are handled automatically.
+Claude Paw wraps the [Claude Code SDK](https://www.npmjs.com/package/@anthropic-ai/claude-code) and exposes it as a chatbot on messaging platforms. Multi-turn conversations, session management, and a collect mode that merges concurrent messages are handled automatically.
 
 ## Install
 
 ### npm (recommended)
 
 ```bash
-npm install -g cpaw
+npm install -g claude-paw
 ```
 
 ### curl
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<user>/cpaw/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/meitianwang/clink/main/install.sh | bash
 ```
 
-The script installs Node.js (if missing), Claude Code CLI, and Cpaw.
+The script installs Node.js (if missing), Claude Code CLI, and Claude Paw.
 
 ## Prerequisites
 
