@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import AsyncExitStack
 
 from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, AssistantMessage, TextBlock
@@ -14,6 +15,7 @@ class ClaudeChat:
     def __init__(self) -> None:
         self._client: ClaudeSDKClient | None = None
         self._exit_stack: AsyncExitStack | None = None
+        self._lock = asyncio.Lock()
 
         cfg = load_config()
         persona = cfg.get("persona")
@@ -32,19 +34,20 @@ class ClaudeChat:
 
     async def chat(self, prompt: str) -> str:
         """Send a message, return the full text reply."""
-        client = await self._ensure_client()
-        try:
-            await client.query(prompt)
-            parts: list[str] = []
-            async for msg in client.receive_response():
-                if isinstance(msg, AssistantMessage):
-                    for block in msg.content:
-                        if isinstance(block, TextBlock):
-                            parts.append(block.text)
-            return "\n".join(parts) if parts else "(no response)"
-        except Exception:
-            await self.reset()
-            raise
+        async with self._lock:
+            client = await self._ensure_client()
+            try:
+                await client.query(prompt)
+                parts: list[str] = []
+                async for msg in client.receive_response():
+                    if isinstance(msg, AssistantMessage):
+                        for block in msg.content:
+                            if isinstance(block, TextBlock):
+                                parts.append(block.text)
+                return "\n".join(parts) if parts else "(no response)"
+            except Exception:
+                await self.reset()
+                raise
 
     async def reset(self) -> None:
         """Close current session and start fresh on next chat()."""
