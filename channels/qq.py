@@ -35,14 +35,17 @@ def _make_client(handler: Handler) -> botpy.Client:
         async def on_c2c_message_create(self, message: C2CMessage):
             """收到 QQ 私聊消息。"""
             content = (message.content or "").strip()
+            print(f"[C2C] Received: {content!r}")
             if not content:
                 return
 
             try:
                 reply = await handler(content)
             except Exception as exc:
+                print(f"[C2C] Handler error: {exc}")
                 reply = f"[Error] {exc}"
 
+            print(f"[C2C] Replying: {reply[:100]}...")
             await message._api.post_c2c_message(
                 openid=message.author.user_openid,
                 msg_type=0,
@@ -53,14 +56,17 @@ def _make_client(handler: Handler) -> botpy.Client:
         async def on_group_at_message_create(self, message: GroupMessage):
             """收到 QQ 群 @Bot 消息。"""
             content = (message.content or "").strip()
+            print(f"[Group] Received: {content!r}")
             if not content:
                 return
 
             try:
                 reply = await handler(content)
             except Exception as exc:
+                print(f"[Group] Handler error: {exc}")
                 reply = f"[Error] {exc}"
 
+            print(f"[Group] Replying: {reply[:100]}...")
             await message._api.post_group_message(
                 group_openid=message.group_openid,
                 msg_type=0,
@@ -68,4 +74,4 @@ def _make_client(handler: Handler) -> botpy.Client:
                 content=reply,
             )
 
-    return _Bot(intents=botpy.Intents(direct_message=True))
+    return _Bot(intents=botpy.Intents(public_messages=True))
