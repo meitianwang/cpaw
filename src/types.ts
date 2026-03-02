@@ -1,0 +1,23 @@
+/** Handler signature: (sessionKey, text) -> reply text (null = message merged, skip reply) */
+export type Handler = (sessionKey: string, text: string) => Promise<string | null>;
+
+export interface QQBotConfig {
+  readonly appid: string;
+  readonly secret: string;
+}
+
+export interface WeComConfig {
+  readonly corpId: string;
+  readonly corpSecret: string;
+  readonly agentId: number;
+  readonly token: string;
+  readonly encodingAesKey: string;
+  readonly port: number;
+}
+
+export interface CpawConfig {
+  channel: string;
+  persona?: string;
+  qq?: QQBotConfig;
+  wecom?: WeComConfig;
+}

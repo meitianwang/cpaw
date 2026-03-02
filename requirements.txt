@@ -1,5 +1,0 @@
-claude-agent-sdk
-aiohttp
-cryptography
-qq-botpy
-pyyaml

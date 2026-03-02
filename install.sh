@@ -1,253 +1,142 @@
 #!/usr/bin/env bash
-# Clink installer — curl -fsSL https://raw.githubusercontent.com/meitianwang/clink/main/install.sh | bash
 set -euo pipefail
 
-CLINK_DIR="${CLINK_INSTALL_DIR:-$HOME/.clink/app}"
-REPO_URL="${CLINK_REPO:-https://github.com/meitianwang/clink.git}"
+# ─── Cpaw Installer ──────────────────────────────────────────────────────────
+# Usage: curl -fsSL https://raw.githubusercontent.com/<user>/cpaw/main/install.sh | bash
 
-# ── Colors ──────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BOLD='\033[1m'
-NC='\033[0m'
+BOLD="\033[1m"
+GREEN="\033[32m"
+RED="\033[31m"
+YELLOW="\033[33m"
+RESET="\033[0m"
 
-info()  { echo -e "${BOLD}$*${NC}"; }
-ok()    { echo -e "  ${GREEN}✓${NC} $*"; }
-warn()  { echo -e "  ${YELLOW}!${NC} $*"; }
-fail()  { echo -e "  ${RED}✗${NC} $*"; exit 1; }
+info()  { printf "${BOLD}${GREEN}✓${RESET} %s\n" "$1"; }
+warn()  { printf "${BOLD}${YELLOW}!${RESET} %s\n" "$1"; }
+error() { printf "${BOLD}${RED}✗${RESET} %s\n" "$1"; }
+step()  { printf "\n${BOLD}▸ %s${RESET}\n" "$1"; }
 
-OS="$(uname -s)"
+MIN_NODE=18
 
-# ── Helper: detect package manager ─────────
-install_pkg() {
-    local pkg="$1"
-    info "  Installing $pkg ..."
-    if [ "$OS" = "Darwin" ]; then
-        if ! command -v brew &>/dev/null; then
-            info "  Homebrew not found, installing Homebrew first..."
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            # Add brew to PATH for this session
-            if [ -f /opt/homebrew/bin/brew ]; then
-                eval "$(/opt/homebrew/bin/brew shellenv)"
-            elif [ -f /usr/local/bin/brew ]; then
-                eval "$(/usr/local/bin/brew shellenv)"
-            fi
-        fi
-        brew install "$pkg"
-    elif command -v apt-get &>/dev/null; then
-        sudo apt-get update -qq && sudo apt-get install -y -qq "$pkg"
-    elif command -v dnf &>/dev/null; then
-        sudo dnf install -y -q "$pkg"
-    elif command -v yum &>/dev/null; then
-        sudo yum install -y -q "$pkg"
-    elif command -v pacman &>/dev/null; then
-        sudo pacman -S --noconfirm "$pkg"
+# ─── Check / Install Node.js ─────────────────────────────────────────────────
+
+check_node() {
+  if command -v node &>/dev/null; then
+    local ver
+    ver=$(node -v | sed 's/^v//')
+    local major
+    major=$(echo "$ver" | cut -d. -f1)
+    if [ "$major" -ge "$MIN_NODE" ]; then
+      info "Node.js v${ver}"
+      return 0
     else
-        fail "No supported package manager found. Please install $pkg manually."
+      warn "Node.js v${ver} found but v${MIN_NODE}+ required"
+      return 1
     fi
-}
-
-# ── Prerequisites ───────────────────────────
-info "\n── Clink Installer ──────────────────────\n"
-
-# ── 1. Git ──────────────────────────────────
-if command -v git &>/dev/null; then
-    ok "git"
-else
-    warn "git not found, installing..."
-    install_pkg git
-    command -v git &>/dev/null || fail "git installation failed"
-    ok "git installed"
-fi
-
-# ── 2. Python >= 3.10 ──────────────────────
-find_python() {
-    # Try versioned commands first (highest to lowest), then generic
-    for cmd in python3.13 python3.12 python3.11 python3.10 python3 python; do
-        if command -v "$cmd" &>/dev/null; then
-            local major minor
-            major=$("$cmd" -c "import sys; print(sys.version_info.major)" 2>/dev/null) || continue
-            minor=$("$cmd" -c "import sys; print(sys.version_info.minor)" 2>/dev/null) || continue
-            if [ "$major" -ge 3 ] && [ "$minor" -ge 10 ]; then
-                echo "$cmd"
-                return 0
-            fi
-        fi
-    done
-    # Check Homebrew paths directly (macOS)
-    for p in /opt/homebrew/bin/python3 /usr/local/bin/python3; do
-        if [ -x "$p" ]; then
-            local major minor
-            major=$("$p" -c "import sys; print(sys.version_info.major)" 2>/dev/null) || continue
-            minor=$("$p" -c "import sys; print(sys.version_info.minor)" 2>/dev/null) || continue
-            if [ "$major" -ge 3 ] && [ "$minor" -ge 10 ]; then
-                echo "$p"
-                return 0
-            fi
-        fi
-    done
+  else
+    warn "Node.js not found"
     return 1
+  fi
 }
 
-PY=""
-if PY=$(find_python); then
-    PY_VERSION=$($PY -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
-    ok "Python $PY_VERSION ($PY)"
-else
-    warn "Python >= 3.10 not found, installing..."
-    if [ "$OS" = "Darwin" ]; then
-        install_pkg python@3.13
-    elif command -v apt-get &>/dev/null; then
-        # Debian/Ubuntu: try python3.12 or python3.11
-        sudo apt-get update -qq
-        if apt-cache show python3.12 &>/dev/null; then
-            sudo apt-get install -y -qq python3.12 python3.12-venv
-        elif apt-cache show python3.11 &>/dev/null; then
-            sudo apt-get install -y -qq python3.11 python3.11-venv
-        else
-            # Use deadsnakes PPA
-            sudo apt-get install -y -qq software-properties-common
-            sudo add-apt-repository -y ppa:deadsnakes/ppa
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq python3.12 python3.12-venv
-        fi
+install_node() {
+  step "Installing Node.js"
+
+  # Try nvm first
+  if command -v nvm &>/dev/null || [ -s "$HOME/.nvm/nvm.sh" ]; then
+    [ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh"
+    nvm install --lts
+    nvm use --lts
+    return 0
+  fi
+
+  # Try fnm
+  if command -v fnm &>/dev/null; then
+    fnm install --lts
+    fnm use lts-latest
+    return 0
+  fi
+
+  # macOS: Homebrew
+  if [ "$(uname)" = "Darwin" ] && command -v brew &>/dev/null; then
+    brew install node
+    return 0
+  fi
+
+  # Linux: NodeSource
+  if [ "$(uname)" = "Linux" ]; then
+    if command -v apt-get &>/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+      return 0
     elif command -v dnf &>/dev/null; then
-        sudo dnf install -y -q python3.12
-    elif command -v yum &>/dev/null; then
-        sudo yum install -y -q python3.11
-    elif command -v pacman &>/dev/null; then
-        sudo pacman -S --noconfirm python
-    else
-        fail "Cannot auto-install Python. Please install Python 3.10+ manually."
+      curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+      sudo dnf install -y nodejs
+      return 0
     fi
+  fi
 
-    # Re-find after install
-    if PY=$(find_python); then
-        PY_VERSION=$($PY -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')")
-        ok "Python $PY_VERSION installed ($PY)"
-    else
-        fail "Python installation failed. Please install Python 3.10+ manually."
-    fi
-fi
+  error "Could not install Node.js automatically."
+  echo "  Please install Node.js >= ${MIN_NODE} manually: https://nodejs.org/"
+  exit 1
+}
 
-# ── 3. Node.js + Claude Code CLI ───────────
-if command -v claude &>/dev/null; then
-    ok "Claude Code CLI"
-else
-    warn "Claude Code CLI not found, installing..."
-    if command -v npm &>/dev/null; then
-        npm install -g @anthropic-ai/claude-code
-    elif command -v node &>/dev/null; then
-        # Node exists but npm missing (unusual)
-        fail "Node.js found but npm missing. Run: npm i -g @anthropic-ai/claude-code"
-    else
-        info "  Node.js not found, installing..."
-        if [ "$OS" = "Darwin" ]; then
-            install_pkg node
-        elif command -v apt-get &>/dev/null; then
-            # Use NodeSource for recent Node.js
-            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-            sudo apt-get install -y -qq nodejs
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install -y -q nodejs npm
-        elif command -v yum &>/dev/null; then
-            curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
-            sudo yum install -y -q nodejs
-        elif command -v pacman &>/dev/null; then
-            sudo pacman -S --noconfirm nodejs npm
-        else
-            fail "Cannot auto-install Node.js. Please install Node.js and run: npm i -g @anthropic-ai/claude-code"
-        fi
-        npm install -g @anthropic-ai/claude-code
-    fi
-    if command -v claude &>/dev/null; then
-        ok "Claude Code CLI installed"
-    else
-        warn "Claude Code CLI installation may need a terminal restart"
-    fi
-fi
+# ─── Check / Install Claude Code CLI ─────────────────────────────────────────
 
-# ── Clone / Update ──────────────────────────
-info "\nInstalling Clink to $CLINK_DIR ...\n"
+check_claude() {
+  if command -v claude &>/dev/null; then
+    info "Claude Code CLI found"
+    return 0
+  else
+    warn "Claude Code CLI not found"
+    return 1
+  fi
+}
 
-if [ -d "$CLINK_DIR/.git" ]; then
-    info "Updating existing installation..."
-    git -C "$CLINK_DIR" pull --ff-only
-    ok "Updated"
-else
-    mkdir -p "$(dirname "$CLINK_DIR")"
-    git clone --progress "$REPO_URL" "$CLINK_DIR"
-    ok "Cloned"
-fi
+install_claude() {
+  step "Installing Claude Code CLI"
+  npm install -g @anthropic-ai/claude-code
+}
 
-# ── Virtual environment ─────────────────────
-VENV_DIR="$CLINK_DIR/.venv"
-if [ ! -d "$VENV_DIR" ]; then
-    info "  Creating virtual environment..."
-    $PY -m venv "$VENV_DIR"
-    ok "Created venv"
-else
-    ok "venv exists"
-fi
+# ─── Install Cpaw ────────────────────────────────────────────────────────────
 
-info "\n  Installing Python dependencies...\n"
-"$VENV_DIR/bin/pip" install --progress-bar on -r "$CLINK_DIR/requirements.txt"
-echo ""
-ok "Dependencies installed"
+install_cpaw() {
+  step "Installing Cpaw"
+  npm install -g cpaw
+}
 
-# ── Create executable wrapper ──────────────
-BIN_DIR="$HOME/.clink/bin"
-mkdir -p "$BIN_DIR"
-cat > "$BIN_DIR/clink" << WRAPPER
-#!/usr/bin/env bash
-exec "$VENV_DIR/bin/python" "$CLINK_DIR/clink.py" "\$@"
-WRAPPER
-chmod +x "$BIN_DIR/clink"
-ok "Created clink command at $BIN_DIR/clink"
+# ─── Main ─────────────────────────────────────────────────────────────────────
 
-# Add ~/.clink/bin to PATH in shell rc (for future sessions)
-PATH_LINE='export PATH="$HOME/.clink/bin:$PATH"'
+main() {
+  echo ""
+  echo "  ${BOLD}Cpaw Installer${RESET}"
+  echo "  Use Claude Code from QQ / WeChat Work"
+  echo ""
 
-if [ -n "${ZSH_VERSION:-}" ] || [ "$(basename "${SHELL:-bash}")" = "zsh" ]; then
-    SHELL_RC="$HOME/.zshrc"
-elif [ -n "${BASH_VERSION:-}" ] || [ "$(basename "${SHELL:-bash}")" = "bash" ]; then
-    SHELL_RC="$HOME/.bashrc"
-else
-    SHELL_RC=""
-fi
+  # 1. Node.js
+  step "Checking Node.js"
+  if ! check_node; then
+    install_node
+    check_node || { error "Node.js installation failed"; exit 1; }
+  fi
 
-if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
-    if ! grep -q '.clink/bin' "$SHELL_RC" 2>/dev/null; then
-        echo "" >> "$SHELL_RC"
-        echo "# Clink - Claude Code multi-channel wrapper" >> "$SHELL_RC"
-        echo "$PATH_LINE" >> "$SHELL_RC"
-        ok "Added ~/.clink/bin to PATH in $SHELL_RC"
-    else
-        ok "PATH already configured in $SHELL_RC"
-    fi
-    # Also clean up old alias if present
-    if grep -q "alias clink=" "$SHELL_RC" 2>/dev/null; then
-        sed -i.bak '/alias clink=/d' "$SHELL_RC" && rm -f "$SHELL_RC.bak"
-        ok "Removed old clink alias from $SHELL_RC"
-    fi
-fi
+  # 2. Claude Code CLI
+  step "Checking Claude Code CLI"
+  if ! check_claude; then
+    install_claude
+    check_claude || { error "Claude Code CLI installation failed"; exit 1; }
+  fi
 
-# Add to PATH for this script session so setup works
-export PATH="$BIN_DIR:$PATH"
+  # 3. Cpaw
+  install_cpaw
 
-# ── Run setup ───────────────────────────────
-info "\n── Running Setup ────────────────────────\n"
-"$BIN_DIR/clink" setup < /dev/tty
+  echo ""
+  info "Installation complete!"
+  echo ""
+  echo "  Next steps:"
+  echo "    ${BOLD}cpaw setup${RESET}   — Interactive configuration wizard"
+  echo "    ${BOLD}cpaw start${RESET}   — Start the bot"
+  echo "    ${BOLD}cpaw doctor${RESET}  — Diagnose environment issues"
+  echo ""
+}
 
-info "\n── Done! ────────────────────────────────"
-echo ""
-echo "  Run now:"
-echo ""
-echo "    source $SHELL_RC"
-echo "    clink start"
-echo ""
-echo "  Or use the full path directly:"
-echo ""
-echo "    ~/.clink/bin/clink start"
-echo ""
+main "$@"
