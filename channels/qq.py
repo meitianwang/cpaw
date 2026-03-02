@@ -45,6 +45,10 @@ def _make_client(handler: Handler) -> botpy.Client:
                 print(f"[C2C] Handler error: {exc}")
                 reply = f"[Error] {exc}"
 
+            if reply is None:
+                print(f"[C2C] Message merged into batch, skipping reply")
+                return
+
             print(f"[C2C] Replying: {reply[:100]}...")
             await message._api.post_c2c_message(
                 openid=message.author.user_openid,
@@ -65,6 +69,10 @@ def _make_client(handler: Handler) -> botpy.Client:
             except Exception as exc:
                 print(f"[Group] Handler error: {exc}")
                 reply = f"[Error] {exc}"
+
+            if reply is None:
+                print(f"[Group] Message merged into batch, skipping reply")
+                return
 
             print(f"[Group] Replying: {reply[:100]}...")
             await message._api.post_group_message(

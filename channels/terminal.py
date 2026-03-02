@@ -28,7 +28,8 @@ class TerminalChannel(Channel):
                     print(f"\n[Error] {exc}\n")
                     continue
 
-                print(f"\nClink: {reply}\n")
+                if reply is not None:
+                    print(f"\nClink: {reply}\n")
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         print("\nBye!")

@@ -109,6 +109,10 @@ class WeComChannel(Channel):
         except Exception as exc:
             reply = f"[Error] {exc}"
 
+        if reply is None:
+            print(f"[WeCom] Message merged into batch, skipping reply")
+            return
+
         await self._send_text(user_id, reply)
 
     # ------------------------------------------------------------------

@@ -36,7 +36,7 @@ async def start() -> None:
     chat = ClaudeChat()
     channel = channel_cls()
 
-    async def handler(text: str) -> str:
+    async def handler(text: str) -> str | None:
         if text in ("/new", "/reset", "/clear"):
             await chat.reset()
             return "Session reset."
