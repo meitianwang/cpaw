@@ -108,6 +108,18 @@ const TEXTS: Record<string, Record<Lang, string>> = {
       "如需公开使用 (不限用户数, 无名称后缀):\n" +
       "在「管理」>「发布上架」提审。",
   },
+  installing_qq_dep: {
+    en: "Installing qq-group-bot...",
+    zh: "正在安装 qq-group-bot...",
+  },
+  qq_dep_ok: {
+    en: "qq-group-bot installed",
+    zh: "qq-group-bot 安装完成",
+  },
+  qq_dep_fail: {
+    en: "Failed to install qq-group-bot. Run manually: npm install -g qq-group-bot",
+    zh: "qq-group-bot 安装失败。请手动运行: npm install -g qq-group-bot",
+  },
   qq_appid: {
     en: "AppID",
     zh: "AppID",

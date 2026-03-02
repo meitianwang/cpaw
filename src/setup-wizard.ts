@@ -176,10 +176,25 @@ export async function runSetup(): Promise<void> {
   });
   if (p.isCancel(channel)) process.exit(0);
 
-  // Step 3: Collect channel config
+  // Step 3: Collect channel config & install deps
   let channelCfg: Record<string, unknown> = {};
   if (channel === "qq") {
     p.log.step(t("qq_title"));
+
+    // Install qq-group-bot if missing
+    try {
+      await import("qq-group-bot");
+    } catch {
+      const s2 = p.spinner();
+      s2.start(t("installing_qq_dep"));
+      try {
+        execSync("npm install -g qq-group-bot", { stdio: "pipe" });
+        s2.stop(pc.green(t("qq_dep_ok")));
+      } catch {
+        s2.stop(pc.yellow(t("qq_dep_fail")));
+      }
+    }
+
     channelCfg = await collectQQConfig();
     p.log.success(t("qq_verify_ok"));
   } else if (channel === "wecom") {
