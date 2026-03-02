@@ -255,13 +255,13 @@ TEXTS: dict[str, dict[str, str]] = {
     "persona_prompt": {
         "en": (
             "  Set the bot's system prompt (controls how it responds).\n"
-            "  Leave empty to use default Claude behavior.\n\n"
-            "  System prompt:\n"
+            "  You can paste multiple lines. Press Enter twice to finish.\n"
+            "  Leave empty to use default Claude behavior.\n"
         ),
         "zh": (
             "  设置机器人的 system prompt (控制回复风格和角色)。\n"
-            "  留空则使用默认 Claude 行为。\n\n"
-            "  System prompt:\n"
+            "  支持粘贴多行文本, 连按两次回车结束输入。\n"
+            "  留空则使用默认 Claude 行为。\n"
         ),
     },
     "persona_saved": {
@@ -430,10 +430,26 @@ def collect_config(channel: str) -> dict:
 
 
 def collect_persona() -> str | None:
-    """Let user enter a system prompt for the bot."""
+    """Let user enter a (possibly multi-line) system prompt for the bot."""
     _print_header(t("persona_title"))
     print(t("persona_prompt"))
-    persona = input("  > ").strip()
+
+    lines: list[str] = []
+    try:
+        while True:
+            line = input("  > " if not lines else "    ")
+            if line == "" and (not lines or lines[-1] == ""):
+                # Two consecutive empty lines, or empty on first line → done
+                break
+            lines.append(line)
+    except EOFError:
+        pass
+
+    # Remove trailing empty lines
+    while lines and lines[-1] == "":
+        lines.pop()
+
+    persona = "\n".join(lines).strip()
     if persona:
         print(f"\n{t('persona_saved')}")
         return persona
