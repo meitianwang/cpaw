@@ -173,24 +173,27 @@ info "\nInstalling Clink to $CLINK_DIR ...\n"
 
 if [ -d "$CLINK_DIR/.git" ]; then
     info "Updating existing installation..."
-    git -C "$CLINK_DIR" pull --ff-only -q
+    git -C "$CLINK_DIR" pull --ff-only
     ok "Updated"
 else
     mkdir -p "$(dirname "$CLINK_DIR")"
-    git clone -q "$REPO_URL" "$CLINK_DIR"
+    git clone --progress "$REPO_URL" "$CLINK_DIR"
     ok "Cloned"
 fi
 
 # ── Virtual environment ─────────────────────
 VENV_DIR="$CLINK_DIR/.venv"
 if [ ! -d "$VENV_DIR" ]; then
+    info "  Creating virtual environment..."
     $PY -m venv "$VENV_DIR"
     ok "Created venv"
 else
     ok "venv exists"
 fi
 
-"$VENV_DIR/bin/pip" install -q -r "$CLINK_DIR/requirements.txt"
+info "\n  Installing Python dependencies...\n"
+"$VENV_DIR/bin/pip" install --progress-bar on -r "$CLINK_DIR/requirements.txt"
+echo ""
 ok "Dependencies installed"
 
 # ── Shell alias ─────────────────────────────
