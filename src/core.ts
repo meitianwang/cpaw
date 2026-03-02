@@ -39,7 +39,7 @@ interface PendingMessage {
 }
 
 export class ClaudeChat {
-  private conversationId: string | undefined;
+  private sessionId: string | undefined;
   private busy = false;
   private pending: PendingMessage[] = [];
   private options: ChatOptions;
@@ -50,7 +50,7 @@ export class ClaudeChat {
 
   /** Send a message to Claude and collect the full text reply. */
   private async doChat(prompt: string): Promise<string> {
-    const parts: string[] = [];
+    let resultText: string | undefined;
     let lastSessionId: string | undefined;
 
     const conversation = query({
@@ -58,19 +58,13 @@ export class ClaudeChat {
       options: {
         systemPrompt: this.options.systemPrompt || undefined,
         permissionMode: "bypassPermissions",
+        ...(this.sessionId ? { resume: this.sessionId } : {}),
       },
-      ...(this.conversationId
-        ? { resumeConversation: this.conversationId }
-        : {}),
     });
 
     for await (const msg of conversation) {
-      if (msg.type === "assistant") {
-        const text = msg.message.content
-          .filter((b: { type: string }) => b.type === "text")
-          .map((b: { type: string; text?: string }) => b.text ?? "")
-          .join("");
-        if (text) parts.push(text);
+      if (msg.type === "result" && msg.subtype === "success") {
+        resultText = msg.result;
       }
       if ("session_id" in msg && typeof msg.session_id === "string") {
         lastSessionId = msg.session_id;
@@ -78,10 +72,10 @@ export class ClaudeChat {
     }
 
     if (lastSessionId) {
-      this.conversationId = lastSessionId;
+      this.sessionId = lastSessionId;
     }
 
-    return parts.join("\n") || "(no response)";
+    return resultText || "(no response)";
   }
 
   /**
@@ -152,7 +146,7 @@ export class ClaudeChat {
   }
 
   async reset(): Promise<void> {
-    this.conversationId = undefined;
+    this.sessionId = undefined;
   }
 
   async close(): Promise<void> {
