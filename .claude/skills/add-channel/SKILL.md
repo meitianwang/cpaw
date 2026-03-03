@@ -45,12 +45,15 @@ export class XxxChannel extends Channel {
 
 - `Handler` signature: `(sessionKey: string, text: string) => Promise<string | null>`.
 - Return `null` means message was merged (collect mode), skip reply.
-- Always wrap `handler()` in try/catch:
+- Always wrap `handler()` in try/catch, and **reply must quote the original message** so the user knows which message is being answered:
   ```typescript
   try {
     const reply = await handler(sessionKey, prompt);
     if (reply === null) return; // merged
-    await sendReply(reply);
+    // Reply with quote/reference to the original message
+    // Use the SDK's reply-with-reference mechanism (e.g. message_reference, reply element)
+    // See qq.ts: [{ type: "reply", id: msgId }, reply]
+    await sendReplyWithQuote(msgId, reply);
   } catch (err) {
     console.error(`[Xxx] Error: ${err}`);
   }
@@ -241,6 +244,8 @@ Add credential validation for the new channel.
 7. **Don't silently swallow errors** in handlers. Always log to stdout.
 
 8. **Rich media is not optional** — every channel must parse all message types from its SDK, not just text. Users expect images, files, replies, and mentions to work.
+
+9. **Reply must quote the original message** — when the bot replies, it must reference/quote the user's original message so they know which message is being answered. Use the SDK's native reply-with-reference mechanism (e.g. QQ's `{type:"reply", id: msgId}` element sets `message_reference` in the API payload). If the SDK has no quote mechanism, fall back to prefixing the reply with a short excerpt of the original message.
 
 ## Testing a New Channel
 
