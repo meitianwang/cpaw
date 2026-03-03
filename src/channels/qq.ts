@@ -13,7 +13,9 @@ export class QQChannel extends Channel {
   async start(handler: Handler): Promise<void> {
     console.log("Cpaw QQ Bot channel starting...");
 
-    let BotClass: new (config: Record<string, unknown>) => Record<string, unknown>;
+    let BotClass: new (
+      config: Record<string, unknown>,
+    ) => Record<string, unknown>;
     try {
       const mod = await import("qq-group-bot");
       BotClass = (mod.Bot ?? mod.QQBot) as typeof BotClass;
@@ -26,7 +28,7 @@ export class QQChannel extends Channel {
       } catch {
         console.error(
           "[QQ] Failed to install qq-group-bot.\n" +
-            "Install manually: npm install -g qq-group-bot"
+            "Install manually: npm install -g qq-group-bot",
         );
         process.exit(1);
       }
@@ -47,8 +49,14 @@ export class QQChannel extends Channel {
 
     // Private messages (C2C)
     bot.on("message.private", async (e: Record<string, unknown>) => {
-      const content = ((e.content as string) ?? (e.raw_message as string) ?? "").trim();
-      const userId = (e.user_openid ?? e.user_id ?? e.sender?.toString()) as string;
+      const content = (
+        (e.content as string) ??
+        (e.raw_message as string) ??
+        ""
+      ).trim();
+      const userId = (e.user_openid ??
+        e.user_id ??
+        e.sender?.toString()) as string;
       if (!content || !userId) return;
 
       const sessionKey = `c2c:${userId}`;
@@ -69,7 +77,11 @@ export class QQChannel extends Channel {
 
     // Group messages (@bot)
     bot.on("message.group", async (e: Record<string, unknown>) => {
-      const content = ((e.content as string) ?? (e.raw_message as string) ?? "").trim();
+      const content = (
+        (e.content as string) ??
+        (e.raw_message as string) ??
+        ""
+      ).trim();
       const groupId = (e.group_openid ?? e.group_id) as string;
       if (!content || !groupId) return;
 
