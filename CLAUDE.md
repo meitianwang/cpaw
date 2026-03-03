@@ -67,6 +67,12 @@ wecom:
   port: 8080
 ```
 
+## Reference: OpenClaw
+
+项目根目录下的 `openclaw/` 是 [OpenClaw](https://github.com/openclaw/openclaw) 的源码副本（已加入 .gitignore，不会被提交）。OpenClaw 是功能类似的开源项目，支持 WhatsApp、Telegram、Slack、Discord 等多种平台。
+
+**当需要参考实现思路时（如新增通道、会话管理、消息处理等），直接读取 `openclaw/` 目录下的源码**，不要凭记忆猜测。
+
 ## Conventions
 
 - ESM-only (`"type": "module"` in package.json)
