@@ -105,32 +105,18 @@ async function buildPrompt(elements: MsgElem[]): Promise<string> {
       }
 
       case "video": {
-        const url = elem.url as string | undefined;
-        if (!url) {
-          parts.push("[用户发送了一个视频]");
-          break;
-        }
-        try {
-          const path = await downloadFile(url, elem.name as string | undefined);
-          parts.push(`[视频文件: ${path}]`);
-        } catch {
-          parts.push("[用户发送了一个视频，下载失败]");
-        }
+        parts.push(
+          "[用户发送了一段视频，但你目前无法观看视频。" +
+            "请友好地告诉用户：视频消息暂不支持，请用文字描述视频内容或截图发送。]",
+        );
         break;
       }
 
       case "audio": {
-        const url = elem.url as string | undefined;
-        if (!url) {
-          parts.push("[用户发送了一段语音]");
-          break;
-        }
-        try {
-          const path = await downloadFile(url, elem.name as string | undefined);
-          parts.push(`[语音文件: ${path}]`);
-        } catch {
-          parts.push("[用户发送了一段语音，下载失败]");
-        }
+        parts.push(
+          "[用户发送了一段语音消息，但你目前无法听取语音。" +
+            "请友好地告诉用户：语音消息暂不支持，请将想说的内容打字发送给你。]",
+        );
         break;
       }
 
@@ -261,7 +247,8 @@ export class QQChannel extends Channel {
           return;
         }
         console.log(`[C2C] Replying: ${reply.slice(0, 100)}...`);
-        await (e.reply as (msg: string) => Promise<void>)(reply);
+        const replyMsg = msgId ? [{ type: "reply", id: msgId }, reply] : reply;
+        await (e.reply as (msg: unknown) => Promise<void>)(replyMsg);
       } catch (err) {
         console.error(`[C2C] Error: ${err}`);
       }
@@ -291,7 +278,8 @@ export class QQChannel extends Channel {
           return;
         }
         console.log(`[Group] Replying: ${reply.slice(0, 100)}...`);
-        await (e.reply as (msg: string) => Promise<void>)(reply);
+        const replyMsg = msgId ? [{ type: "reply", id: msgId }, reply] : reply;
+        await (e.reply as (msg: unknown) => Promise<void>)(replyMsg);
       } catch (err) {
         console.error(`[Group] Error: ${err}`);
       }
