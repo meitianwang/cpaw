@@ -264,3 +264,22 @@ export class WeComChannel extends Channel {
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Plugin registration
+// ---------------------------------------------------------------------------
+
+import { fromLegacyChannel } from "./base.js";
+
+export const wecomPlugin = fromLegacyChannel(
+  WeComChannel,
+  {
+    id: "wecom",
+    label: "WeChat Work",
+    description: "WeChat Work via HTTP webhook (needs public URL)",
+  },
+  {
+    dm: true,
+    requiresPublicUrl: true,
+  },
+);

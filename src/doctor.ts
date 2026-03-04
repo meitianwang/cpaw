@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import pc from "picocolors";
 import { CONFIG_FILE, loadConfig } from "./config.js";
+import { listChannelIds } from "./channels/types.js";
 
 function which(cmd: string): string | null {
   try {
@@ -49,10 +50,15 @@ export function runDoctor(): void {
   if (cfgExists) {
     const cfg = loadConfig();
     const channel = (cfg.channel as string) ?? "";
+    const knownIds = listChannelIds();
     allOk &&= check(
       `Channel configured: ${channel}`,
-      channel === "qq" || channel === "wecom",
-      "unknown channel",
+      knownIds.length > 0
+        ? knownIds.includes(channel)
+        : channel === "qq" || channel === "wecom",
+      knownIds.length > 0
+        ? `unknown channel. Available: ${knownIds.join(", ")}`
+        : "unknown channel",
     );
 
     if (channel === "qq") {

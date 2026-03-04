@@ -4,3 +4,4 @@ dist/
 .DS_Store
 openclaw/
 release.sh
+OPENCLAW-ANALYSIS.md

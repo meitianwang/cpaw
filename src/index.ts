@@ -1,10 +1,21 @@
 import { existsSync } from "node:fs";
-import { QQChannel } from "./channels/qq.js";
-import { WeComChannel } from "./channels/wecom.js";
+import { qqPlugin } from "./channels/qq.js";
+import { wecomPlugin } from "./channels/wecom.js";
+import {
+  registerChannel,
+  getChannel,
+  listChannelIds,
+} from "./channels/types.js";
 import { getChannelName, CONFIG_FILE } from "./config.js";
 import { ChatSessionManager } from "./core.js";
 import { t } from "./i18n.js";
-import type { Channel } from "./channels/base.js";
+
+// ---------------------------------------------------------------------------
+// Channel registration
+// ---------------------------------------------------------------------------
+
+registerChannel(qqPlugin);
+registerChannel(wecomPlugin);
 
 // ---------------------------------------------------------------------------
 // Model alias mapping
@@ -16,11 +27,6 @@ const MODEL_ALIASES: Record<string, string> = {
   haiku: "claude-haiku-4-5-20251001",
 };
 
-const CHANNELS: Record<string, new () => Channel> = {
-  qq: QQChannel,
-  wecom: WeComChannel,
-};
-
 async function start(): Promise<void> {
   if (!existsSync(CONFIG_FILE)) {
     console.log("No config found. Starting setup wizard...\n");
@@ -30,17 +36,16 @@ async function start(): Promise<void> {
   }
 
   const channelName = getChannelName();
-  const ChannelCls = CHANNELS[channelName];
+  const plugin = getChannel(channelName);
 
-  if (!ChannelCls) {
+  if (!plugin) {
     console.error(`Unknown channel: ${channelName}`);
-    console.error(`Available: ${Object.keys(CHANNELS).join(", ")}`);
+    console.error(`Available: ${listChannelIds().join(", ")}`);
     console.error("Run 'klaus setup' to configure.");
     process.exit(1);
   }
 
   const sessions = new ChatSessionManager();
-  const channel = new ChannelCls();
 
   const handler = async (
     sessionKey: string,
@@ -90,7 +95,7 @@ async function start(): Promise<void> {
   };
 
   try {
-    await channel.start(handler);
+    await plugin.start(handler);
   } finally {
     await sessions.close();
   }

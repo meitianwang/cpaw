@@ -289,3 +289,27 @@ export class QQChannel extends Channel {
     await new Promise(() => {});
   }
 }
+
+// ---------------------------------------------------------------------------
+// Plugin registration
+// ---------------------------------------------------------------------------
+
+import { fromLegacyChannel } from "./base.js";
+
+export const qqPlugin = fromLegacyChannel(
+  QQChannel,
+  {
+    id: "qq",
+    label: "QQ Bot",
+    description: "QQ Bot via WebSocket (no public IP needed)",
+  },
+  {
+    dm: true,
+    group: true,
+    image: true,
+    file: true,
+    reply: true,
+    emoji: true,
+    mention: true,
+  },
+);
