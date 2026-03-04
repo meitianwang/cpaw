@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { qqPlugin } from "./channels/qq.js";
 import { wecomPlugin } from "./channels/wecom.js";
+import { webPlugin } from "./channels/web.js";
 import { registerChannel, getChannel } from "./channels/types.js";
 import { getChannelName, CONFIG_FILE, loadSessionConfig } from "./config.js";
 import { ensureConfigValid } from "./config-validate.js";
@@ -14,6 +15,7 @@ import { type InboundMessage, formatPrompt } from "./message.js";
 
 registerChannel(qqPlugin);
 registerChannel(wecomPlugin);
+registerChannel(webPlugin);
 
 // ---------------------------------------------------------------------------
 // Model alias mapping

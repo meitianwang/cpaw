@@ -2,7 +2,12 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
-import type { QQBotConfig, WeComConfig, SessionConfig } from "./types.js";
+import type {
+  QQBotConfig,
+  WeComConfig,
+  WebConfig,
+  SessionConfig,
+} from "./types.js";
 
 export const CONFIG_DIR = join(homedir(), ".klaus");
 export const CONFIG_FILE = join(CONFIG_DIR, "config.yaml");
@@ -44,6 +49,15 @@ export function loadWeComConfig(): WeComConfig {
       process.env.WECOM_ENCODING_AES_KEY ??
       "",
     port: Number(cfg.port ?? process.env.WECOM_PORT ?? 8080),
+  };
+}
+
+export function loadWebConfig(): WebConfig {
+  const cfg = (loadConfig().web as Record<string, unknown>) ?? {};
+  return {
+    token: (cfg.token as string) ?? process.env.KLAUS_WEB_TOKEN ?? "",
+    port: Number(cfg.port ?? process.env.KLAUS_WEB_PORT ?? 3000),
+    tunnel: Boolean(cfg.tunnel ?? process.env.KLAUS_WEB_TUNNEL === "true"),
   };
 }
 

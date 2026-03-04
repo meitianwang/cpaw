@@ -10,7 +10,7 @@ import { CONFIG_FILE } from "./config.js";
 import { listChannelIds } from "./channels/types.js";
 
 // Builtin channel IDs — fallback when registry is empty (e.g. doctor command)
-const BUILTIN_CHANNELS = ["qq", "wecom"] as const;
+const BUILTIN_CHANNELS = ["qq", "wecom", "web"] as const;
 
 function resolveKnownChannels(): readonly string[] {
   const registered = listChannelIds();
@@ -49,6 +49,22 @@ const QQ_FIELDS: readonly FieldSpec[] = [
   { key: "secret", env: "QQ_BOT_SECRET", label: "QQ Bot Secret" },
 ];
 
+const WEB_FIELDS: readonly FieldSpec[] = [
+  { key: "token", env: "KLAUS_WEB_TOKEN", label: "Access Token" },
+  {
+    key: "port",
+    env: "KLAUS_WEB_PORT",
+    label: "HTTP Port",
+    validate: (v) => {
+      if (v == null || v === "") return null; // optional, has default
+      const n = Number(v);
+      return Number.isInteger(n) && n >= 1 && n <= 65535
+        ? null
+        : "must be a valid port number (1–65535)";
+    },
+  },
+];
+
 const WECOM_FIELDS: readonly FieldSpec[] = [
   { key: "corp_id", env: "WECOM_CORP_ID", label: "Corp ID" },
   { key: "corp_secret", env: "WECOM_CORP_SECRET", label: "Corp Secret" },
@@ -58,9 +74,7 @@ const WECOM_FIELDS: readonly FieldSpec[] = [
     label: "Agent ID",
     validate: (v) => {
       const n = Number(v);
-      return Number.isInteger(n) && n > 0
-        ? null
-        : "must be a positive integer";
+      return Number.isInteger(n) && n > 0 ? null : "must be a positive integer";
     },
   },
   { key: "token", env: "WECOM_TOKEN", label: "Token" },
@@ -166,7 +180,8 @@ export function validateConfig(): ValidationResult {
   if (fieldSpecs) {
     const section = (raw[channel] as Record<string, unknown>) ?? {};
     for (const spec of fieldSpecs) {
-      const value = section[spec.key] ?? (spec.env ? process.env[spec.env] : undefined);
+      const value =
+        section[spec.key] ?? (spec.env ? process.env[spec.env] : undefined);
       if (value == null || value === "") {
         const envNote = spec.env ? ` (or env: ${spec.env})` : "";
         issues.push({
@@ -197,6 +212,8 @@ function channelFieldSpecs(channel: string): readonly FieldSpec[] | null {
       return QQ_FIELDS;
     case "wecom":
       return WECOM_FIELDS;
+    case "web":
+      return WEB_FIELDS;
     default:
       return null;
   }
@@ -206,7 +223,9 @@ function channelFieldSpecs(channel: string): readonly FieldSpec[] | null {
 // Formatted output
 // ---------------------------------------------------------------------------
 
-export function formatValidationIssues(issues: ReadonlyArray<ConfigIssue>): string {
+export function formatValidationIssues(
+  issues: ReadonlyArray<ConfigIssue>,
+): string {
   const lines: string[] = [];
   for (const issue of issues) {
     const prefix = issue.path ? pc.yellow(issue.path) + ": " : "";
@@ -228,7 +247,9 @@ export function ensureConfigValid(): Record<string, unknown> {
     console.error(`\n${pc.red(pc.bold("Config invalid"))}`);
     console.error(`${pc.dim("File:")} ${CONFIG_FILE}\n`);
     console.error(formatValidationIssues(result.issues));
-    console.error(`\n  ${pc.dim("Run")} ${pc.cyan("klaus doctor")} ${pc.dim("to diagnose, or")} ${pc.cyan("klaus setup")} ${pc.dim("to reconfigure.")}\n`);
+    console.error(
+      `\n  ${pc.dim("Run")} ${pc.cyan("klaus doctor")} ${pc.dim("to diagnose, or")} ${pc.cyan("klaus setup")} ${pc.dim("to reconfigure.")}\n`,
+    );
     process.exit(1);
   }
   return result.config;

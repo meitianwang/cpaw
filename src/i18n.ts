@@ -207,6 +207,67 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     en: "Access token obtained successfully!",
     zh: "access_token 获取成功!",
   },
+  // ── Web Guide ──
+  channel_web: {
+    en: "Web Chat (Browser UI, localhost + optional Cloudflare Tunnel)",
+    zh: "网页聊天 (浏览器 UI, 本地 + 可选 Cloudflare Tunnel 公网访问)",
+  },
+  web_title: {
+    en: "Web Chat Setup",
+    zh: "网页聊天配置",
+  },
+  web_guide: {
+    en:
+      "Web Chat provides a browser-based chat interface.\n\n" +
+      "Features:\n" +
+      "- Works on localhost by default\n" +
+      "- Optional Cloudflare Tunnel for public access (no account needed)\n" +
+      "- Token-based authentication\n" +
+      "- Share the URL with your token to give others access\n\n" +
+      "After setup, open the URL shown in terminal to start chatting.",
+    zh:
+      "网页聊天提供基于浏览器的聊天界面。\n\n" +
+      "功能特点:\n" +
+      "- 默认在本地运行\n" +
+      "- 可选 Cloudflare Tunnel 公网访问 (无需账号)\n" +
+      "- 基于 Token 认证\n" +
+      "- 分享含 Token 的 URL 即可让他人访问\n\n" +
+      "配置完成后，打开终端显示的 URL 即可开始聊天。",
+  },
+  web_token: {
+    en: "Access Token (leave empty to auto-generate)",
+    zh: "访问令牌 (留空自动生成)",
+  },
+  web_token_generated: {
+    en: "Token auto-generated: {token}",
+    zh: "已自动生成令牌: {token}",
+  },
+  web_port: {
+    en: "Port (default 3000)",
+    zh: "端口 (默认 3000)",
+  },
+  web_tunnel: {
+    en: "Enable Cloudflare Tunnel for public access?",
+    zh: "启用 Cloudflare Tunnel 以支持公网访问?",
+  },
+  web_tunnel_found: {
+    en: "cloudflared found",
+    zh: "已找到 cloudflared",
+  },
+  web_tunnel_not_found: {
+    en:
+      "cloudflared not found. Install it before using tunnel:\n" +
+      "  macOS: brew install cloudflared\n" +
+      "  Other: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+    zh:
+      "未找到 cloudflared。使用 Tunnel 前请先安装:\n" +
+      "  macOS: brew install cloudflared\n" +
+      "  其他系统: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+  },
+  web_setup_done: {
+    en: "Web Chat configured. URL will be shown when you run: klaus start",
+    zh: "网页聊天已配置。运行 klaus start 后将显示访问 URL。",
+  },
   // ── Persona ──
   persona_title: {
     en: "Bot Persona",

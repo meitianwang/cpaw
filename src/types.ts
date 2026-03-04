@@ -17,6 +17,12 @@ export interface WeComConfig {
   readonly port: number;
 }
 
+export interface WebConfig {
+  readonly token: string;
+  readonly port: number;
+  readonly tunnel: boolean;
+}
+
 export interface SessionConfig {
   readonly idleMs: number;
   readonly maxEntries: number;
@@ -28,5 +34,6 @@ export interface KlausConfig {
   persona?: string;
   qq?: QQBotConfig;
   wecom?: WeComConfig;
+  web?: WebConfig;
   session?: SessionConfig;
 }

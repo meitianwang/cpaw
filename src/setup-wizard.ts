@@ -1,6 +1,7 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { execSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { CONFIG_FILE, loadConfig, saveConfig } from "./config.js";
@@ -104,6 +105,57 @@ async function collectWeComConfig(): Promise<Record<string, unknown>> {
   };
 }
 
+async function collectWebConfig(): Promise<Record<string, unknown>> {
+  p.log.info(t("web_guide"));
+
+  const result = await p.group({
+    token: () =>
+      p.text({
+        message: t("web_token"),
+        placeholder: "(auto-generate)",
+        defaultValue: "",
+      }),
+    port: () =>
+      p.text({
+        message: t("web_port"),
+        defaultValue: "3000",
+        placeholder: "3000",
+      }),
+    tunnel: () =>
+      p.confirm({
+        message: t("web_tunnel"),
+        initialValue: false,
+      }),
+  });
+
+  if (p.isCancel(result)) process.exit(0);
+
+  // Auto-generate token if empty
+  let token = (result.token as string).trim();
+  if (!token) {
+    token = randomBytes(24).toString("hex");
+    p.log.info(t("web_token_generated", { token }));
+  }
+
+  // If tunnel enabled, check cloudflared
+  if (result.tunnel) {
+    const hasCloudflared = which("cloudflared") !== null;
+    if (hasCloudflared) {
+      p.log.success(t("web_tunnel_found"));
+    } else {
+      p.log.warn(t("web_tunnel_not_found"));
+    }
+  }
+
+  p.log.success(t("web_setup_done"));
+
+  return {
+    token,
+    port: Number(result.port) || 3000,
+    tunnel: Boolean(result.tunnel),
+  };
+}
+
 async function verifyWeComToken(
   corpId: string,
   corpSecret: string,
@@ -175,6 +227,7 @@ export async function runSetup(): Promise<void> {
     options: [
       { value: "qq" as const, label: `qq — ${t("channel_qq")}` },
       { value: "wecom" as const, label: `wecom — ${t("channel_wecom")}` },
+      { value: "web" as const, label: `web — ${t("channel_web")}` },
     ],
   });
   if (p.isCancel(channel)) process.exit(0);
@@ -218,6 +271,9 @@ export async function runSetup(): Promise<void> {
         return;
       }
     }
+  } else if (channel === "web") {
+    p.log.step(t("web_title"));
+    channelCfg = await collectWebConfig();
   }
 
   // Step 4: Bot persona

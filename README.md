@@ -1,8 +1,8 @@
 # Klaus
 
-在 QQ / 企业微信 中使用 Claude Code。
+在 QQ / 企业微信 / 网页 中使用 Claude Code。
 
-Klaus 基于 [Claude Code SDK](https://www.npmjs.com/package/@anthropic-ai/claude-code)，将 Claude Code 接入即时通讯平台。自动处理多轮对话、会话管理、消息合并（Collect 模式），并支持图片、文件、语音等富媒体消息。
+Klaus 基于 [Claude Code SDK](https://www.npmjs.com/package/@anthropic-ai/claude-code)，将 Claude Code 接入即时通讯平台和浏览器。自动处理多轮对话、会话管理、消息合并（Collect 模式），并支持图片、文件、语音等富媒体消息。
 
 ## 安装
 
@@ -47,6 +47,7 @@ klaus doctor
 |------|---------|------------|-----------|
 | QQ Bot | WebSocket | 不需要 | ✅ |
 | 企业微信 | HTTP 回调 | 需要 | ✅ |
+| 网页聊天 | HTTP + SSE | 不需要（可选 Tunnel） | 文本 |
 
 ### QQ Bot
 
@@ -96,12 +97,35 @@ cloudflared tunnel --url http://localhost:8080
 | 位置 | 自动解析为地点名称 + 经纬度坐标 |
 | 链接 | 自动解析为标题 + 描述 + URL |
 
+### 网页聊天 (Web)
+
+无需任何第三方平台账号，直接在浏览器中和 Claude 对话。
+
+1. 运行 `klaus setup`，选择 Web
+2. Token 留空自动生成（也可自定义）
+3. 选择是否启用 Cloudflare Tunnel（公网访问）
+4. `klaus start` 启动后，打开终端显示的 URL 即可聊天
+
+```
+Klaus Web channel listening on http://localhost:3000
+Chat URL: http://localhost:3000/?token=abc123...
+```
+
+**分享给别人**：将含 Token 的 URL 发给对方即可。每个 Token 对应一个独立会话。
+
+**公网访问**：配置 `tunnel: true`，启动时会自动运行 `cloudflared tunnel`（需先安装 [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)），生成公网 URL：
+
+```bash
+# macOS 安装 cloudflared
+brew install cloudflared
+```
+
 ## 配置
 
 配置文件：`~/.klaus/config.yaml`
 
 ```yaml
-channel: qq          # 或 wecom
+channel: qq          # qq | wecom | web
 persona: "You are a helpful AI assistant."
 
 qq:
@@ -115,9 +139,14 @@ wecom:
   token: "callback-token"
   encoding_aes_key: "aes-key"
   port: 8080
+
+web:
+  token: "your-access-token"   # setup 自动生成
+  port: 3000                   # 默认 3000
+  tunnel: false                # 是否自动启动 Cloudflare Tunnel
 ```
 
-环境变量（`QQ_BOT_APPID`、`WECOM_CORP_ID` 等）可覆盖配置文件中的值。
+环境变量（`QQ_BOT_APPID`、`WECOM_CORP_ID`、`KLAUS_WEB_TOKEN` 等）可覆盖配置文件中的值。
 
 ### 配置验证
 
@@ -149,7 +178,7 @@ File: ~/.klaus/config.yaml
 ## 工作原理
 
 ```
-用户消息 → 通道 (QQ/WeCom) → InboundMessage → formatPrompt() → 会话管理器 → ClaudeChat → Claude Code SDK
+用户消息 → 通道 (QQ/WeCom/Web) → InboundMessage → formatPrompt() → 会话管理器 → ClaudeChat → Claude Code SDK
                                     ↑                                 ↑
                             结构化消息提取                        LRU 淘汰
                           (图片/文件/语音等)                   (最多 20 个会话)
