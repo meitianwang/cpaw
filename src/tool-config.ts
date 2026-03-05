@@ -19,6 +19,8 @@ export interface ToolEvent {
   readonly input?: Record<string, unknown>;
   /** Present on tool_result */
   readonly isError?: boolean;
+  /** Links to parent Agent tool when inside a sub-agent */
+  readonly parentToolUseId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +145,7 @@ export interface ToolPayload {
     readonly secondary?: string;
   };
   readonly isError?: boolean;
+  readonly parentToolUseId?: string;
 }
 
 export function formatToolEvent(event: ToolEvent): ToolPayload {
@@ -161,5 +164,8 @@ export function formatToolEvent(event: ToolEvent): ToolPayload {
       ...(config.getSecondary ? { secondary: config.getSecondary(input) } : {}),
     },
     ...(event.isError !== undefined ? { isError: event.isError } : {}),
+    ...(event.parentToolUseId
+      ? { parentToolUseId: event.parentToolUseId }
+      : {}),
   };
 }

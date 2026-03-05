@@ -14,7 +14,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
@@ -27,7 +27,7 @@ import type {
   PermissionRequest,
 } from "../types.js";
 import type { WebConfig } from "../types.js";
-import { loadWebConfig } from "../config.js";
+import { loadWebConfig, CONFIG_FILE } from "../config.js";
 import type { InboundMessage, MediaFile } from "../message.js";
 import { getChatHtml } from "./web-ui.js";
 import { startTunnel } from "./web-tunnel.js";
@@ -82,7 +82,8 @@ type WsEvent =
       readonly type: "permission";
       readonly data: PermissionRequest;
       readonly sessionId?: string;
-    };
+    }
+  | { readonly type: "config_updated" };
 
 function addWsClient(token: string, ws: KlausWebSocket): void {
   let clients = wsClients.get(token);
@@ -629,6 +630,33 @@ export const webPlugin: ChannelPlugin = {
       console.log(`Chat URL: http://localhost:${cfg.port}/?token=${cfg.token}`);
     });
 
+    // Config file watcher — notify clients when config.yaml changes externally
+    let configWatcher: FSWatcher | null = null;
+    let configDebounce: ReturnType<typeof setTimeout> | null = null;
+    try {
+      configWatcher = watch(CONFIG_FILE, () => {
+        if (configDebounce) clearTimeout(configDebounce);
+        configDebounce = setTimeout(() => {
+          configDebounce = null;
+          console.log("[Web] Config file changed, notifying clients");
+          const data = JSON.stringify({ type: "config_updated" });
+          for (const [, clients] of wsClients) {
+            for (const ws of [...clients]) {
+              if (ws.readyState === WebSocket.OPEN) {
+                try {
+                  ws.send(data);
+                } catch {
+                  /* ignore */
+                }
+              }
+            }
+          }
+        }, 500);
+      });
+    } catch {
+      // config.yaml may not exist yet — non-fatal
+    }
+
     // Application-layer ping — 25s keepalive to prevent proxy/tunnel timeouts
     const keepalive = setInterval(() => {
       for (const [token, clients] of wsClients) {
@@ -669,6 +697,8 @@ export const webPlugin: ChannelPlugin = {
     const cleanup = (): void => {
       clearInterval(keepalive);
       clearInterval(deadCheck);
+      if (configDebounce) clearTimeout(configDebounce);
+      configWatcher?.close();
       wss.close();
       tunnelChild?.kill();
     };

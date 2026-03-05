@@ -146,6 +146,16 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 .tool-item.error .tool-value { color: #ef4444; }
 .tool-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--thinking); animation: pulse 1.4s ease-in-out infinite; flex-shrink: 0; }
 @keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+.agent-container { display: flex; flex-direction: column; gap: 2px; border-left: 2px solid var(--thinking); border-radius: 4px; padding: 4px 0 4px 12px; margin: 2px 0; }
+.agent-header { display: flex; align-items: center; gap: 8px; padding: 5px 12px; font-size: 13px; cursor: pointer; user-select: none; font-family: var(--font-main); font-weight: 500; color: var(--thinking); }
+.agent-header:hover { color: var(--fg); }
+.agent-toggle { font-size: 10px; transition: transform 0.2s; display: inline-block; }
+.agent-toggle.collapsed { transform: rotate(-90deg); }
+.agent-children { display: flex; flex-direction: column; gap: 2px; }
+.agent-children.collapsed { display: none; }
+.agent-container.done { opacity: 0.35; }
+.system-cmd { max-width: 800px; width: 100%; margin: 4px auto; padding: 0 16px 0 68px; }
+.system-cmd span { display: inline-block; background: var(--code-bg); color: var(--thinking); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; border: 1px solid var(--border); border-radius: 12px; padding: 6px 14px; }
 .msg.streaming { white-space: pre-wrap; }
 .msg.streaming .cursor { display: inline-block; width: 2px; height: 1em; background: var(--thinking); animation: blink 0.8s step-end infinite; vertical-align: text-bottom; margin-left: 1px; }
 @keyframes blink { 50% { opacity: 0; } }
@@ -175,6 +185,8 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 .perm-btn.approve:hover { background: #16a34a; }
 .perm-btn.deny { background: #ef4444; color: #fff; }
 .perm-btn.deny:hover { background: #dc2626; }
+.config-banner { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); max-width: 500px; width: calc(100% - 32px); background: var(--input-container); border: 1px solid #f59e0b; border-radius: 12px; padding: 12px 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 20; animation: fade-in 0.3s ease-out; display: flex; align-items: center; gap: 12px; font-size: 14px; }
+.config-banner button { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--thinking); padding: 2px 6px; line-height: 1; }
 </style>
 </head>
 <body>
@@ -274,7 +286,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     saveSessionMeta();
     busy = false; isStreaming = false; streamBuffer = "";
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
-    activeTools.clear(); toolContainer = null;
+    activeTools.clear(); agentContainers.clear(); toolContainer = null;
     updateBtn(); renderSessionList(); closeSidebar();
   }
 
@@ -291,7 +303,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     if (saved) { msgs.appendChild(saved); sessionDom.delete(id); }
     busy = false; isStreaming = false; streamBuffer = "";
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
-    activeTools.clear(); toolContainer = null;
+    activeTools.clear(); agentContainers.clear(); toolContainer = null;
     updateBtn(); saveSessionMeta(); renderSessionList(); closeSidebar(); scrollBottom();
   }
 
@@ -300,8 +312,9 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     sessionsMeta = sessionsMeta.filter(function(s){ return s.id !== id; });
     sessionDom.delete(id);
     if (id === currentSessionId) {
-      // Clear current messages
+      // Clear current messages and tool state
       while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
+      activeTools.clear(); agentContainers.clear(); toolContainer = null;
       if (!sessionsMeta.length) { createNewChat(); return; }
       currentSessionId = sessionsMeta[0].id;
       var saved = sessionDom.get(currentSessionId);
@@ -378,6 +391,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       var data;
       try { data = JSON.parse(e.data); } catch(_) { return; }
       if (data.type === "ping") return;
+      if (data.type === "config_updated") { showConfigNotification(); return; }
       if (data.sessionId && data.sessionId !== currentSessionId) return;
       if (data.type === "permission") { showPermissionBanner(data.data); return; }
       if (data.type === "tool") { handleToolEvent(data.data); return; }
@@ -518,7 +532,11 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     const imageUrls = pendingFiles.filter(e => e.objectUrl).map(e => e.objectUrl);
     const nonImageFiles = pendingFiles.filter(e => !e.objectUrl).map(e => e.file.name);
     
-    appendUserMsg(text, imageUrls, nonImageFiles);
+    if (isSlashCommand(text)) {
+      appendSystemCmd(text);
+    } else {
+      appendUserMsg(text, imageUrls, nonImageFiles);
+    }
 
     const fileIds = pendingFiles.map(e => e.uploadId).filter(Boolean);
     pendingFiles.length = 0;
@@ -565,6 +583,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
   }
 
   const activeTools = new Map();
+  const agentContainers = new Map();
   let toolContainer = null;
 
   const toolIcons = {
@@ -598,50 +617,95 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     if (tc) tc.remove();
     toolContainer = null;
     activeTools.clear();
+    agentContainers.clear();
+  }
+
+  function createAgentContainer(te, parentContainer) {
+    var agentWrap = document.createElement("div");
+    agentWrap.className = "agent-container";
+    var header = document.createElement("div");
+    header.className = "agent-header";
+    var iconHtml = toolIcons.agent || "";
+    header.innerHTML = '<span class="agent-toggle">&#9660;</span>' + iconHtml
+      + '<span class="tool-label">' + escHtml(te.display.label) + '</span>'
+      + (te.display.value ? '<span class="tool-value">' + escHtml(te.display.value) + '</span>' : '')
+      + '<span class="tool-dot"></span>';
+    header.onclick = function() {
+      var toggle = header.querySelector(".agent-toggle");
+      var children = agentWrap.querySelector(".agent-children");
+      if (!toggle || !children) return;
+      if (children.classList.contains("collapsed")) {
+        children.classList.remove("collapsed");
+        toggle.classList.remove("collapsed");
+      } else {
+        children.classList.add("collapsed");
+        toggle.classList.add("collapsed");
+      }
+    };
+    var childrenEl = document.createElement("div");
+    childrenEl.className = "agent-children";
+    agentWrap.appendChild(header);
+    agentWrap.appendChild(childrenEl);
+    parentContainer.appendChild(agentWrap);
+    agentContainers.set(te.toolUseId, { container: agentWrap, childrenEl: childrenEl, headerEl: header });
+    activeTools.set(te.toolUseId, { element: header, toolName: te.toolName, isAgent: true });
+    scrollBottom();
+  }
+
+  function createToolItem(te, parentContainer) {
+    var el = document.createElement("div");
+    el.className = "tool-item " + (te.display.style || "default");
+    el.id = "tool-" + te.toolUseId;
+    var iconKey = Object.prototype.hasOwnProperty.call(toolIcons, te.display.icon) ? te.display.icon : "tool";
+    var html = toolIcons[iconKey];
+    html += '<span class="tool-label">' + escHtml(te.display.label) + '</span>';
+    if (te.display.value) {
+      var cls = te.display.style === "terminal" ? "tool-value terminal-cmd" : "tool-value";
+      var prefix = te.display.style === "terminal" ? "$ " : "";
+      html += '<span class="' + cls + '">' + prefix + escHtml(te.display.value) + '</span>';
+    }
+    if (te.display.secondary) {
+      html += '<span class="tool-secondary">' + escHtml(te.display.secondary) + '</span>';
+    }
+    html += '<span class="tool-dot"></span>';
+    el.innerHTML = html;
+    parentContainer.appendChild(el);
+    activeTools.set(te.toolUseId, { element: el, toolName: te.toolName });
+    scrollBottom();
+  }
+
+  function handleToolResult(te) {
+    var tracked = activeTools.get(te.toolUseId);
+    if (!tracked) return;
+    var dot = tracked.element.querySelector(".tool-dot");
+    if (dot) dot.remove();
+    if (te.isError) {
+      tracked.element.classList.add("error");
+      var errSpan = document.createElement("span");
+      errSpan.className = "tool-secondary";
+      errSpan.style.color = "#ef4444";
+      errSpan.textContent = "error";
+      tracked.element.appendChild(errSpan);
+    } else {
+      tracked.element.classList.add("done");
+    }
+    if (tracked.isAgent) {
+      var agentInfo = agentContainers.get(te.toolUseId);
+      if (agentInfo) agentInfo.container.classList.add("done");
+    }
+    activeTools.delete(te.toolUseId);
   }
 
   function handleToolEvent(te) {
     if (!te) return;
     if (te.type === "tool_start") {
-      const container = getOrCreateToolContainer();
-      const el = document.createElement("div");
-      el.className = "tool-item " + (te.display.style || "default");
-      el.id = "tool-" + te.toolUseId;
-      const iconKey = Object.prototype.hasOwnProperty.call(toolIcons, te.display.icon) ? te.display.icon : "tool";
-      let html = toolIcons[iconKey];
-      html += '<span class="tool-label">' + escHtml(te.display.label) + '</span>';
-      if (te.display.value) {
-        const cls = te.display.style === "terminal" ? "tool-value terminal-cmd" : "tool-value";
-        const prefix = te.display.style === "terminal" ? "$ " : "";
-        html += '<span class="' + cls + '">' + prefix + escHtml(te.display.value) + '</span>';
-      }
-      if (te.display.secondary) {
-        html += '<span class="tool-secondary">' + escHtml(te.display.secondary) + '</span>';
-      }
-      html += '<span class="tool-dot"></span>';
-      el.innerHTML = html;
-      container.appendChild(el);
-      activeTools.set(te.toolUseId, { element: el, toolName: te.toolName });
-      scrollBottom();
+      var parentContainer = (te.parentToolUseId && agentContainers.has(te.parentToolUseId))
+        ? agentContainers.get(te.parentToolUseId).childrenEl
+        : getOrCreateToolContainer();
+      if (te.toolName === "Agent") { createAgentContainer(te, parentContainer); }
+      else { createToolItem(te, parentContainer); }
     }
-    if (te.type === "tool_result") {
-      const tracked = activeTools.get(te.toolUseId);
-      if (tracked) {
-        const dot = tracked.element.querySelector(".tool-dot");
-        if (dot) dot.remove();
-        if (te.isError) {
-          tracked.element.classList.add("error");
-          const errSpan = document.createElement("span");
-          errSpan.className = "tool-secondary";
-          errSpan.style.color = "#ef4444";
-          errSpan.textContent = "error";
-          tracked.element.appendChild(errSpan);
-        } else {
-          tracked.element.classList.add("done");
-        }
-        activeTools.delete(te.toolUseId);
-      }
-    }
+    if (te.type === "tool_result") { handleToolResult(te); }
   }
 
   let streamBuffer = "";
@@ -757,6 +821,32 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     el.className = "msg error";
     el.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>' + escHtml(text);
     msgs.appendChild(el); scrollBottom();
+  }
+
+  var SLASH_COMMANDS = ["/new", "/reset", "/clear", "/help", "/session", "/model"];
+  function isSlashCommand(text) {
+    var lower = text.toLowerCase();
+    return SLASH_COMMANDS.some(function(cmd) { return lower === cmd || lower.startsWith(cmd + " "); });
+  }
+  function appendSystemCmd(text) {
+    var el = document.createElement("div");
+    el.className = "system-cmd";
+    el.innerHTML = "<span>" + escHtml(text) + "</span>";
+    msgs.appendChild(el); scrollBottom();
+  }
+
+  function showConfigNotification() {
+    if (document.getElementById("config-banner")) return;
+    var banner = document.createElement("div");
+    banner.className = "config-banner";
+    banner.id = "config-banner";
+    banner.innerHTML = '<span style="font-size:16px">&#9888;&#65039;</span><span style="flex:1">Config updated. Reload to apply changes.</span>';
+    var btn = document.createElement("button");
+    btn.textContent = "\\u00d7";
+    btn.onclick = function() { banner.remove(); };
+    banner.appendChild(btn);
+    document.body.appendChild(banner);
+    setTimeout(function() { var el = document.getElementById("config-banner"); if (el) el.remove(); }, 15000);
   }
 
   function scrollBottom() { msgs.scrollTop = msgs.scrollHeight; }

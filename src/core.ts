@@ -213,6 +213,12 @@ export class ClaudeChat {
     msg: { type: string; [key: string]: unknown },
     onToolEvent: ToolEventCallback,
   ): void {
+    // Sub-agent context: non-null when inside a sub-agent execution
+    const parentToolUseId =
+      typeof msg.parent_tool_use_id === "string"
+        ? msg.parent_tool_use_id
+        : undefined;
+
     // SDKAssistantMessage: content[] may contain tool_use blocks
     if (msg.type === "assistant") {
       const message = msg.message as
@@ -234,6 +240,7 @@ export class ClaudeChat {
               toolName: block.name,
               input: (block.input ?? {}) as Record<string, unknown>,
               timestamp: Date.now(),
+              ...(parentToolUseId ? { parentToolUseId } : {}),
             });
           }
         }
@@ -267,6 +274,7 @@ export class ClaudeChat {
               toolName: "",
               isError: block.is_error ?? false,
               timestamp: Date.now(),
+              ...(parentToolUseId ? { parentToolUseId } : {}),
             });
           }
         }
