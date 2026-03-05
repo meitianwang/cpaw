@@ -246,39 +246,140 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     en: "Port (default 3000)",
     zh: "端口 (默认 3000)",
   },
-  web_tunnel: {
-    en: "Enable Cloudflare Tunnel for public access?",
-    zh: "启用 Cloudflare Tunnel 以支持公网访问?",
+  // ── Tunnel provider selection ──
+  web_tunnel_mode: {
+    en: "Choose tunnel mode for public access",
+    zh: "选择公网访问隧道模式",
   },
-  web_tunnel_found: {
-    en: "cloudflared found",
-    zh: "已找到 cloudflared",
+  web_tunnel_none: {
+    en: "None — localhost only",
+    zh: "不启用 — 仅本地访问",
   },
-  web_tunnel_not_found: {
-    en: "cloudflared not found",
-    zh: "未找到 cloudflared",
+  web_tunnel_quick: {
+    en: "Cloudflare Quick Tunnel — random URL, no account needed",
+    zh: "Cloudflare 快速隧道 — 随机 URL, 无需账号",
   },
-  web_tunnel_install: {
-    en: "Install cloudflared automatically?",
-    zh: "自动安装 cloudflared?",
+  web_tunnel_named: {
+    en: "Cloudflare Named Tunnel — fixed hostname via dashboard token",
+    zh: "Cloudflare 命名隧道 — 通过 Dashboard Token 使用固定域名",
   },
-  web_tunnel_installing: {
-    en: "Installing cloudflared...",
-    zh: "正在安装 cloudflared...",
+  web_tunnel_ngrok: {
+    en: "ngrok — free static domain available",
+    zh: "ngrok — 支持免费静态域名",
   },
-  web_tunnel_install_ok: {
-    en: "cloudflared installed successfully",
-    zh: "cloudflared 安装成功",
+  web_tunnel_custom: {
+    en: "Custom — your own URL + optional startup command",
+    zh: "自定义 — 自行提供公网 URL + 可选启动命令",
   },
-  web_tunnel_install_fail: {
+  // ── Cloudflare Named Tunnel ──
+  web_tunnel_named_guide: {
     en:
-      "cloudflared installation failed. Please install manually:\n" +
+      "Cloudflare Named Tunnel setup:\n\n" +
+      "1. Go to Cloudflare Zero Trust Dashboard → Networks → Tunnels\n" +
+      "2. Create a tunnel, copy the connector token\n" +
+      "3. Configure a public hostname pointing to http://localhost:PORT\n\n" +
+      "The token looks like: eyJhIjoiNz...",
+    zh:
+      "Cloudflare 命名隧道配置:\n\n" +
+      "1. 进入 Cloudflare Zero Trust Dashboard → Networks → Tunnels\n" +
+      "2. 创建隧道, 复制 connector token\n" +
+      "3. 配置公共域名指向 http://localhost:端口\n\n" +
+      "Token 格式如: eyJhIjoiNz...",
+  },
+  web_tunnel_cf_token: {
+    en: "Cloudflare Tunnel connector token",
+    zh: "Cloudflare Tunnel connector token",
+  },
+  web_tunnel_cf_hostname: {
+    en: "Public hostname (optional, for display)",
+    zh: "公网域名 (可选, 用于显示)",
+  },
+  web_cf_install_hint: {
+    en:
       "  macOS: brew install cloudflared\n" +
       "  Other: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
     zh:
-      "cloudflared 安装失败，请手动安装:\n" +
       "  macOS: brew install cloudflared\n" +
       "  其他系统: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+  },
+  // ── ngrok ──
+  web_tunnel_ngrok_guide: {
+    en:
+      "ngrok setup:\n\n" +
+      "1. Sign up at https://ngrok.com (free)\n" +
+      "2. Get your auth token from https://dashboard.ngrok.com/get-started/your-authtoken\n" +
+      "3. Optionally claim a free static domain at Endpoints → Domains",
+    zh:
+      "ngrok 配置:\n\n" +
+      "1. 在 https://ngrok.com 注册 (免费)\n" +
+      "2. 从 https://dashboard.ngrok.com/get-started/your-authtoken 获取 auth token\n" +
+      "3. 可选: 在 Endpoints → Domains 领取免费静态域名",
+  },
+  web_tunnel_ngrok_authtoken: {
+    en: "ngrok auth token",
+    zh: "ngrok auth token",
+  },
+  web_tunnel_ngrok_domain: {
+    en: "Static domain (optional, e.g. my-app.ngrok-free.app)",
+    zh: "静态域名 (可选, 如 my-app.ngrok-free.app)",
+  },
+  web_ngrok_install_hint: {
+    en: "  macOS: brew install ngrok\n  Other: https://ngrok.com/download",
+    zh: "  macOS: brew install ngrok\n  其他系统: https://ngrok.com/download",
+  },
+  // ── Custom tunnel ──
+  web_tunnel_custom_guide: {
+    en:
+      "Custom tunnel setup:\n\n" +
+      "Provide your own public URL (e.g. https://chat.example.com).\n" +
+      "Optionally, specify a command to start the tunnel (e.g. frpc, bore, etc.).\n" +
+      "Klaus will run this command on startup and kill it on shutdown.",
+    zh:
+      "自定义隧道配置:\n\n" +
+      "提供公网 URL (如 https://chat.example.com).\n" +
+      "可选: 提供隧道启动命令 (如 frpc, bore 等).\n" +
+      "Klaus 会在启动时运行此命令, 退出时自动关闭.",
+  },
+  web_tunnel_custom_url: {
+    en: "Public URL",
+    zh: "公网 URL",
+  },
+  web_tunnel_custom_command: {
+    en: "Startup command (optional)",
+    zh: "启动命令 (可选)",
+  },
+  // ── Binary detection (generic) ──
+  web_binary_found: {
+    en: "{cmd} found",
+    zh: "已找到 {cmd}",
+  },
+  web_binary_not_found: {
+    en: "{cmd} not found",
+    zh: "未找到 {cmd}",
+  },
+  web_binary_auto_install: {
+    en: "Run `{cmd}` to install automatically?",
+    zh: "运行 `{cmd}` 自动安装?",
+  },
+  web_binary_installing: {
+    en: "Installing {cmd}...",
+    zh: "正在安装 {cmd}...",
+  },
+  web_binary_install_ok: {
+    en: "{cmd} installed successfully",
+    zh: "{cmd} 安装成功",
+  },
+  web_binary_install_fail: {
+    en: "{cmd} installation failed. Please install manually.",
+    zh: "{cmd} 安装失败, 请手动安装.",
+  },
+  validate_required: {
+    en: "Required",
+    zh: "必填",
+  },
+  validate_invalid_url: {
+    en: "Must be a valid URL",
+    zh: "必须是有效的 URL",
   },
   web_setup_done: {
     en: "Web Chat configured. URL will be shown when you run: klaus start",

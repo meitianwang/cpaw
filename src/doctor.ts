@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import pc from "picocolors";
 import { CONFIG_FILE } from "./config.js";
@@ -6,7 +6,7 @@ import { validateConfig, formatValidationIssues } from "./config-validate.js";
 
 function which(cmd: string): string | null {
   try {
-    return execSync(`which ${cmd}`, { encoding: "utf-8" }).trim();
+    return execFileSync("which", [cmd], { encoding: "utf-8" }).trim();
   } catch {
     return null;
   }
@@ -53,6 +53,34 @@ export function runDoctor(): void {
     if (result.valid) {
       const channel = result.config.channel as string;
       allOk &&= check(`Config valid (channel: ${channel})`, true);
+
+      // Check tunnel CLI prerequisites for web channel
+      if (channel === "web") {
+        const webSection = (result.config.web as Record<string, unknown>) ?? {};
+        const tunnel = webSection.tunnel;
+        if (tunnel === true) {
+          allOk &&= check(
+            "cloudflared CLI (Quick Tunnel)",
+            which("cloudflared") !== null,
+            "brew install cloudflared",
+          );
+        } else if (typeof tunnel === "object" && tunnel !== null) {
+          const provider = (tunnel as Record<string, unknown>).provider;
+          if (provider === "cloudflare-quick" || provider === "cloudflare") {
+            allOk &&= check(
+              "cloudflared CLI",
+              which("cloudflared") !== null,
+              "brew install cloudflared",
+            );
+          } else if (provider === "ngrok") {
+            allOk &&= check(
+              "ngrok CLI",
+              which("ngrok") !== null,
+              "brew install ngrok",
+            );
+          }
+        }
+      }
     } else {
       allOk &&= check("Config validation", false, "see details below");
       console.log();

@@ -1,6 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 
 function which(cmd: string): string | null {
   try {
-    return execSync(`which ${cmd}`, { encoding: "utf-8" }).trim();
+    return execFileSync("which", [cmd], { encoding: "utf-8" }).trim();
   } catch {
     return null;
   }
@@ -105,10 +105,66 @@ async function collectWeComConfig(): Promise<Record<string, unknown>> {
   };
 }
 
+function getInstallCommand(
+  cmd: string,
+): { bin: string; args: string[]; display: string } | null {
+  if (process.platform === "darwin") {
+    return {
+      bin: "brew",
+      args: ["install", cmd],
+      display: `brew install ${cmd}`,
+    };
+  }
+  if (process.platform === "linux" && cmd === "cloudflared") {
+    return {
+      bin: "sh",
+      args: [
+        "-c",
+        "curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared",
+      ],
+      display: "curl + install cloudflared",
+    };
+  }
+  return null;
+}
+
+async function ensureBinaryInstalled(
+  cmd: string,
+  installHint: string,
+): Promise<void> {
+  if (which(cmd) !== null) {
+    p.log.success(t("web_binary_found", { cmd }));
+    return;
+  }
+  p.log.warn(t("web_binary_not_found", { cmd }));
+  p.log.info(installHint);
+
+  const installCmd = getInstallCommand(cmd);
+  if (installCmd) {
+    const doInstall = await p.confirm({
+      message: t("web_binary_auto_install", { cmd: installCmd.display }),
+      initialValue: true,
+    });
+    if (!p.isCancel(doInstall) && doInstall) {
+      p.log.info(t("web_binary_installing", { cmd }));
+      try {
+        execFileSync(installCmd.bin, installCmd.args, {
+          stdio: "inherit",
+          timeout: 300_000,
+        });
+        p.log.success(t("web_binary_install_ok", { cmd }));
+      } catch {
+        p.log.error(t("web_binary_install_fail", { cmd }));
+      }
+    }
+  }
+}
+
 async function collectWebConfig(): Promise<Record<string, unknown>> {
   p.log.info(t("web_guide"));
 
-  const result = await p.group({
+  // Basic config: token + port
+  const basic = await p.group({
     token: () =>
       p.text({
         message: t("web_token"),
@@ -121,58 +177,115 @@ async function collectWebConfig(): Promise<Record<string, unknown>> {
         defaultValue: "3000",
         placeholder: "3000",
       }),
-    tunnel: () =>
-      p.confirm({
-        message: t("web_tunnel"),
-        initialValue: false,
-      }),
   });
-
-  if (p.isCancel(result)) process.exit(0);
+  if (p.isCancel(basic)) process.exit(0);
 
   // Auto-generate token if empty
-  let token = (result.token as string).trim();
+  let token = (basic.token as string).trim();
   if (!token) {
     token = randomBytes(24).toString("hex");
     p.log.info(t("web_token_generated", { token }));
   }
 
-  // If tunnel enabled, ensure cloudflared is installed
-  if (result.tunnel) {
-    if (which("cloudflared") !== null) {
-      p.log.success(t("web_tunnel_found"));
-    } else {
-      p.log.warn(t("web_tunnel_not_found"));
-      const installCmd =
-        process.platform === "darwin"
-          ? "brew install cloudflared"
-          : process.platform === "linux"
-            ? "curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared"
-            : null;
-      if (installCmd) {
-        const doInstall = await p.confirm({
-          message: t("web_tunnel_install"),
-          initialValue: true,
-        });
-        if (!p.isCancel(doInstall) && doInstall) {
-          p.log.info(t("web_tunnel_installing"));
-          try {
-            execSync(installCmd, { stdio: "inherit", timeout: 300_000 });
-            p.log.success(t("web_tunnel_install_ok"));
-          } catch {
-            p.log.error(t("web_tunnel_install_fail"));
-          }
-        }
-      }
-    }
+  // Tunnel mode selection
+  const tunnelMode = await p.select({
+    message: t("web_tunnel_mode"),
+    options: [
+      { value: "none" as const, label: t("web_tunnel_none") },
+      { value: "cloudflare-quick" as const, label: t("web_tunnel_quick") },
+      { value: "cloudflare" as const, label: t("web_tunnel_named") },
+      { value: "ngrok" as const, label: t("web_tunnel_ngrok") },
+      { value: "custom" as const, label: t("web_tunnel_custom") },
+    ],
+  });
+  if (p.isCancel(tunnelMode)) process.exit(0);
+
+  let tunnelCfg: Record<string, unknown> | boolean = false;
+
+  if (tunnelMode === "cloudflare-quick") {
+    tunnelCfg = true; // backward compat: writes `tunnel: true`
+    await ensureBinaryInstalled("cloudflared", t("web_cf_install_hint"));
+  } else if (tunnelMode === "cloudflare") {
+    p.log.info(t("web_tunnel_named_guide"));
+    await ensureBinaryInstalled("cloudflared", t("web_cf_install_hint"));
+    const named = await p.group({
+      token: () =>
+        p.text({
+          message: t("web_tunnel_cf_token"),
+          validate: (v) => (v ? undefined : t("validate_required")),
+        }),
+      hostname: () =>
+        p.text({
+          message: t("web_tunnel_cf_hostname"),
+          placeholder: "chat.example.com",
+          defaultValue: "",
+        }),
+    });
+    if (p.isCancel(named)) process.exit(0);
+    tunnelCfg = {
+      provider: "cloudflare",
+      token: named.token,
+      ...(named.hostname ? { hostname: named.hostname } : {}),
+    };
+  } else if (tunnelMode === "ngrok") {
+    p.log.info(t("web_tunnel_ngrok_guide"));
+    await ensureBinaryInstalled("ngrok", t("web_ngrok_install_hint"));
+    const ngrok = await p.group({
+      authtoken: () =>
+        p.text({
+          message: t("web_tunnel_ngrok_authtoken"),
+          validate: (v) => (v ? undefined : t("validate_required")),
+        }),
+      domain: () =>
+        p.text({
+          message: t("web_tunnel_ngrok_domain"),
+          placeholder: "my-app.ngrok-free.app",
+          defaultValue: "",
+        }),
+    });
+    if (p.isCancel(ngrok)) process.exit(0);
+    tunnelCfg = {
+      provider: "ngrok",
+      authtoken: ngrok.authtoken,
+      ...(ngrok.domain ? { domain: ngrok.domain } : {}),
+    };
+  } else if (tunnelMode === "custom") {
+    p.log.info(t("web_tunnel_custom_guide"));
+    const custom = await p.group({
+      url: () =>
+        p.text({
+          message: t("web_tunnel_custom_url"),
+          validate: (v) => {
+            if (!v) return t("validate_required");
+            try {
+              new URL(v);
+              return undefined;
+            } catch {
+              return t("validate_invalid_url");
+            }
+          },
+        }),
+      command: () =>
+        p.text({
+          message: t("web_tunnel_custom_command"),
+          placeholder: "frpc -c /path/to/frpc.ini",
+          defaultValue: "",
+        }),
+    });
+    if (p.isCancel(custom)) process.exit(0);
+    tunnelCfg = {
+      provider: "custom",
+      url: custom.url,
+      ...(custom.command ? { command: custom.command } : {}),
+    };
   }
 
   p.log.success(t("web_setup_done"));
 
   return {
     token,
-    port: Number(result.port) || 3000,
-    tunnel: Boolean(result.tunnel),
+    port: Number(basic.port) || 3000,
+    tunnel: tunnelCfg,
   };
 }
 

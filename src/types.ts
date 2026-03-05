@@ -50,10 +50,42 @@ export interface WeComConfig {
   readonly port: number;
 }
 
+// ---------------------------------------------------------------------------
+// Tunnel provider configs (discriminated union)
+// ---------------------------------------------------------------------------
+
+export interface QuickTunnelConfig {
+  readonly provider: "cloudflare-quick";
+}
+
+export interface NamedTunnelConfig {
+  readonly provider: "cloudflare";
+  readonly token: string;
+  readonly hostname?: string;
+}
+
+export interface NgrokTunnelConfig {
+  readonly provider: "ngrok";
+  readonly authtoken: string;
+  readonly domain?: string;
+}
+
+export interface CustomTunnelConfig {
+  readonly provider: "custom";
+  readonly url: string;
+  readonly command?: string;
+}
+
+export type TunnelConfig =
+  | QuickTunnelConfig
+  | NamedTunnelConfig
+  | NgrokTunnelConfig
+  | CustomTunnelConfig;
+
 export interface WebConfig {
   readonly token: string;
   readonly port: number;
-  readonly tunnel: boolean;
+  readonly tunnel: TunnelConfig | false;
   readonly permissions: boolean;
 }
 

@@ -687,10 +687,10 @@ export const webPlugin: ChannelPlugin = {
       }
     }, 30_000);
 
-    // Cloudflare Tunnel
-    let tunnelChild: ReturnType<typeof startTunnel> = null;
-    if (cfg.tunnel) {
-      tunnelChild = startTunnel(cfg.port, cfg.token);
+    // Tunnel (Cloudflare / ngrok / custom)
+    let tunnelResult: import("./web-tunnel.js").TunnelResult | null = null;
+    if (cfg.tunnel !== false) {
+      tunnelResult = startTunnel(cfg.tunnel, cfg.port, cfg.token);
     }
 
     // Cleanup on process exit
@@ -700,7 +700,7 @@ export const webPlugin: ChannelPlugin = {
       if (configDebounce) clearTimeout(configDebounce);
       configWatcher?.close();
       wss.close();
-      tunnelChild?.kill();
+      tunnelResult?.child?.kill();
     };
     process.once("exit", cleanup);
     process.once("SIGINT", () => {

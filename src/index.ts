@@ -130,10 +130,22 @@ function main(): void {
 
   switch (cmd) {
     case "setup":
-      import("./setup-wizard.js").then((m) => m.runSetup());
+      import("./setup-wizard.js")
+        .then((m) => m.runSetup())
+        .then(() => process.exit(0))
+        .catch((err) => {
+          console.error(err);
+          process.exit(1);
+        });
       break;
     case "doctor":
-      import("./doctor.js").then((m) => m.runDoctor());
+      import("./doctor.js")
+        .then((m) => m.runDoctor())
+        .then(() => process.exit(0))
+        .catch((err) => {
+          console.error(err);
+          process.exit(1);
+        });
       break;
     case "start":
       start().catch((err) => {

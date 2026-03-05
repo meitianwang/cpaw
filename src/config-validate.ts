@@ -203,7 +203,84 @@ export function validateConfig(): ValidationResult {
     }
   }
 
+  // Tunnel-specific validation for web channel
+  if (channel === "web") {
+    const webSection = (raw[channel] as Record<string, unknown>) ?? {};
+    validateTunnelConfig(webSection.tunnel, issues);
+  }
+
   return { valid: issues.length === 0, issues, config: raw };
+}
+
+function validateTunnelConfig(tunnelRaw: unknown, issues: ConfigIssue[]): void {
+  // boolean or absent — no validation needed
+  if (tunnelRaw == null || typeof tunnelRaw === "boolean") return;
+
+  if (typeof tunnelRaw !== "object") {
+    issues.push({
+      path: "web.tunnel",
+      message: "must be true, false, or an object with a provider field",
+    });
+    return;
+  }
+
+  const tunnel = tunnelRaw as Record<string, unknown>;
+  const provider = tunnel.provider;
+
+  if (!provider || typeof provider !== "string") {
+    issues.push({
+      path: "web.tunnel.provider",
+      message: 'missing required field "provider"',
+      hint: "expected: cloudflare-quick, cloudflare, ngrok, or custom",
+    });
+    return;
+  }
+
+  switch (provider) {
+    case "cloudflare-quick":
+      break;
+    case "cloudflare":
+      if (!tunnel.token || typeof tunnel.token !== "string") {
+        issues.push({
+          path: "web.tunnel.token",
+          message: "Cloudflare Named Tunnel requires a connector token",
+          hint: "get from Cloudflare Zero Trust Dashboard → Tunnels",
+        });
+      }
+      break;
+    case "ngrok":
+      if (!tunnel.authtoken || typeof tunnel.authtoken !== "string") {
+        issues.push({
+          path: "web.tunnel.authtoken",
+          message: "ngrok requires an auth token",
+          hint: "get from https://dashboard.ngrok.com/get-started/your-authtoken",
+        });
+      }
+      break;
+    case "custom":
+      if (!tunnel.url || typeof tunnel.url !== "string") {
+        issues.push({
+          path: "web.tunnel.url",
+          message: "custom tunnel requires a public URL",
+        });
+      } else {
+        try {
+          new URL(tunnel.url as string);
+        } catch {
+          issues.push({
+            path: "web.tunnel.url",
+            message: "must be a valid URL (e.g. https://chat.example.com)",
+          });
+        }
+      }
+      break;
+    default:
+      issues.push({
+        path: "web.tunnel.provider",
+        message: `unknown provider "${provider}"`,
+        hint: "expected: cloudflare-quick, cloudflare, ngrok, or custom",
+      });
+  }
 }
 
 function channelFieldSpecs(channel: string): readonly FieldSpec[] | null {

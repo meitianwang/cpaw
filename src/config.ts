@@ -8,6 +8,7 @@ import type {
   WeComConfig,
   WebConfig,
   SessionConfig,
+  TunnelConfig,
 } from "./types.js";
 
 export const CONFIG_DIR = join(homedir(), ".klaus");
@@ -53,6 +54,62 @@ export function loadWeComConfig(): WeComConfig {
   };
 }
 
+function parseTunnelConfig(
+  raw: unknown,
+  envTunnel: string | undefined,
+): TunnelConfig | false {
+  // boolean true (backward compat) or env "true" → quick tunnel
+  if (raw === true || (raw == null && envTunnel === "true")) {
+    return { provider: "cloudflare-quick" };
+  }
+
+  // boolean false or absent → no tunnel
+  if (raw === false || raw == null) {
+    return false;
+  }
+
+  // object → parse by provider
+  if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const provider = obj.provider as string;
+
+    switch (provider) {
+      case "cloudflare-quick":
+        return { provider: "cloudflare-quick" };
+      case "cloudflare":
+        return {
+          provider: "cloudflare",
+          token: String(obj.token ?? ""),
+          ...(obj.hostname ? { hostname: String(obj.hostname) } : {}),
+        };
+      case "ngrok":
+        return {
+          provider: "ngrok",
+          authtoken: String(obj.authtoken ?? ""),
+          ...(obj.domain ? { domain: String(obj.domain) } : {}),
+        };
+      case "custom":
+        return {
+          provider: "custom",
+          url: String(obj.url ?? ""),
+          ...(obj.command ? { command: String(obj.command) } : {}),
+        };
+      default:
+        console.warn(
+          `[Web] Unknown tunnel provider "${provider}", using quick tunnel`,
+        );
+        return { provider: "cloudflare-quick" };
+    }
+  }
+
+  // Truthy non-object (string "true" etc) → quick tunnel
+  if (raw) {
+    return { provider: "cloudflare-quick" };
+  }
+
+  return false;
+}
+
 export function loadWebConfig(): WebConfig {
   const cfg = (loadConfig().web as Record<string, unknown>) ?? {};
   let token = (cfg.token as string) ?? process.env.KLAUS_WEB_TOKEN ?? "";
@@ -64,7 +121,7 @@ export function loadWebConfig(): WebConfig {
   return {
     token,
     port: Number(cfg.port ?? process.env.KLAUS_WEB_PORT ?? 3000),
-    tunnel: Boolean(cfg.tunnel ?? process.env.KLAUS_WEB_TUNNEL === "true"),
+    tunnel: parseTunnelConfig(cfg.tunnel, process.env.KLAUS_WEB_TUNNEL),
     permissions: Boolean(
       cfg.permissions ?? process.env.KLAUS_WEB_PERMISSIONS === "true",
     ),
