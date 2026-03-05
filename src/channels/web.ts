@@ -1,11 +1,18 @@
 /**
  * Web channel — browser-based chat UI with WebSocket for real-time bidirectional communication.
  *
+ * Auth: dual-mode — admin token (full access) or invite code (chat only).
+ *
  * Routes:
- *   GET  /              → Chat UI HTML (requires ?token)
- *   WS   /api/ws        → WebSocket connection (requires ?token, validated during upgrade)
- *   POST /api/upload    → File upload (token in query string)
- *   GET  /api/health    → Health check (no auth)
+ *   GET  /                    → Chat UI HTML (admin token or invite code)
+ *   GET  /admin               → Admin panel (admin token only)
+ *   WS   /api/ws              → WebSocket connection (admin token or invite code)
+ *   POST /api/upload          → File upload
+ *   GET  /api/history         → Session message history
+ *   GET  /api/sessions        → List sessions (scoped by token)
+ *   DELETE /api/sessions      → Delete session
+ *   GET/POST/DELETE /api/admin/invites → Invite code management (admin only)
+ *   GET  /api/health          → Health check (no auth)
  */
 
 import {
@@ -30,9 +37,12 @@ import type { WebConfig } from "../types.js";
 import { loadWebConfig, CONFIG_FILE } from "../config.js";
 import type { InboundMessage, MediaFile } from "../message.js";
 import { getChatHtml } from "./web-ui.js";
+import { getAdminHtml } from "./web-admin-ui.js";
 import { startTunnel } from "./web-tunnel.js";
 import { formatToolEvent, type ToolPayload } from "../tool-config.js";
 import type { MessageStore } from "../message-store.js";
+import type { InviteStore } from "../invite-store.js";
+import type { SessionStore } from "../session-store.js";
 
 // ---------------------------------------------------------------------------
 // File upload storage
@@ -48,9 +58,19 @@ const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 // ---------------------------------------------------------------------------
 
 let messageStoreRef: MessageStore | null = null;
+let inviteStoreRef: InviteStore | null = null;
+let sessionStoreRef: SessionStore | null = null;
 
 export function setMessageStore(store: MessageStore): void {
   messageStoreRef = store;
+}
+
+export function setInviteStore(store: InviteStore): void {
+  inviteStoreRef = store;
+}
+
+export function setSessionStore(store: SessionStore): void {
+  sessionStoreRef = store;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +166,26 @@ function tokenLabel(token: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Auth: admin token + invite code dual validation
+// ---------------------------------------------------------------------------
+
+type AuthResult =
+  | { readonly kind: "admin"; readonly token: string }
+  | { readonly kind: "invite"; readonly token: string }
+  | { readonly kind: "invalid" };
+
+function authenticate(provided: string, cfg: WebConfig): AuthResult {
+  if (!provided) return { kind: "invalid" };
+  if (validateToken(provided, cfg.token)) {
+    return { kind: "admin", token: provided };
+  }
+  if (inviteStoreRef?.isValid(provided)) {
+    return { kind: "invite", token: provided };
+  }
+  return { kind: "invalid" };
+}
+
+// ---------------------------------------------------------------------------
 // Rate limiting (per-IP, simple sliding window)
 // ---------------------------------------------------------------------------
 
@@ -222,13 +262,36 @@ function getClientIp(req: IncomingMessage): string {
 
 function serveHtml(url: URL, res: ServerResponse, cfg: WebConfig): void {
   const token = url.searchParams.get("token") ?? "";
-  if (!validateToken(token, cfg.token)) {
+  const auth = authenticate(token, cfg);
+  if (auth.kind === "invalid") {
     res.writeHead(401, { "Content-Type": "text/plain" });
     res.end("Unauthorized: invalid or missing token");
     return;
   }
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
   res.end(getChatHtml());
+}
+
+function serveAdmin(
+  req: IncomingMessage,
+  url: URL,
+  res: ServerResponse,
+  cfg: WebConfig,
+): void {
+  const ip = getClientIp(req);
+  if (!checkRateLimit(ip)) {
+    res.writeHead(429, { "Content-Type": "text/plain" });
+    res.end("Too many requests");
+    return;
+  }
+  const token = url.searchParams.get("token") ?? "";
+  if (!validateToken(token, cfg.token)) {
+    res.writeHead(401, { "Content-Type": "text/plain" });
+    res.end("Unauthorized: admin access required");
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(getAdminHtml());
 }
 
 // ---------------------------------------------------------------------------
@@ -478,7 +541,8 @@ async function handleUpload(
   // Token in query string for upload
   const url = new URL(req.url ?? "/", `http://localhost:${cfg.port}`);
   const token = url.searchParams.get("token") ?? "";
-  if (!validateToken(token, cfg.token)) {
+  const auth = authenticate(token, cfg);
+  if (auth.kind === "invalid") {
     jsonResponse(res, 401, { error: "unauthorized" });
     return;
   }
@@ -518,6 +582,216 @@ async function handleUpload(
 }
 
 // ---------------------------------------------------------------------------
+// Admin: shared auth guard
+// ---------------------------------------------------------------------------
+
+function adminAuth(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  cfg: WebConfig,
+): boolean {
+  const ip = getClientIp(req);
+  if (!checkRateLimit(ip)) {
+    jsonResponse(res, 429, { error: "too many requests" });
+    return false;
+  }
+  const token = url.searchParams.get("token") ?? "";
+  if (!validateToken(token, cfg.token)) {
+    jsonResponse(res, 401, { error: "admin access required" });
+    return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Admin: invite code CRUD
+// ---------------------------------------------------------------------------
+
+async function handleAdminInvites(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  cfg: WebConfig,
+): Promise<void> {
+  if (!adminAuth(req, res, url, cfg)) return;
+
+  if (!inviteStoreRef) {
+    jsonResponse(res, 503, { error: "invite store unavailable" });
+    return;
+  }
+
+  if (req.method === "GET") {
+    const invites = inviteStoreRef.list();
+
+    // Attach usage stats per invite code
+    const msgStore = messageStoreRef;
+    if (msgStore) {
+      const enriched = await Promise.all(
+        invites.map(async (inv) => {
+          const prefix = `web:${inv.code}:`;
+          const sessions = await msgStore.listSessions(prefix);
+          const totalMessages = sessions.reduce(
+            (sum, s) => sum + s.messageCount,
+            0,
+          );
+          const lastActive =
+            sessions.length > 0 ? sessions[0].updatedAt : inv.createdAt;
+          return {
+            ...inv,
+            sessionCount: sessions.length,
+            totalMessages,
+            lastActive,
+          };
+        }),
+      );
+
+      // Also compute admin's own stats
+      const adminPrefix = `web:${cfg.token}:`;
+      const adminSessions = await msgStore.listSessions(adminPrefix);
+      const adminMessages = adminSessions.reduce(
+        (sum, s) => sum + s.messageCount,
+        0,
+      );
+
+      jsonResponse(res, 200, {
+        invites: enriched,
+        admin: {
+          sessionCount: adminSessions.length,
+          totalMessages: adminMessages,
+          lastActive: adminSessions.length > 0 ? adminSessions[0].updatedAt : 0,
+        },
+      });
+      return;
+    }
+
+    jsonResponse(res, 200, { invites });
+    return;
+  }
+
+  if (req.method === "POST") {
+    const body = await readBody(req, 1024);
+    let label = "";
+    try {
+      const parsed = JSON.parse(body.toString()) as Record<string, unknown>;
+      label =
+        typeof parsed.label === "string" ? parsed.label.slice(0, 100) : "";
+    } catch {
+      // Empty label is fine
+    }
+    const invite = inviteStoreRef.create(label);
+    console.log(
+      `[Web] Created invite code: ${tokenLabel(invite.code)} (label: ${label || "(none)"})`,
+    );
+    jsonResponse(res, 201, { invite });
+    return;
+  }
+
+  if (req.method === "DELETE") {
+    const code = url.searchParams.get("code") ?? "";
+    if (!code) {
+      jsonResponse(res, 400, { error: "missing code parameter" });
+      return;
+    }
+    const deleted = inviteStoreRef.delete(code);
+    if (!deleted) {
+      jsonResponse(res, 404, { error: "invite code not found" });
+      return;
+    }
+    console.log(`[Web] Deleted invite code: ${tokenLabel(code)}`);
+    jsonResponse(res, 200, { deleted: true });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
+}
+
+// ---------------------------------------------------------------------------
+// Admin: validate "code" param (must be "_admin" or 32-char hex invite code)
+// ---------------------------------------------------------------------------
+
+const VALID_CODE_RE = /^(?:_admin|[0-9a-f]{32})$/;
+
+// ---------------------------------------------------------------------------
+// Admin: browse sessions for any token (admin or invite code)
+// ---------------------------------------------------------------------------
+
+async function handleAdminSessions(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  cfg: WebConfig,
+): Promise<void> {
+  if (!adminAuth(req, res, url, cfg)) return;
+  if (req.method !== "GET") {
+    jsonResponse(res, 405, { error: "method not allowed" });
+    return;
+  }
+  if (!messageStoreRef) {
+    jsonResponse(res, 503, { error: "unavailable" });
+    return;
+  }
+
+  // "code" param: the invite code, or "_admin" for admin's own sessions
+  const code = url.searchParams.get("code") ?? "";
+  if (!code || !VALID_CODE_RE.test(code)) {
+    jsonResponse(res, 400, { error: "missing or invalid code parameter" });
+    return;
+  }
+
+  const effectiveToken = code === "_admin" ? cfg.token : code;
+  const prefix = `web:${effectiveToken}:`;
+  const sessions = await messageStoreRef.listSessions(prefix);
+
+  // Enrich with model info from SessionStore
+  const enriched = sessions.map((s) => {
+    const sessionKey = `web:${effectiveToken}:${s.sessionId}`;
+    const persisted = sessionStoreRef?.get(sessionKey);
+    return { ...s, model: persisted?.model ?? null };
+  });
+
+  jsonResponse(res, 200, { sessions: enriched });
+}
+
+// ---------------------------------------------------------------------------
+// Admin: read conversation history for any session
+// ---------------------------------------------------------------------------
+
+async function handleAdminHistory(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  cfg: WebConfig,
+): Promise<void> {
+  if (!adminAuth(req, res, url, cfg)) return;
+  if (req.method !== "GET") {
+    jsonResponse(res, 405, { error: "method not allowed" });
+    return;
+  }
+  if (!messageStoreRef) {
+    jsonResponse(res, 503, { error: "unavailable" });
+    return;
+  }
+
+  const code = url.searchParams.get("code") ?? "";
+  const sessionId = url.searchParams.get("sessionId") ?? "";
+  if (!code || !VALID_CODE_RE.test(code)) {
+    jsonResponse(res, 400, { error: "missing or invalid code parameter" });
+    return;
+  }
+  if (!sessionId || !/^[\w\-]{1,64}$/.test(sessionId)) {
+    jsonResponse(res, 400, { error: "missing or invalid sessionId" });
+    return;
+  }
+
+  const effectiveToken = code === "_admin" ? cfg.token : code;
+  const sessionKey = `web:${effectiveToken}:${sessionId}`;
+  const messages = await messageStoreRef.readHistory(sessionKey);
+
+  jsonResponse(res, 200, { messages });
+}
+
+// ---------------------------------------------------------------------------
 // Request router (HTTP-only routes)
 // ---------------------------------------------------------------------------
 
@@ -537,6 +811,14 @@ async function handleRequest(
   switch (url.pathname) {
     case "/":
       return serveHtml(url, res, cfg);
+    case "/admin":
+      return serveAdmin(req, url, res, cfg);
+    case "/api/admin/invites":
+      return handleAdminInvites(req, res, url, cfg);
+    case "/api/admin/sessions":
+      return handleAdminSessions(req, res, url, cfg);
+    case "/api/admin/history":
+      return handleAdminHistory(req, res, url, cfg);
     case "/api/upload":
       if (req.method !== "POST") {
         jsonResponse(res, 405, { error: "method not allowed" });
@@ -554,7 +836,8 @@ async function handleRequest(
         return;
       }
       const histToken = url.searchParams.get("token") ?? "";
-      if (!validateToken(histToken, cfg.token)) {
+      const histAuth = authenticate(histToken, cfg);
+      if (histAuth.kind === "invalid") {
         jsonResponse(res, 401, { error: "unauthorized" });
         return;
       }
@@ -567,7 +850,7 @@ async function handleRequest(
         jsonResponse(res, 503, { error: "history unavailable" });
         return;
       }
-      const histKey = `web:${cfg.token}:${histSessionId}`;
+      const histKey = `web:${histToken}:${histSessionId}`;
       const limitStr = url.searchParams.get("limit") ?? "200";
       const limit = Math.min(Math.max(parseInt(limitStr, 10) || 200, 1), 500);
       const all = await messageStoreRef.readHistory(histKey);
@@ -582,7 +865,8 @@ async function handleRequest(
         return;
       }
       const sessToken = url.searchParams.get("token") ?? "";
-      if (!validateToken(sessToken, cfg.token)) {
+      const sessAuth = authenticate(sessToken, cfg);
+      if (sessAuth.kind === "invalid") {
         jsonResponse(res, 401, { error: "unauthorized" });
         return;
       }
@@ -592,9 +876,12 @@ async function handleRequest(
       }
 
       if (req.method === "GET") {
-        const prefix = `web:${cfg.token}:`;
+        const prefix = `web:${sessToken}:`;
         const sessions = await messageStoreRef.listSessions(prefix);
-        jsonResponse(res, 200, { sessions });
+        jsonResponse(res, 200, {
+          sessions,
+          isAdmin: sessAuth.kind === "admin",
+        });
         return;
       }
 
@@ -604,7 +891,7 @@ async function handleRequest(
           jsonResponse(res, 400, { error: "invalid sessionId" });
           return;
         }
-        const delKey = `web:${cfg.token}:${delSessionId}`;
+        const delKey = `web:${sessToken}:${delSessionId}`;
         const deleted = messageStoreRef.deleteSession(delKey);
         if (!deleted) {
           jsonResponse(res, 404, { error: "session not found" });
@@ -664,7 +951,8 @@ export const webPlugin: ChannelPlugin = {
         return;
       }
       const token = url.searchParams.get("token") ?? "";
-      if (!validateToken(token, cfg.token)) {
+      const auth = authenticate(token, cfg);
+      if (auth.kind === "invalid") {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
@@ -713,6 +1001,9 @@ export const webPlugin: ChannelPlugin = {
         `Klaus Web channel listening on http://localhost:${cfg.port}`,
       );
       console.log(`Chat URL: http://localhost:${cfg.port}/?token=${cfg.token}`);
+      console.log(
+        `Admin URL: http://localhost:${cfg.port}/admin?token=${cfg.token}`,
+      );
     });
 
     // Config file watcher — notify clients when config.yaml changes externally

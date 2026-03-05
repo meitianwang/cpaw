@@ -75,10 +75,18 @@ async function start(): Promise<void> {
     messageStore,
   );
 
-  // Expose messageStore to web channel for /api/history endpoint
+  // Expose stores to web channel for API endpoints
+  let inviteStoreInstance: { close(): void } | null = null;
   if (channelName === "web") {
-    const { setMessageStore } = await import("./channels/web.js");
+    const { setMessageStore, setInviteStore, setSessionStore } =
+      await import("./channels/web.js");
     setMessageStore(messageStore);
+    setSessionStore(store);
+
+    const { InviteStore } = await import("./invite-store.js");
+    const inviteStore = new InviteStore();
+    setInviteStore(inviteStore);
+    inviteStoreInstance = inviteStore;
   }
 
   const handler = async (
@@ -142,6 +150,7 @@ async function start(): Promise<void> {
     await plugin.start(handler);
   } finally {
     await sessions.close();
+    inviteStoreInstance?.close();
   }
 }
 

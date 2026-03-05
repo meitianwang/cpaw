@@ -205,7 +205,10 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       <div class="brand-icon">K</div>
       Klaus AI
     </div>
-    <span id="status">connected</span>
+    <div style="display:flex;align-items:center;gap:12px">
+      <a id="admin-link" href="#" style="display:none;font-size:13px;font-weight:500;color:var(--thinking);text-decoration:none">Admin</a>
+      <span id="status">connected</span>
+    </div>
   </div>
   <div id="messages"></div>
   <div id="input-wrapper">
@@ -276,6 +279,10 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       if (!res.ok) return;
       var data = await res.json();
       if (!data.sessions || !Array.isArray(data.sessions)) return;
+      if (data.isAdmin) {
+        var adminLink = document.getElementById("admin-link");
+        if (adminLink) { adminLink.href = "/admin?token=" + encodeURIComponent(token); adminLink.style.display = ""; }
+      }
       var changed = false;
       data.sessions.forEach(function(srv) {
         var idx = sessionsMeta.findIndex(function(s) { return s.id === srv.sessionId; });
