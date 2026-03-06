@@ -157,6 +157,22 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 .system-cmd { max-width: 800px; width: 100%; margin: 4px auto; padding: 0 16px 0 68px; }
 .system-cmd span { display: inline-block; background: var(--code-bg); color: var(--thinking); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; border: 1px solid var(--border); border-radius: 12px; padding: 6px 14px; }
 .msg.streaming { white-space: pre-wrap; }
+#login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; background: var(--bg); }
+#login-screen.hidden { display: none; }
+.login-card { text-align: center; padding: 48px 40px; max-width: 380px; width: 100%; }
+.login-card h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.login-card h1 .brand-icon { width: 32px; height: 32px; font-size: 18px; }
+.login-card p { color: var(--thinking); font-size: 15px; margin-bottom: 32px; }
+.login-card input { width: 100%; padding: 14px 18px; border: 1px solid var(--input-border); border-radius: 14px; background: var(--input-container); color: var(--fg); font-size: 15px; font-family: var(--font-main); outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+.login-card input:focus { border-color: var(--thinking); box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.15); }
+.login-card button { width: 100%; margin-top: 16px; padding: 14px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 14px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--font-main); transition: background 0.2s, transform 0.1s; }
+.login-card button:hover { background: var(--accent-hover); }
+.login-card button:active { transform: scale(0.98); }
+.login-card button:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-error { color: #ef4444; font-size: 14px; margin-top: 12px; display: none; }
+#app.hidden { display: none !important; }
+.logout-btn { background: transparent; border: none; cursor: pointer; color: var(--thinking); font-size: 13px; font-weight: 500; font-family: var(--font-main); padding: 4px 8px; transition: color 0.2s; }
+.logout-btn:hover { color: var(--fg); }
 .msg.streaming .cursor { display: inline-block; width: 2px; height: 1em; background: var(--thinking); animation: blink 0.8s step-end infinite; vertical-align: text-bottom; margin-left: 1px; }
 @keyframes blink { 50% { opacity: 0; } }
 .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 280px; background: var(--input-container); border-right: 1px solid var(--border); z-index: 30; transform: translateX(-100%); transition: transform 0.25s ease; display: flex; flex-direction: column; }
@@ -190,7 +206,16 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 </style>
 </head>
 <body>
-<div id="app">
+<div id="login-screen">
+  <div class="login-card">
+    <h1><div class="brand-icon">K</div> Klaus AI</h1>
+    <p>Enter your invite code to start chatting</p>
+    <input id="login-code" type="text" placeholder="Invite code" autocomplete="off">
+    <button id="login-btn">Enter</button>
+    <p class="login-error" id="login-error"></p>
+  </div>
+</div>
+<div id="app" class="hidden">
   <div id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-title">Chats</span>
@@ -207,6 +232,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     </div>
     <div style="display:flex;align-items:center;gap:12px">
       <a id="admin-link" href="#" style="display:none;font-size:13px;font-weight:500;color:var(--thinking);text-decoration:none">Admin</a>
+      <button id="logout-btn" class="logout-btn">Logout</button>
       <span id="status">connected</span>
     </div>
   </div>
@@ -235,8 +261,82 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     }});
   }
 
-  const token = new URLSearchParams(location.search).get("token");
-  if (!token) { document.body.innerHTML = "<p style='padding:40px;text-align:center'>Missing token parameter.</p>"; return; }
+  var loginScreen = document.getElementById("login-screen");
+  var appEl = document.getElementById("app");
+  var loginBtn = document.getElementById("login-btn");
+  var loginCode = document.getElementById("login-code");
+  var loginError = document.getElementById("login-error");
+
+  function showLogin() {
+    loginScreen.classList.remove("hidden");
+    appEl.classList.add("hidden");
+    loginCode.focus();
+  }
+
+  function hideLogin() {
+    loginScreen.classList.add("hidden");
+    appEl.classList.remove("hidden");
+  }
+
+  function doLogin() {
+    var code = loginCode.value.trim();
+    if (!code) return;
+    if (!/^[a-f0-9]{8,}$/i.test(code)) {
+      loginError.textContent = "Invalid format";
+      loginError.style.display = "block";
+      return;
+    }
+    loginBtn.disabled = true;
+    loginError.style.display = "none";
+    fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: code }) })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        loginBtn.disabled = false;
+        if (data.valid) {
+          localStorage.setItem("klaus_token", code);
+          if (location.search.includes("token=")) history.replaceState(null, "", "/");
+          hideLogin();
+          initChat(code, data.isAdmin);
+        } else {
+          loginError.textContent = "Invalid invite code";
+          loginError.style.display = "block";
+        }
+      })
+      .catch(function() {
+        loginBtn.disabled = false;
+        loginError.textContent = "Connection error";
+        loginError.style.display = "block";
+      });
+  }
+
+  loginBtn.addEventListener("click", doLogin);
+  loginCode.addEventListener("keydown", function(e) { if (e.key === "Enter") doLogin(); });
+
+  // Auth flow: URL param > localStorage > show login
+  var urlToken = new URLSearchParams(location.search).get("token");
+  var savedToken = localStorage.getItem("klaus_token");
+  var tryToken = urlToken || savedToken;
+
+  if (tryToken) {
+    fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: tryToken }) })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.valid) {
+          localStorage.setItem("klaus_token", tryToken);
+          if (location.search.includes("token=")) history.replaceState(null, "", "/");
+          hideLogin();
+          initChat(tryToken, data.isAdmin);
+        } else {
+          localStorage.removeItem("klaus_token");
+          showLogin();
+        }
+      })
+      .catch(function() { showLogin(); });
+  } else {
+    showLogin();
+  }
+
+  function initChat(token, isAdmin) {
 
   const msgs = document.getElementById("messages");
   const input = document.getElementById("input");
@@ -279,10 +379,6 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       if (!res.ok) return;
       var data = await res.json();
       if (!data.sessions || !Array.isArray(data.sessions)) return;
-      if (data.isAdmin) {
-        var adminLink = document.getElementById("admin-link");
-        if (adminLink) { adminLink.href = "/admin?token=" + encodeURIComponent(token); adminLink.style.display = ""; }
-      }
       var changed = false;
       data.sessions.forEach(function(srv) {
         var idx = sessionsMeta.findIndex(function(s) { return s.id === srv.sessionId; });
@@ -1009,6 +1105,20 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       if (!a.getAttribute("target")) { a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener"); }
     });
   }
+
+  // Admin link
+  if (isAdmin) {
+    var adminLink = document.getElementById("admin-link");
+    if (adminLink) { adminLink.href = "/admin"; adminLink.style.display = ""; }
+  }
+
+  // Logout
+  document.getElementById("logout-btn").addEventListener("click", function() {
+    localStorage.removeItem("klaus_token");
+    location.reload();
+  });
+
+  } // end initChat
 })();
 </script>
 </body>

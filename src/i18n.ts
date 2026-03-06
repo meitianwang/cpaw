@@ -14,6 +14,22 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     en: "Overwrite existing config?",
     zh: "是否覆盖现有配置?",
   },
+  config_action: {
+    en: "What would you like to do?",
+    zh: "请选择操作：",
+  },
+  config_action_reconfigure: {
+    en: "Reconfigure (edit current config, keep unchanged values)",
+    zh: "重新配置（编辑当前配置，未修改项保持不变）",
+  },
+  config_action_overwrite: {
+    en: "Overwrite (start fresh)",
+    zh: "覆盖（从头开始配置）",
+  },
+  config_action_cancel: {
+    en: "Cancel (keep current config)",
+    zh: "取消（保留当前配置）",
+  },
   setup_cancelled: {
     en: "Setup cancelled. Existing config preserved.",
     zh: "已取消。保留现有配置。",
@@ -435,6 +451,10 @@ const TEXTS: Record<string, Record<Lang, string>> = {
   persona_skip_option: {
     en: "Skip (use default Claude behavior)",
     zh: "跳过 (使用默认 Claude 行为)",
+  },
+  persona_keep: {
+    en: "Keep current persona (no change)",
+    zh: "保留当前人设（不修改）",
   },
   persona_file_prompt: {
     en: "Path to persona file (text/markdown)",

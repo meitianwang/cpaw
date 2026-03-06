@@ -241,6 +241,17 @@ function readBody(req: IncomingMessage, maxSize?: number): Promise<Buffer> {
   });
 }
 
+async function readJsonBody(
+  req: IncomingMessage,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const buf = await readBody(req, 4096);
+    return JSON.parse(buf.toString("utf-8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function jsonResponse(
   res: ServerResponse,
   status: number,
@@ -260,36 +271,17 @@ function getClientIp(req: IncomingMessage): string {
 // Route handlers
 // ---------------------------------------------------------------------------
 
-function serveHtml(url: URL, res: ServerResponse, cfg: WebConfig): void {
-  const token = url.searchParams.get("token") ?? "";
-  const auth = authenticate(token, cfg);
-  if (auth.kind === "invalid") {
-    res.writeHead(401, { "Content-Type": "text/plain" });
-    res.end("Unauthorized: invalid or missing token");
-    return;
-  }
+function serveHtml(_url: URL, res: ServerResponse, _cfg: WebConfig): void {
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
   res.end(getChatHtml());
 }
 
 function serveAdmin(
-  req: IncomingMessage,
-  url: URL,
+  _req: IncomingMessage,
+  _url: URL,
   res: ServerResponse,
-  cfg: WebConfig,
+  _cfg: WebConfig,
 ): void {
-  const ip = getClientIp(req);
-  if (!checkRateLimit(ip)) {
-    res.writeHead(429, { "Content-Type": "text/plain" });
-    res.end("Too many requests");
-    return;
-  }
-  const token = url.searchParams.get("token") ?? "";
-  if (!validateToken(token, cfg.token)) {
-    res.writeHead(401, { "Content-Type": "text/plain" });
-    res.end("Unauthorized: admin access required");
-    return;
-  }
   res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
   res.end(getAdminHtml());
 }
@@ -819,6 +811,29 @@ async function handleRequest(
       return handleAdminSessions(req, res, url, cfg);
     case "/api/admin/history":
       return handleAdminHistory(req, res, url, cfg);
+    case "/api/auth": {
+      if (req.method !== "POST") {
+        jsonResponse(res, 405, { error: "method not allowed" });
+        return;
+      }
+      const authIp = getClientIp(req);
+      if (!checkRateLimit(authIp)) {
+        jsonResponse(res, 429, { error: "too many requests" });
+        return;
+      }
+      const body = await readJsonBody(req);
+      if (!body) {
+        jsonResponse(res, 400, { error: "invalid JSON body" });
+        return;
+      }
+      const authToken = (body.token as string) ?? "";
+      const authResult = authenticate(authToken, cfg);
+      jsonResponse(res, 200, {
+        valid: authResult.kind !== "invalid",
+        isAdmin: authResult.kind === "admin",
+      });
+      return;
+    }
     case "/api/upload":
       if (req.method !== "POST") {
         jsonResponse(res, 405, { error: "method not allowed" });

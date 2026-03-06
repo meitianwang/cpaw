@@ -117,10 +117,22 @@ tr.clickable:hover { background: var(--card-bg); }
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-  var token = new URLSearchParams(location.search).get("token");
-  if (!token) { document.body.innerHTML = "<p style='padding:40px;text-align:center'>Missing token.</p>"; return; }
+  var token = new URLSearchParams(location.search).get("token") || localStorage.getItem("klaus_token");
+  if (!token) { location.href = "/"; return; }
 
-  document.getElementById("back-link").href = "/?token=" + encodeURIComponent(token);
+  // Verify admin access before showing UI
+  fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: token }) })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.valid || !data.isAdmin) { location.href = "/"; return; }
+      initAdmin();
+    })
+    .catch(function() { location.href = "/"; });
+  return;
+
+  function initAdmin() {
+
+  document.getElementById("back-link").href = "/";
 
   var views = { main: document.getElementById("view-main"), sessions: document.getElementById("view-sessions"), history: document.getElementById("view-history") };
   var tableWrap = document.getElementById("table-wrap");
@@ -295,6 +307,8 @@ tr.clickable:hover { background: var(--card-bg); }
 
   // --- Init ---
   loadMain();
+
+  } // end initAdmin
 })();
 <\/script>
 </body>

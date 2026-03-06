@@ -37,18 +37,22 @@ async function checkPrerequisites(): Promise<boolean> {
   return nodeOk && claudeOk;
 }
 
-async function collectQQConfig(): Promise<Record<string, unknown>> {
+async function collectQQConfig(
+  prev?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   p.log.info(t("qq_guide"));
 
   const result = await p.group({
     appid: () =>
       p.text({
         message: t("qq_appid"),
+        defaultValue: (prev?.appid as string) ?? "",
         validate: (v) => (v ? undefined : "Required"),
       }),
     secret: () =>
       p.text({
         message: t("qq_secret"),
+        defaultValue: (prev?.secret as string) ?? "",
         validate: (v) => (v ? undefined : "Required"),
       }),
   });
@@ -57,40 +61,49 @@ async function collectQQConfig(): Promise<Record<string, unknown>> {
   return { appid: result.appid, secret: result.secret };
 }
 
-async function collectWeComConfig(): Promise<Record<string, unknown>> {
+async function collectWeComConfig(
+  prev?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   p.log.info(t("wecom_guide"));
+
+  const prevPort = prev?.port != null ? String(prev.port) : "8080";
 
   const result = await p.group({
     corp_id: () =>
       p.text({
         message: t("wecom_corp_id"),
+        defaultValue: (prev?.corp_id as string) ?? "",
         validate: (v) => (v ? undefined : "Required"),
       }),
     corp_secret: () =>
       p.text({
         message: t("wecom_secret"),
+        defaultValue: (prev?.corp_secret as string) ?? "",
         validate: (v) => (v ? undefined : "Required"),
       }),
     agent_id: () =>
       p.text({
         message: t("wecom_agent_id"),
+        defaultValue: prev?.agent_id != null ? String(prev.agent_id) : "",
         validate: (v) => (/^\d+$/.test(v) ? undefined : "Must be a number"),
       }),
     token: () =>
       p.text({
         message: t("wecom_token"),
+        defaultValue: (prev?.token as string) ?? "",
         validate: (v) => (v ? undefined : "Required"),
       }),
     encoding_aes_key: () =>
       p.text({
         message: t("wecom_aes_key"),
+        defaultValue: (prev?.encoding_aes_key as string) ?? "",
         validate: (v) => (v ? undefined : "Required"),
       }),
     port: () =>
       p.text({
         message: t("wecom_port"),
-        defaultValue: "8080",
-        placeholder: "8080",
+        defaultValue: prevPort,
+        placeholder: prevPort,
       }),
   });
 
@@ -160,22 +173,27 @@ async function ensureBinaryInstalled(
   }
 }
 
-async function collectWebConfig(): Promise<Record<string, unknown>> {
+async function collectWebConfig(
+  prev?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   p.log.info(t("web_guide"));
+
+  const prevToken = (prev?.token as string) ?? "";
+  const prevPort = prev?.port != null ? String(prev.port) : "3000";
 
   // Basic config: token + port
   const basic = await p.group({
     token: () =>
       p.text({
         message: t("web_token"),
-        placeholder: "(auto-generate)",
-        defaultValue: "",
+        placeholder: prevToken || "(auto-generate)",
+        defaultValue: prevToken || "",
       }),
     port: () =>
       p.text({
         message: t("web_port"),
-        defaultValue: "3000",
-        placeholder: "3000",
+        defaultValue: prevPort,
+        placeholder: prevPort,
       }),
   });
   if (p.isCancel(basic)) process.exit(0);
@@ -183,8 +201,13 @@ async function collectWebConfig(): Promise<Record<string, unknown>> {
   // Auto-generate token if empty or placeholder
   let token = (basic.token as string).trim();
   if (!token || token === "(auto-generate)") {
-    token = randomBytes(24).toString("hex");
-    p.log.info(t("web_token_generated", { token }));
+    // Keep previous token if available, otherwise generate new
+    if (prevToken && prevToken !== "(auto-generate)") {
+      token = prevToken;
+    } else {
+      token = randomBytes(24).toString("hex");
+      p.log.info(t("web_token_generated", { token }));
+    }
   }
 
   // Tunnel mode selection
@@ -336,15 +359,29 @@ export async function runSetup(): Promise<void> {
   setLang(lang);
 
   // Check existing config
+  let prevConfig: Record<string, unknown> | null = null;
   if (existsSync(CONFIG_FILE)) {
     const existing = loadConfig();
     const ch = (existing.channel as string) ?? "unknown";
     p.log.warn(t("config_exists", { path: CONFIG_FILE, channel: ch }));
 
-    const overwrite = await p.confirm({ message: t("overwrite") });
-    if (p.isCancel(overwrite) || !overwrite) {
+    const action = await p.select({
+      message: t("config_action"),
+      options: [
+        {
+          value: "reconfigure" as const,
+          label: t("config_action_reconfigure"),
+        },
+        { value: "overwrite" as const, label: t("config_action_overwrite") },
+        { value: "cancel" as const, label: t("config_action_cancel") },
+      ],
+    });
+    if (p.isCancel(action) || action === "cancel") {
       p.outro(t("setup_cancelled"));
       return;
+    }
+    if (action === "reconfigure") {
+      prevConfig = existing;
     }
   }
 
@@ -359,6 +396,7 @@ export async function runSetup(): Promise<void> {
   }
 
   // Step 2: Choose channel
+  const prevChannel = (prevConfig?.channel as string) ?? undefined;
   const channel = await p.select({
     message: t("choose_channel"),
     options: [
@@ -366,6 +404,7 @@ export async function runSetup(): Promise<void> {
       { value: "wecom" as const, label: `wecom — ${t("channel_wecom")}` },
       { value: "web" as const, label: `web — ${t("channel_web")}` },
     ],
+    initialValue: prevChannel as "qq" | "wecom" | "web" | undefined,
   });
   if (p.isCancel(channel)) process.exit(0);
 
@@ -388,11 +427,19 @@ export async function runSetup(): Promise<void> {
       }
     }
 
-    channelCfg = await collectQQConfig();
+    const prevQQ =
+      prevConfig && prevChannel === "qq"
+        ? (prevConfig.qq as Record<string, unknown>)
+        : undefined;
+    channelCfg = await collectQQConfig(prevQQ);
     p.log.success(t("qq_verify_ok"));
   } else if (channel === "wecom") {
     p.log.step(t("wecom_title"));
-    channelCfg = await collectWeComConfig();
+    const prevWeCom =
+      prevConfig && prevChannel === "wecom"
+        ? (prevConfig.wecom as Record<string, unknown>)
+        : undefined;
+    channelCfg = await collectWeComConfig(prevWeCom);
 
     // Verify WeCom credentials
     const ok = await verifyWeComToken(
@@ -410,23 +457,33 @@ export async function runSetup(): Promise<void> {
     }
   } else if (channel === "web") {
     p.log.step(t("web_title"));
-    channelCfg = await collectWebConfig();
+    const prevWeb =
+      prevConfig && prevChannel === "web"
+        ? (prevConfig.web as Record<string, unknown>)
+        : undefined;
+    channelCfg = await collectWebConfig(prevWeb);
   }
 
   // Step 4: Bot persona
   p.log.step(t("persona_title"));
+  const prevPersona = (prevConfig?.persona as string) ?? "";
+  const personaOptions: { value: string; label: string }[] = [];
+  if (prevPersona) {
+    personaOptions.push({ value: "keep", label: t("persona_keep") });
+  }
+  personaOptions.push(
+    { value: "clipboard", label: t("persona_from_clipboard") },
+    { value: "file", label: t("persona_from_file") },
+    { value: "text", label: t("persona_direct") },
+    { value: "skip", label: t("persona_skip_option") },
+  );
   const personaMethod = await p.select({
     message: t("persona_method"),
-    options: [
-      { value: "clipboard" as const, label: t("persona_from_clipboard") },
-      { value: "file" as const, label: t("persona_from_file") },
-      { value: "text" as const, label: t("persona_direct") },
-      { value: "skip" as const, label: t("persona_skip_option") },
-    ],
+    options: personaOptions,
   });
   if (p.isCancel(personaMethod)) process.exit(0);
 
-  let persona = "";
+  let persona = personaMethod === "keep" ? prevPersona : "";
   if (personaMethod === "clipboard") {
     // Read from system clipboard
     const clipCmd =
