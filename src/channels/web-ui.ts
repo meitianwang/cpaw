@@ -189,6 +189,13 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 .session-item .s-del { opacity: 0; background: none; border: none; color: var(--thinking); cursor: pointer; padding: 2px 4px; font-size: 14px; line-height: 1; border-radius: 4px; transition: opacity 0.15s; }
 .session-item:hover .s-del { opacity: 0.6; }
 .session-item .s-del:hover { opacity: 1; background: var(--code-bg); }
+.sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border); margin-top: auto; }
+.lang-switcher { display: flex; flex-direction: column; gap: 8px; }
+.lang-label { font-size: 12px; font-weight: 500; color: var(--thinking); text-transform: uppercase; letter-spacing: 0.5px; }
+.lang-toggle { display: flex; gap: 4px; }
+.lang-option { flex: 1; padding: 6px 0; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--fg); font-size: 13px; font-weight: 500; cursor: pointer; font-family: var(--font-main); transition: all 0.2s; }
+.lang-option:hover { background: var(--msg-user); }
+.lang-option.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 25; display: none; }
 .sidebar-overlay.show { display: block; }
 .menu-btn { background: transparent; border: none; cursor: pointer; color: var(--fg); padding: 4px; display: flex; align-items: center; font-size: 18px; }
@@ -209,19 +216,28 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 <div id="login-screen">
   <div class="login-card">
     <h1><div class="brand-icon">K</div> Klaus AI</h1>
-    <p>Enter your invite code to start chatting</p>
-    <input id="login-code" type="text" placeholder="Invite code" autocomplete="off">
-    <button id="login-btn">Enter</button>
+    <p data-i18n="login_subtitle">Enter your invite code to start chatting</p>
+    <input id="login-code" type="text" placeholder="Invite code" data-i18n-placeholder="login_placeholder" autocomplete="off">
+    <button id="login-btn" data-i18n="login_btn">Enter</button>
     <p class="login-error" id="login-error"></p>
   </div>
 </div>
 <div id="app" class="hidden">
   <div id="sidebar" class="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">Chats</span>
-      <button class="new-chat-btn" id="new-chat-btn">+ New</button>
+      <span class="sidebar-title" data-i18n="chats">Chats</span>
+      <button class="new-chat-btn" id="new-chat-btn" data-i18n="new_chat">+ New</button>
     </div>
     <div class="session-list" id="session-list"></div>
+    <div class="sidebar-footer">
+      <div class="lang-switcher">
+        <span class="lang-label" data-i18n="language">Language</span>
+        <div class="lang-toggle">
+          <button class="lang-option" data-lang="en" data-i18n="lang_en">English</button>
+          <button class="lang-option" data-lang="zh" data-i18n="lang_zh">中文</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="sidebar-overlay" class="sidebar-overlay"></div>
   <div id="header">
@@ -232,8 +248,8 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     </div>
     <div style="display:flex;align-items:center;gap:12px">
       <a id="admin-link" href="#" style="display:none;font-size:13px;font-weight:500;color:var(--thinking);text-decoration:none">Admin</a>
-      <button id="logout-btn" class="logout-btn">Logout</button>
-      <span id="status">connected</span>
+      <button id="logout-btn" class="logout-btn" data-i18n="logout">Logout</button>
+      <span id="status" data-i18n="connected">Connected</span>
     </div>
   </div>
   <div id="messages"></div>
@@ -245,7 +261,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
         </button>
         <input type="file" id="file-input" multiple hidden accept="image/*,audio/*,video/*,.pdf,.txt,.md,.json,.csv,.xml,.html,.js,.ts,.py,.go,.rs,.java,.c,.cpp,.h,.yaml,.yml,.toml,.log,.sh,.bat">
-        <textarea id="input" rows="1" placeholder="Send a message to Klaus..." autocomplete="off"></textarea>
+        <textarea id="input" rows="1" placeholder="Send a message to Klaus..." data-i18n-placeholder="placeholder" autocomplete="off"></textarea>
         <button id="send" disabled>
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
         </button>
@@ -255,6 +271,94 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 </div>
 <script>
 (function(){
+  // --- i18n ---
+  var I18N = {
+    en: {
+      login_subtitle: "Enter your invite code to start chatting",
+      login_placeholder: "Invite code",
+      login_btn: "Enter",
+      chats: "Chats",
+      new_chat: "+ New",
+      new_chat_title: "New Chat",
+      connected: "Connected",
+      reconnecting: "Reconnecting...",
+      logout: "Logout",
+      placeholder: "Send a message to Klaus...",
+      thinking: "Thinking...",
+      not_connected: "Not connected",
+      copy: "Copy",
+      copied: "Copied!",
+      copy_failed: "Failed",
+      approve: "Approve",
+      deny: "Deny",
+      config_updated: "Config updated. Reload to apply changes.",
+      file_too_large: "File too large (max 10 MB): ",
+      upload_failed: "Upload failed: ",
+      uploading: "Uploading... ",
+      drop_files: "Drop files to upload",
+      delete_title: "Delete",
+      error: "error",
+      language: "Language",
+      lang_en: "English",
+      lang_zh: "中文",
+    },
+    zh: {
+      login_subtitle: "输入邀请码开始聊天",
+      login_placeholder: "邀请码",
+      login_btn: "进入",
+      chats: "对话",
+      new_chat: "+ 新建",
+      new_chat_title: "新对话",
+      connected: "已连接",
+      reconnecting: "重新连接中...",
+      logout: "退出",
+      placeholder: "发送消息给 Klaus...",
+      thinking: "思考中...",
+      not_connected: "未连接",
+      copy: "复制",
+      copied: "已复制!",
+      copy_failed: "失败",
+      approve: "批准",
+      deny: "拒绝",
+      config_updated: "配置已更新，请刷新页面以应用更改。",
+      file_too_large: "文件过大 (最大 10 MB): ",
+      upload_failed: "上传失败: ",
+      uploading: "上传中... ",
+      drop_files: "拖拽文件到此处上传",
+      delete_title: "删除",
+      error: "错误",
+      language: "语言",
+      lang_en: "English",
+      lang_zh: "中文",
+    }
+  };
+  var currentLang = localStorage.getItem("klaus_lang") || "en";
+  function tt(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key; }
+  function setLang(lang) {
+    if (!I18N[lang]) return;
+    currentLang = lang;
+    localStorage.setItem("klaus_lang", lang);
+    applyI18n();
+  }
+  function applyI18n() {
+    document.querySelectorAll("[data-i18n]").forEach(function(el) {
+      el.textContent = tt(el.getAttribute("data-i18n"));
+    });
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(function(el) {
+      el.placeholder = tt(el.getAttribute("data-i18n-placeholder"));
+    });
+    document.querySelectorAll("[data-i18n-title]").forEach(function(el) {
+      el.title = tt(el.getAttribute("data-i18n-title"));
+    });
+    // Update lang toggle active state
+    document.querySelectorAll(".lang-option").forEach(function(el) {
+      el.classList.toggle("active", el.getAttribute("data-lang") === currentLang);
+    });
+    // Re-render dynamic lists
+    i18nCallbacks.forEach(function(cb) { cb(); });
+  }
+  var i18nCallbacks = [];
+
   if (typeof marked !== "undefined") {
     marked.use({ breaks: true, gfm: true, renderer: {
       html: function(token) { return escHtml(typeof token === "string" ? token : token.text); }
@@ -266,6 +370,9 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
   var loginBtn = document.getElementById("login-btn");
   var loginCode = document.getElementById("login-code");
   var loginError = document.getElementById("login-error");
+
+  // Apply i18n to login screen immediately
+  applyI18n();
 
   function showLogin() {
     loginScreen.classList.remove("hidden");
@@ -370,6 +477,14 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     sessionsMeta.unshift({ id: currentSessionId, title: "New Chat", ts: Date.now() });
   }
   saveSessionMeta();
+
+  // Language toggle event listeners
+  document.querySelectorAll(".lang-option").forEach(function(el) {
+    el.addEventListener("click", function() { setLang(el.getAttribute("data-lang")); });
+  });
+  i18nCallbacks.push(function() { renderSessionList(); });
+  applyI18n();
+
   renderSessionList();
 
   // Load session list from server (merge with localStorage cache)
@@ -482,11 +597,11 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       el.className = "session-item" + (s.id === currentSessionId ? " active" : "");
       var title = document.createElement("span");
       title.className = "s-title";
-      title.textContent = s.title || "New Chat";
+      title.textContent = (!s.title || s.title === "New Chat") ? tt("new_chat_title") : s.title;
       var del = document.createElement("button");
       del.className = "s-del";
       del.innerHTML = "&#10005;";
-      del.title = "Delete";
+      del.title = tt("delete_title");
       del.onclick = function(e) { deleteSession(s.id, e); };
       el.appendChild(title);
       el.appendChild(del);
@@ -537,7 +652,8 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     ws = new WebSocket(proto + "//" + location.host + "/api/ws?token=" + encodeURIComponent(token));
     ws.onopen = function() {
       reconnectAttempt = 0;
-      statusEl.textContent = "Connected";
+      statusEl.textContent = tt("connected");
+      statusEl.setAttribute("data-i18n", "connected");
       statusEl.className = "";
       if (!msgs.firstChild && !sessionDom.has(currentSessionId)) {
         loadHistory(currentSessionId);
@@ -545,7 +661,8 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     };
     ws.onclose = function() {
       ws = null;
-      statusEl.textContent = "Reconnecting...";
+      statusEl.textContent = tt("reconnecting");
+      statusEl.setAttribute("data-i18n", "reconnecting");
       statusEl.className = "disconnected";
       var base = Math.min(1000 * Math.pow(2, reconnectAttempt), 30000);
       var delay = Math.round(base + base * 0.2 * Math.random());
@@ -583,7 +700,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 
   function addFiles(files) {
     for (const f of files) {
-      if (f.size > 10 * 1024 * 1024) { appendErrorMsg("File too large (max 10 MB): " + f.name); continue; }
+      if (f.size > 10 * 1024 * 1024) { appendErrorMsg(tt("file_too_large") + f.name); continue; }
       const entry = { file: f, objectUrl: null, uploadId: null, uploading: true };
       if (f.type.startsWith("image/")) entry.objectUrl = URL.createObjectURL(f);
       pendingFiles.push(entry);
@@ -604,7 +721,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       const data = await res.json();
       entry.uploadId = data.id;
     } catch(err) {
-      appendErrorMsg("Upload failed: " + entry.file.name);
+      appendErrorMsg(tt("upload_failed") + entry.file.name);
       const idx = pendingFiles.indexOf(entry);
       if (idx >= 0) pendingFiles.splice(idx, 1);
     }
@@ -633,7 +750,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       } else {
         const info = document.createElement("div");
         info.className = "file-info";
-        info.textContent = (entry.uploading ? "Uploading... " : "") + entry.file.name;
+        info.textContent = (entry.uploading ? tt("uploading") : "") + entry.file.name;
         wrap.appendChild(info);
       }
       const rm = document.createElement("button");
@@ -668,7 +785,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     if (dropOverlay) return;
     dropOverlay = document.createElement("div");
     dropOverlay.className = "drop-overlay";
-    dropOverlay.innerHTML = '<svg class="drop-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Drop files to upload';
+    dropOverlay.innerHTML = '<svg class="drop-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>' + tt("drop_files");
     document.body.appendChild(dropOverlay);
   }
   function hideDropOverlay() {
@@ -716,7 +833,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       if (fileIds.length) msg.files = fileIds;
       ws.send(JSON.stringify(msg));
     } else {
-      appendErrorMsg("Not connected"); removeThinking(); busy = false; updateBtn();
+      appendErrorMsg(tt("not_connected")); removeThinking(); busy = false; updateBtn();
     }
   }
 
@@ -740,7 +857,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     const el = document.createElement("div");
     el.className = "msg-container assistant";
     el.id = "thinking-container";
-    el.innerHTML = '<div class="avatar">K</div><div class="msg assistant"><div class="thinking"><div class="spinner"></div>Thinking...</div></div>';
+    el.innerHTML = '<div class="avatar">K</div><div class="msg assistant"><div class="thinking"><div class="spinner"></div>' + tt("thinking") + '</div></div>';
     msgs.appendChild(el); scrollBottom();
   }
   function removeThinking() {
@@ -850,7 +967,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       var errSpan = document.createElement("span");
       errSpan.className = "tool-secondary";
       errSpan.style.color = "#ef4444";
-      errSpan.textContent = "error";
+      errSpan.textContent = tt("error");
       tracked.element.appendChild(errSpan);
     } else {
       tracked.element.classList.add("done");
@@ -1006,7 +1123,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     var banner = document.createElement("div");
     banner.className = "config-banner";
     banner.id = "config-banner";
-    banner.innerHTML = '<span style="font-size:16px">&#9888;&#65039;</span><span style="flex:1">Config updated. Reload to apply changes.</span>';
+    banner.innerHTML = '<span style="font-size:16px">&#9888;&#65039;</span><span style="flex:1">' + tt("config_updated") + '</span>';
     var btn = document.createElement("button");
     btn.textContent = "\\u00d7";
     btn.onclick = function() { banner.remove(); };
@@ -1049,11 +1166,11 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       + '<div class="perm-value">' + (req.display.style === "terminal" ? "$ " : "") + escHtml(req.display.value) + '</div>';
     var approveBtn = document.createElement("button");
     approveBtn.className = "perm-btn approve";
-    approveBtn.textContent = "Approve";
+    approveBtn.textContent = tt("approve");
     approveBtn.onclick = function() { respondPermission(req.requestId, true); };
     var denyBtn = document.createElement("button");
     denyBtn.className = "perm-btn deny";
-    denyBtn.textContent = "Deny";
+    denyBtn.textContent = tt("deny");
     denyBtn.onclick = function() { respondPermission(req.requestId, false); };
     banner.appendChild(info);
     banner.appendChild(denyBtn);
@@ -1092,12 +1209,12 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       }
       var btn = document.createElement("button");
       btn.className = "code-copy";
-      btn.textContent = "Copy";
+      btn.textContent = tt("copy");
       btn.onclick = function() {
         navigator.clipboard.writeText(block.textContent).then(function() {
-          btn.textContent = "Copied!";
-          setTimeout(function() { btn.textContent = "Copy"; }, 2000);
-        }).catch(function() { btn.textContent = "Failed"; setTimeout(function() { btn.textContent = "Copy"; }, 2000); });
+          btn.textContent = tt("copied");
+          setTimeout(function() { btn.textContent = tt("copy"); }, 2000);
+        }).catch(function() { btn.textContent = tt("copy_failed"); setTimeout(function() { btn.textContent = tt("copy"); }, 2000); });
       };
       wrapper.appendChild(btn);
     });
