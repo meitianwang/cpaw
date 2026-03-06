@@ -141,33 +141,33 @@ const wsClients = new Map<string, Set<KlausWebSocket>>();
 
 type WsEvent =
   | {
-    readonly type: "message";
-    readonly text: string;
-    readonly id: string;
-    readonly sessionId?: string;
-  }
+      readonly type: "message";
+      readonly text: string;
+      readonly id: string;
+      readonly sessionId?: string;
+    }
   | {
-    readonly type: "stream";
-    readonly chunk: string;
-    readonly sessionId?: string;
-  }
+      readonly type: "stream";
+      readonly chunk: string;
+      readonly sessionId?: string;
+    }
   | { readonly type: "merged"; readonly sessionId?: string }
   | {
-    readonly type: "error";
-    readonly message: string;
-    readonly sessionId?: string;
-  }
+      readonly type: "error";
+      readonly message: string;
+      readonly sessionId?: string;
+    }
   | { readonly type: "ping" }
   | {
-    readonly type: "tool";
-    readonly data: ToolPayload;
-    readonly sessionId?: string;
-  }
+      readonly type: "tool";
+      readonly data: ToolPayload;
+      readonly sessionId?: string;
+    }
   | {
-    readonly type: "permission";
-    readonly data: PermissionRequest;
-    readonly sessionId?: string;
-  }
+      readonly type: "permission";
+      readonly data: PermissionRequest;
+      readonly sessionId?: string;
+    }
   | { readonly type: "config_updated" };
 
 function addWsClient(userId: string, ws: KlausWebSocket): void {
@@ -422,22 +422,22 @@ async function processUserMessage(
   const onPermissionRequest: PermissionRequestCallback | undefined =
     cfg.permissions
       ? (request) => {
-        return new Promise<{ allow: boolean }>((resolve) => {
-          const timer = setTimeout(() => {
-            pendingPermissions.delete(request.requestId);
-            console.log(
-              `[Web] Permission timeout for ${request.toolName} (${request.requestId})`,
-            );
-            resolve({ allow: false });
-          }, PERMISSION_TIMEOUT_MS);
-          pendingPermissions.set(request.requestId, { resolve, timer });
-          sendWsEvent(userId, {
-            type: "permission",
-            data: request,
-            sessionId,
+          return new Promise<{ allow: boolean }>((resolve) => {
+            const timer = setTimeout(() => {
+              pendingPermissions.delete(request.requestId);
+              console.log(
+                `[Web] Permission timeout for ${request.toolName} (${request.requestId})`,
+              );
+              resolve({ allow: false });
+            }, PERMISSION_TIMEOUT_MS);
+            pendingPermissions.set(request.requestId, { resolve, timer });
+            sendWsEvent(userId, {
+              type: "permission",
+              data: request,
+              sessionId,
+            });
           });
-        });
-      }
+        }
       : undefined;
 
   try {
@@ -977,14 +977,32 @@ async function handleRequest(
       return serveAdmin(req, res);
     case "/logo.png": {
       const { readFileSync } = await import("node:fs");
-      try {
-        const logoData = readFileSync(join(process.cwd(), "public", "logo.png"));
+      const { fileURLToPath } = await import("node:url");
+      const { dirname } = await import("node:path");
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = dirname(__filename);
+      // Look for logo relative to the package root (works for both dev and npm global install)
+      const candidates = [
+        join(__dirname, "..", "public", "logo.png"), // dev: dist/../public or src/../public
+        join(__dirname, "..", "..", "public", "logo.png"), // npm global: dist/../public may need extra level
+        join(process.cwd(), "public", "logo.png"), // fallback: cwd
+      ];
+      let logoData: Buffer | null = null;
+      for (const p of candidates) {
+        try {
+          logoData = readFileSync(p);
+          break;
+        } catch {
+          // try next
+        }
+      }
+      if (logoData) {
         res.writeHead(200, {
           "Content-Type": "image/png",
           "Cache-Control": "public, max-age=86400",
         });
         res.end(logoData);
-      } catch {
+      } else {
         res.writeHead(404);
         res.end("not found");
       }
@@ -1313,6 +1331,6 @@ export const webPlugin: ChannelPlugin = {
     });
 
     // Block forever (channel contract)
-    await new Promise(() => { });
+    await new Promise(() => {});
   },
 };
