@@ -258,7 +258,8 @@ async function collectWebConfig(): Promise<Record<string, unknown>> {
           validate: (v) => {
             if (!v) return t("validate_required");
             try {
-              new URL(v);
+              const normalized = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+              new URL(normalized);
               return undefined;
             } catch {
               return t("validate_invalid_url");
@@ -273,9 +274,12 @@ async function collectWebConfig(): Promise<Record<string, unknown>> {
         }),
     });
     if (p.isCancel(custom)) process.exit(0);
+    const customUrl = /^https?:\/\//i.test(custom.url as string)
+      ? (custom.url as string)
+      : `https://${custom.url as string}`;
     tunnelCfg = {
       provider: "custom",
-      url: custom.url,
+      url: customUrl,
       ...(custom.command ? { command: custom.command } : {}),
     };
   }
