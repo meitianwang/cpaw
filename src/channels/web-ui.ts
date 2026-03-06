@@ -157,20 +157,6 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 .system-cmd { max-width: 800px; width: 100%; margin: 4px auto; padding: 0 16px 0 68px; }
 .system-cmd span { display: inline-block; background: var(--code-bg); color: var(--thinking); font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; border: 1px solid var(--border); border-radius: 12px; padding: 6px 14px; }
 .msg.streaming { white-space: pre-wrap; }
-#login-screen { display: flex; align-items: center; justify-content: center; height: 100vh; background: var(--bg); }
-#login-screen.hidden { display: none; }
-.login-card { text-align: center; padding: 48px 40px; max-width: 380px; width: 100%; }
-.login-card h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; }
-.login-card h1 .brand-icon { width: 32px; height: 32px; font-size: 18px; }
-.login-card p { color: var(--thinking); font-size: 15px; margin-bottom: 32px; }
-.login-card input { width: 100%; padding: 14px 18px; border: 1px solid var(--input-border); border-radius: 14px; background: var(--input-container); color: var(--fg); font-size: 15px; font-family: var(--font-main); outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
-.login-card input:focus { border-color: var(--thinking); box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.15); }
-.login-card button { width: 100%; margin-top: 16px; padding: 14px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 14px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: var(--font-main); transition: background 0.2s, transform 0.1s; }
-.login-card button:hover { background: var(--accent-hover); }
-.login-card button:active { transform: scale(0.98); }
-.login-card button:disabled { opacity: 0.5; cursor: not-allowed; }
-.login-error { color: #ef4444; font-size: 14px; margin-top: 12px; display: none; }
-#app.hidden { display: none !important; }
 .logout-btn { background: transparent; border: none; cursor: pointer; color: var(--thinking); font-size: 13px; font-weight: 500; font-family: var(--font-main); padding: 4px 8px; transition: color 0.2s; }
 .logout-btn:hover { color: var(--fg); }
 .msg.streaming .cursor { display: inline-block; width: 2px; height: 1em; background: var(--thinking); animation: blink 0.8s step-end infinite; vertical-align: text-bottom; margin-left: 1px; }
@@ -213,16 +199,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 </style>
 </head>
 <body>
-<div id="login-screen">
-  <div class="login-card">
-    <h1><div class="brand-icon">K</div> Klaus AI</h1>
-    <p data-i18n="login_subtitle">Enter your invite code to start chatting</p>
-    <input id="login-code" type="text" placeholder="Invite code" data-i18n-placeholder="login_placeholder" autocomplete="off">
-    <button id="login-btn" data-i18n="login_btn">Enter</button>
-    <p class="login-error" id="login-error"></p>
-  </div>
-</div>
-<div id="app" class="hidden">
+<div id="app">
   <div id="sidebar" class="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-title" data-i18n="chats">Chats</span>
@@ -247,7 +224,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       Klaus AI
     </div>
     <div style="display:flex;align-items:center;gap:12px">
-      <a id="admin-link" href="#" style="display:none;font-size:13px;font-weight:500;color:var(--thinking);text-decoration:none">Admin</a>
+      <a id="admin-link" href="/admin" style="display:none;font-size:13px;font-weight:500;color:var(--thinking);text-decoration:none">Admin</a>
       <button id="logout-btn" class="logout-btn" data-i18n="logout">Logout</button>
       <span id="status" data-i18n="connected">Connected</span>
     </div>
@@ -274,9 +251,6 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
   // --- i18n ---
   var I18N = {
     en: {
-      login_subtitle: "Enter your invite code to start chatting",
-      login_placeholder: "Invite code",
-      login_btn: "Enter",
       chats: "Chats",
       new_chat: "+ New",
       new_chat_title: "New Chat",
@@ -303,9 +277,6 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       lang_zh: "中文",
     },
     zh: {
-      login_subtitle: "输入邀请码开始聊天",
-      login_placeholder: "邀请码",
-      login_btn: "进入",
       chats: "对话",
       new_chat: "+ 新建",
       new_chat_title: "新对话",
@@ -361,89 +332,31 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 
   if (typeof marked !== "undefined") {
     marked.use({ breaks: true, gfm: true, renderer: {
-      html: function(token) { return escHtml(typeof token === "string" ? token : token.text); }
+      html: function(token) { return escHtml(typeof token === "string" ? token : token.text); },
+      image: function() { return ""; },
+      link: function(token) {
+        var href = (typeof token === "string" ? token : token.href) || "";
+        var text = (typeof token === "string" ? "" : token.text) || href;
+        if (!/^https?:\\/\\//i.test(href)) return escHtml(text);
+        return '<a href="' + escAttr(href) + '" target="_blank" rel="noopener noreferrer">' + escHtml(text) + '</a>';
+      }
     }});
   }
 
-  var loginScreen = document.getElementById("login-screen");
-  var appEl = document.getElementById("app");
-  var loginBtn = document.getElementById("login-btn");
-  var loginCode = document.getElementById("login-code");
-  var loginError = document.getElementById("login-error");
-
-  // Apply i18n to login screen immediately
   applyI18n();
 
-  function showLogin() {
-    loginScreen.classList.remove("hidden");
-    appEl.classList.add("hidden");
-    loginCode.focus();
-  }
+  // Auth: fetch current user via cookie session
+  fetch("/api/auth/me", { credentials: "same-origin" })
+    .then(function(r) {
+      if (!r.ok) { location.href = "/login"; throw new Error("not authenticated"); }
+      return r.json();
+    })
+    .then(function(data) {
+      initChat(data.user, data.user.role === "admin");
+    })
+    .catch(function() {});
 
-  function hideLogin() {
-    loginScreen.classList.add("hidden");
-    appEl.classList.remove("hidden");
-  }
-
-  function doLogin() {
-    var code = loginCode.value.trim();
-    if (!code) return;
-    if (!/^[a-f0-9]{8,}$/i.test(code)) {
-      loginError.textContent = "Invalid format";
-      loginError.style.display = "block";
-      return;
-    }
-    loginBtn.disabled = true;
-    loginError.style.display = "none";
-    fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: code }) })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        loginBtn.disabled = false;
-        if (data.valid) {
-          localStorage.setItem("klaus_token", code);
-          if (location.search.includes("token=")) history.replaceState(null, "", "/");
-          hideLogin();
-          initChat(code, data.isAdmin);
-        } else {
-          loginError.textContent = "Invalid invite code";
-          loginError.style.display = "block";
-        }
-      })
-      .catch(function() {
-        loginBtn.disabled = false;
-        loginError.textContent = "Connection error";
-        loginError.style.display = "block";
-      });
-  }
-
-  loginBtn.addEventListener("click", doLogin);
-  loginCode.addEventListener("keydown", function(e) { if (e.key === "Enter") doLogin(); });
-
-  // Auth flow: URL param > localStorage > show login
-  var urlToken = new URLSearchParams(location.search).get("token");
-  var savedToken = localStorage.getItem("klaus_token");
-  var tryToken = urlToken || savedToken;
-
-  if (tryToken) {
-    fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: tryToken }) })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.valid) {
-          localStorage.setItem("klaus_token", tryToken);
-          if (location.search.includes("token=")) history.replaceState(null, "", "/");
-          hideLogin();
-          initChat(tryToken, data.isAdmin);
-        } else {
-          localStorage.removeItem("klaus_token");
-          showLogin();
-        }
-      })
-      .catch(function() { showLogin(); });
-  } else {
-    showLogin();
-  }
-
-  function initChat(token, isAdmin) {
+  function initChat(currentUser, isAdmin) {
 
   const msgs = document.getElementById("messages");
   const input = document.getElementById("input");
@@ -460,7 +373,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
   let busy = false;
 
   // --- Session management ---
-  var SP = "klaus_" + token.slice(0, 8);
+  var SP = "klaus_" + currentUser.id.slice(0, 8);
   var sessionsMeta = (function() {
     try {
       var raw = JSON.parse(localStorage.getItem(SP + "_s") || "[]");
@@ -490,7 +403,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
   // Load session list from server (merge with localStorage cache)
   async function loadSessionList() {
     try {
-      var res = await fetch("/api/sessions?token=" + encodeURIComponent(token));
+      var res = await fetch("/api/sessions", { credentials: "same-origin" });
       if (!res.ok) return;
       var data = await res.json();
       if (!data.sessions || !Array.isArray(data.sessions)) return;
@@ -578,7 +491,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     }
     saveSessionMeta(); renderSessionList();
     // Delete from server (fire-and-forget)
-    fetch("/api/sessions?token=" + encodeURIComponent(token) + "&sessionId=" + encodeURIComponent(id), { method: "DELETE" }).catch(function() {});
+    fetch("/api/sessions?sessionId=" + encodeURIComponent(id), { method: "DELETE", credentials: "same-origin" }).catch(function() {});
   }
 
   function updateSessionTitle(text) {
@@ -633,7 +546,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     if (historyLoaded.has(sessionId)) return;
     historyLoaded.add(sessionId);
     try {
-      var res = await fetch("/api/history?token=" + encodeURIComponent(token) + "&sessionId=" + encodeURIComponent(sessionId));
+      var res = await fetch("/api/history?sessionId=" + encodeURIComponent(sessionId), { credentials: "same-origin" });
       if (!res.ok) { historyLoaded.delete(sessionId); return; }
       var data = await res.json();
       if (!data.messages || !data.messages.length) return;
@@ -649,7 +562,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 
   function connectWs() {
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(proto + "//" + location.host + "/api/ws?token=" + encodeURIComponent(token));
+    ws = new WebSocket(proto + "//" + location.host + "/api/ws");
     ws.onopen = function() {
       reconnectAttempt = 0;
       statusEl.textContent = tt("connected");
@@ -712,7 +625,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 
   async function uploadFile(entry) {
     try {
-      const res = await fetch("/api/upload?token=" + encodeURIComponent(token) + "&name=" + encodeURIComponent(entry.file.name), {
+      const res = await fetch("/api/upload?name=" + encodeURIComponent(entry.file.name), {
         method: "POST",
         headers: { "Content-Type": entry.file.type || "application/octet-stream" },
         body: entry.file
@@ -1139,7 +1052,34 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 
   function renderMd(text) {
     if (typeof marked !== "undefined") {
-      return marked.parse(text);
+      var html = marked.parse(text);
+      // Strip any remaining HTML tags except safe ones (defense-in-depth)
+      var tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      var SAFE = {P:1,BR:1,STRONG:1,EM:1,CODE:1,PRE:1,OL:1,UL:1,LI:1,BLOCKQUOTE:1,H1:1,H2:1,H3:1,H4:1,A:1,TABLE:1,THEAD:1,TBODY:1,TR:1,TH:1,TD:1,DEL:1,HR:1};
+      (function sanitize(parent) {
+        var i = parent.childNodes.length;
+        while (i--) {
+          var node = parent.childNodes[i];
+          if (node.nodeType === 1) {
+            if (!SAFE[node.tagName]) {
+              // Replace unsafe element with its text content
+              var span = document.createTextNode(node.textContent || "");
+              parent.replaceChild(span, node);
+            } else {
+              // Remove all attributes except href/target/rel on <a>
+              var attrs = node.attributes;
+              for (var j = attrs.length - 1; j >= 0; j--) {
+                var name = attrs[j].name;
+                if (node.tagName === "A" && (name === "href" || name === "target" || name === "rel")) continue;
+                node.removeAttribute(name);
+              }
+              sanitize(node);
+            }
+          }
+        }
+      })(tmp);
+      return tmp.innerHTML;
     }
     text = escHtml(text);
     text = text.replace(/\\\`\\\`\\\`(\\w*)?\\n([\\s\\S]*?)\\\`\\\`\\\`/g, (_,lang,code) =>
@@ -1231,8 +1171,8 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
 
   // Logout
   document.getElementById("logout-btn").addEventListener("click", function() {
-    localStorage.removeItem("klaus_token");
-    location.reload();
+    fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" })
+      .finally(function() { location.href = "/login"; });
   });
 
   } // end initChat

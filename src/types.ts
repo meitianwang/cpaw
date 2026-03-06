@@ -82,11 +82,17 @@ export type TunnelConfig =
   | NgrokTunnelConfig
   | CustomTunnelConfig;
 
+export interface GoogleOAuthConfig {
+  readonly clientId: string;
+  readonly clientSecret: string;
+}
+
 export interface WebConfig {
-  readonly token: string;
   readonly port: number;
   readonly tunnel: TunnelConfig | false;
   readonly permissions: boolean;
+  readonly sessionMaxAgeDays: number;
+  readonly google?: GoogleOAuthConfig;
 }
 
 export interface SessionConfig {

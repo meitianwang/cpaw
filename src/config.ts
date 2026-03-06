@@ -1,7 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { randomBytes } from "node:crypto";
 import yaml from "js-yaml";
 import type {
   QQBotConfig,
@@ -10,6 +9,7 @@ import type {
   SessionConfig,
   TranscriptsConfig,
   TunnelConfig,
+  GoogleOAuthConfig,
 } from "./types.js";
 
 export const CONFIG_DIR = join(homedir(), ".klaus");
@@ -26,9 +26,11 @@ export function saveConfig(data: Record<string, unknown>): void {
   writeFileSync(CONFIG_FILE, yaml.dump(data, { flowLevel: -1 }), "utf-8");
 }
 
-export function getChannelName(): string {
+export function getChannelNames(): string[] {
   const cfg = loadConfig();
-  return (cfg.channel as string) ?? "qq";
+  const raw = cfg.channel;
+  if (Array.isArray(raw)) return raw.map(String);
+  return [(raw as string) ?? "qq"];
 }
 
 export function loadQQBotConfig(): QQBotConfig {
@@ -113,29 +115,32 @@ function parseTunnelConfig(
 
 export function loadWebConfig(): WebConfig {
   const cfg = (loadConfig().web as Record<string, unknown>) ?? {};
-  let token = (cfg.token as string) ?? process.env.KLAUS_WEB_TOKEN ?? "";
-  // Guard: auto-generate if token is empty or a placeholder value
-  if (!token || token === "(auto-generate)") {
-    token = randomBytes(24).toString("hex");
-    console.log(`[Web] Auto-generated token: ${token}`);
-    // Persist the generated token so it stays stable across restarts
-    try {
-      const full = loadConfig();
-      const webCfg = (full.web as Record<string, unknown>) ?? {};
-      webCfg.token = token;
-      full.web = webCfg;
-      saveConfig(full);
-    } catch {
-      // Non-fatal: token works for this session even if save fails
+
+  // Google OAuth (optional)
+  let google: GoogleOAuthConfig | undefined;
+  const googleCfg = cfg.google as Record<string, unknown> | undefined;
+  if (googleCfg) {
+    const clientId =
+      (googleCfg.client_id as string) ??
+      process.env.KLAUS_GOOGLE_CLIENT_ID ??
+      "";
+    const clientSecret =
+      (googleCfg.client_secret as string) ??
+      process.env.KLAUS_GOOGLE_CLIENT_SECRET ??
+      "";
+    if (clientId && clientSecret) {
+      google = { clientId, clientSecret };
     }
   }
+
   return {
-    token,
     port: Number(cfg.port ?? process.env.KLAUS_WEB_PORT ?? 3000),
     tunnel: parseTunnelConfig(cfg.tunnel, process.env.KLAUS_WEB_TUNNEL),
     permissions: Boolean(
       cfg.permissions ?? process.env.KLAUS_WEB_PERMISSIONS === "true",
     ),
+    sessionMaxAgeDays: positiveNumber(cfg.session_max_age_days, 7),
+    ...(google ? { google } : {}),
   };
 }
 

@@ -43,10 +43,7 @@ function logMissing(cmd: string, installHint: string): void {
 // Provider: Cloudflare Quick Tunnel (random URL, no account)
 // ---------------------------------------------------------------------------
 
-function startQuickTunnel(
-  port: number,
-  webToken?: string,
-): TunnelResult | null {
+function startQuickTunnel(port: number): TunnelResult | null {
   if (!hasCommand("cloudflared")) {
     logMissing(
       "cloudflared",
@@ -74,9 +71,6 @@ function startQuickTunnel(
       if (match) {
         urlFound = true;
         console.log(`[Web] Tunnel URL: ${match[0]}`);
-        if (webToken) {
-          console.log(`[Web] Public Chat URL: ${match[0]}/?token=${webToken}`);
-        }
       }
     }
   };
@@ -100,7 +94,6 @@ function startQuickTunnel(
 function startNamedTunnel(
   cfg: NamedTunnelConfig,
   _port: number,
-  webToken?: string,
 ): TunnelResult | null {
   if (!hasCommand("cloudflared")) {
     logMissing(
@@ -130,10 +123,6 @@ function startNamedTunnel(
   });
 
   const publicUrl = cfg.hostname ? `https://${cfg.hostname}` : null;
-  if (publicUrl && webToken) {
-    console.log(`[Web] Public Chat URL: ${publicUrl}/?token=${webToken}`);
-  }
-
   return { child, publicUrl };
 }
 
@@ -144,7 +133,6 @@ function startNamedTunnel(
 function startNgrokTunnel(
   cfg: NgrokTunnelConfig,
   port: number,
-  webToken?: string,
 ): TunnelResult | null {
   if (!hasCommand("ngrok")) {
     logMissing(
@@ -166,7 +154,6 @@ function startNgrokTunnel(
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  // For static domains the URL is known; for random domains, try to extract
   let urlFound = Boolean(cfg.domain);
   const onData = (chunk: Buffer): void => {
     const text = chunk.toString();
@@ -175,9 +162,6 @@ function startNgrokTunnel(
       if (match) {
         urlFound = true;
         console.log(`[Web] Tunnel URL: ${match[0]}`);
-        if (webToken) {
-          console.log(`[Web] Public Chat URL: ${match[0]}/?token=${webToken}`);
-        }
       }
     }
   };
@@ -191,10 +175,6 @@ function startNgrokTunnel(
   });
 
   const publicUrl = cfg.domain ? `https://${cfg.domain}` : null;
-  if (publicUrl && webToken) {
-    console.log(`[Web] Public Chat URL: ${publicUrl}/?token=${webToken}`);
-  }
-
   return { child, publicUrl };
 }
 
@@ -202,14 +182,8 @@ function startNgrokTunnel(
 // Provider: Custom
 // ---------------------------------------------------------------------------
 
-function startCustomTunnel(
-  cfg: CustomTunnelConfig,
-  webToken?: string,
-): TunnelResult | null {
+function startCustomTunnel(cfg: CustomTunnelConfig): TunnelResult | null {
   console.log(`[Web] Custom tunnel URL: ${cfg.url}`);
-  if (webToken) {
-    console.log(`[Web] Public Chat URL: ${cfg.url}/?token=${webToken}`);
-  }
 
   if (!cfg.command) {
     return { child: null, publicUrl: cfg.url };
@@ -258,16 +232,15 @@ function startCustomTunnel(
 export function startTunnel(
   tunnelCfg: TunnelConfig,
   port: number,
-  webToken?: string,
 ): TunnelResult | null {
   switch (tunnelCfg.provider) {
     case "cloudflare-quick":
-      return startQuickTunnel(port, webToken);
+      return startQuickTunnel(port);
     case "cloudflare":
-      return startNamedTunnel(tunnelCfg, port, webToken);
+      return startNamedTunnel(tunnelCfg, port);
     case "ngrok":
-      return startNgrokTunnel(tunnelCfg, port, webToken);
+      return startNgrokTunnel(tunnelCfg, port);
     case "custom":
-      return startCustomTunnel(tunnelCfg, webToken);
+      return startCustomTunnel(tunnelCfg);
   }
 }

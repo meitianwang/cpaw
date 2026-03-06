@@ -7,7 +7,7 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     zh: " Klaus 安装引导 ",
   },
   config_exists: {
-    en: "Config already exists at {path}\nCurrent channel: {channel}",
+    en: "Config already exists at {path}\nCurrent channel(s): {channel}",
     zh: "配置文件已存在: {path}\n当前通道: {channel}",
   },
   overwrite: {
@@ -63,8 +63,12 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     zh: "部分检查未通过。请先修复以上问题。",
   },
   choose_channel: {
-    en: "Choose a channel",
-    zh: "选择通道",
+    en: "Choose channel(s) (space to select, enter to confirm)",
+    zh: "选择通道（空格选择，回车确认）",
+  },
+  choose_channel_hint: {
+    en: "You can select multiple channels to run simultaneously",
+    zh: "可多选，同时启动多个通道",
   },
   channel_qq: {
     en: "QQ Bot (WebSocket, no public IP needed)",

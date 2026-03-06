@@ -1,17 +1,28 @@
 /**
  * Web channel — browser-based chat UI with WebSocket for real-time bidirectional communication.
  *
- * Auth: dual-mode — admin token (full access) or invite code (chat only).
+ * Auth: user-based — email+password or Google OAuth, with invite code required for registration.
  *
  * Routes:
- *   GET  /                    → Chat UI HTML (admin token or invite code)
- *   GET  /admin               → Admin panel (admin token only)
- *   WS   /api/ws              → WebSocket connection (admin token or invite code)
+ *   GET  /                    → Chat UI HTML (requires login)
+ *   GET  /login               → Login/Register page
+ *   GET  /admin               → Admin panel (admin role only)
+ *   WS   /api/ws              → WebSocket connection (cookie auth)
+ *   POST /api/auth/register   → Register with invite code
+ *   POST /api/auth/login      → Login with email+password
+ *   POST /api/auth/logout     → Logout
+ *   GET  /api/auth/me         → Current user info
+ *   GET  /api/auth/google     → Google OAuth redirect
+ *   GET  /api/auth/google/callback → Google OAuth callback
  *   POST /api/upload          → File upload
  *   GET  /api/history         → Session message history
- *   GET  /api/sessions        → List sessions (scoped by token)
+ *   GET  /api/sessions        → List sessions
  *   DELETE /api/sessions      → Delete session
  *   GET/POST/DELETE /api/admin/invites → Invite code management (admin only)
+ *   GET  /api/admin/users     → User management (admin only)
+ *   PATCH /api/admin/users    → Update user (admin only)
+ *   GET  /api/admin/sessions  → Browse any user's sessions (admin only)
+ *   GET  /api/admin/history   → View any session's history (admin only)
  *   GET  /api/health          → Health check (no auth)
  */
 
@@ -20,8 +31,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { writeFileSync, mkdirSync, watch, type FSWatcher } from "node:fs";
+import { mkdirSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
@@ -38,11 +48,22 @@ import { loadWebConfig, CONFIG_FILE } from "../config.js";
 import type { InboundMessage, MediaFile } from "../message.js";
 import { getChatHtml } from "./web-ui.js";
 import { getAdminHtml } from "./web-admin-ui.js";
+import { getLoginHtml } from "./web-login-ui.js";
 import { startTunnel } from "./web-tunnel.js";
 import { formatToolEvent, type ToolPayload } from "../tool-config.js";
 import type { MessageStore } from "../message-store.js";
 import type { InviteStore } from "../invite-store.js";
 import type { SessionStore } from "../session-store.js";
+import type { UserStore, User } from "../user-store.js";
+import {
+  getSessionToken,
+  handleAuthRegister,
+  handleAuthLogin,
+  handleAuthLogout,
+  handleAuthMe,
+  handleGoogleRedirect,
+  handleGoogleCallback,
+} from "./web-auth.js";
 
 // ---------------------------------------------------------------------------
 // File upload storage
@@ -53,13 +74,25 @@ mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 
+const ALLOWED_MIME_PREFIXES = [
+  "image/",
+  "audio/",
+  "video/",
+  "text/plain",
+  "application/pdf",
+  "application/json",
+  "application/zip",
+  "application/gzip",
+] as const;
+
 // ---------------------------------------------------------------------------
-// Message store (set by index.ts for /api/history)
+// Store references (set by index.ts)
 // ---------------------------------------------------------------------------
 
 let messageStoreRef: MessageStore | null = null;
 let inviteStoreRef: InviteStore | null = null;
 let sessionStoreRef: SessionStore | null = null;
+let userStoreRef: UserStore | null = null;
 
 export function setMessageStore(store: MessageStore): void {
   messageStoreRef = store;
@@ -73,13 +106,17 @@ export function setSessionStore(store: SessionStore): void {
   sessionStoreRef = store;
 }
 
+export function setUserStore(store: UserStore): void {
+  userStoreRef = store;
+}
+
 // ---------------------------------------------------------------------------
-// WebSocket client management
+// WebSocket client management (keyed by userId instead of token)
 // ---------------------------------------------------------------------------
 
 interface KlausWebSocket extends WebSocket {
   isAlive: boolean;
-  klausToken: string;
+  klausUserId: string;
   klausIp: string;
 }
 
@@ -116,24 +153,24 @@ type WsEvent =
     }
   | { readonly type: "config_updated" };
 
-function addWsClient(token: string, ws: KlausWebSocket): void {
-  let clients = wsClients.get(token);
+function addWsClient(userId: string, ws: KlausWebSocket): void {
+  let clients = wsClients.get(userId);
   if (!clients) {
     clients = new Set();
-    wsClients.set(token, clients);
+    wsClients.set(userId, clients);
   }
   clients.add(ws);
 }
 
-function removeWsClient(token: string, ws: KlausWebSocket): void {
-  const clients = wsClients.get(token);
+function removeWsClient(userId: string, ws: KlausWebSocket): void {
+  const clients = wsClients.get(userId);
   if (!clients) return;
   clients.delete(ws);
-  if (clients.size === 0) wsClients.delete(token);
+  if (clients.size === 0) wsClients.delete(userId);
 }
 
-function sendWsEvent(token: string, event: WsEvent): void {
-  const clients = wsClients.get(token);
+function sendWsEvent(userId: string, event: WsEvent): void {
+  const clients = wsClients.get(userId);
   if (!clients) return;
   const data = JSON.stringify(event);
   for (const ws of [...clients]) {
@@ -141,48 +178,35 @@ function sendWsEvent(token: string, event: WsEvent): void {
       try {
         ws.send(data);
       } catch {
-        removeWsClient(token, ws);
+        removeWsClient(userId, ws);
       }
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Token validation (constant-time, fixed-length comparison)
-// ---------------------------------------------------------------------------
-
-function validateToken(provided: string, expected: string): boolean {
-  if (!provided || !expected) return false;
-  // HMAC both values to fixed-length digests, preventing length leakage
-  const key = "klaus-token-compare";
-  const a = createHmac("sha256", key).update(provided).digest();
-  const b = createHmac("sha256", key).update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
-// Derive a short prefix for logging (never log the full token)
-function tokenLabel(token: string): string {
-  return token.slice(0, 8) + "...";
-}
-
-// ---------------------------------------------------------------------------
-// Auth: admin token + invite code dual validation
+// Auth helpers
 // ---------------------------------------------------------------------------
 
 type AuthResult =
-  | { readonly kind: "admin"; readonly token: string }
-  | { readonly kind: "invite"; readonly token: string }
+  | { readonly kind: "admin"; readonly user: User }
+  | { readonly kind: "user"; readonly user: User }
   | { readonly kind: "invalid" };
 
-function authenticate(provided: string, cfg: WebConfig): AuthResult {
-  if (!provided) return { kind: "invalid" };
-  if (validateToken(provided, cfg.token)) {
-    return { kind: "admin", token: provided };
-  }
-  if (inviteStoreRef?.isValid(provided)) {
-    return { kind: "invite", token: provided };
-  }
-  return { kind: "invalid" };
+function authenticateRequest(req: IncomingMessage): AuthResult {
+  if (!userStoreRef) return { kind: "invalid" };
+  const token = getSessionToken(req);
+  const auth = userStoreRef.validateSession(token);
+  if (!auth) return { kind: "invalid" };
+  return {
+    kind: auth.user.role === "admin" ? "admin" : "user",
+    user: auth.user,
+  };
+}
+
+// Short label for logging
+function userLabel(user: User): string {
+  return `${user.email.split("@")[0]}(${user.id.slice(0, 6)})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,10 +229,10 @@ function checkRateLimit(ip: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Pending permission requests (deferred promises for canUseTool approval)
+// Pending permission requests
 // ---------------------------------------------------------------------------
 
-const PERMISSION_TIMEOUT_MS = 120_000; // 2 minutes
+const PERMISSION_TIMEOUT_MS = 120_000;
 
 const pendingPermissions = new Map<
   string,
@@ -222,11 +246,14 @@ const pendingPermissions = new Map<
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-function readBody(req: IncomingMessage, maxSize?: number): Promise<Buffer> {
+export function readBody(
+  req: IncomingMessage,
+  maxSize?: number,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
-    const limit = maxSize ?? 1024 * 64; // default 64 KB
+    const limit = maxSize ?? 1024 * 64;
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > limit) {
@@ -241,17 +268,6 @@ function readBody(req: IncomingMessage, maxSize?: number): Promise<Buffer> {
   });
 }
 
-async function readJsonBody(
-  req: IncomingMessage,
-): Promise<Record<string, unknown> | null> {
-  try {
-    const buf = await readBody(req, 4096);
-    return JSON.parse(buf.toString("utf-8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 function jsonResponse(
   res: ServerResponse,
   status: number,
@@ -261,9 +277,24 @@ function jsonResponse(
   res.end(JSON.stringify(body));
 }
 
+const SECURITY_HEADERS: Record<string, string> = {
+  "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self' cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ws: wss:;",
+};
+
+function serveHtmlPage(res: ServerResponse, html: string): void {
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    ...SECURITY_HEADERS,
+  });
+  res.end(html);
+}
+
 function getClientIp(req: IncomingMessage): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
+  // Only use socket address for rate limiting — X-Forwarded-For is client-spoofable
   return req.socket.remoteAddress ?? "unknown";
 }
 
@@ -271,19 +302,28 @@ function getClientIp(req: IncomingMessage): string {
 // Route handlers
 // ---------------------------------------------------------------------------
 
-function serveHtml(_url: URL, res: ServerResponse, _cfg: WebConfig): void {
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(getChatHtml());
+function serveHtml(req: IncomingMessage, res: ServerResponse): void {
+  const auth = authenticateRequest(req);
+  if (auth.kind === "invalid") {
+    res.writeHead(302, { Location: "/login" });
+    res.end();
+    return;
+  }
+  serveHtmlPage(res, getChatHtml());
 }
 
-function serveAdmin(
-  _req: IncomingMessage,
-  _url: URL,
-  res: ServerResponse,
-  _cfg: WebConfig,
-): void {
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(getAdminHtml());
+function serveLogin(res: ServerResponse, cfg: WebConfig): void {
+  serveHtmlPage(res, getLoginHtml(!!cfg.google));
+}
+
+function serveAdmin(req: IncomingMessage, res: ServerResponse): void {
+  const auth = authenticateRequest(req);
+  if (auth.kind !== "admin") {
+    res.writeHead(302, { Location: "/login" });
+    res.end();
+    return;
+  }
+  serveHtmlPage(res, getAdminHtml());
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +331,7 @@ function serveAdmin(
 // ---------------------------------------------------------------------------
 
 async function processUserMessage(
-  token: string,
+  userId: string,
   text: string,
   fileIds: string[],
   sessionId: string,
@@ -314,7 +354,7 @@ async function processUserMessage(
     uploadedFiles.delete(fileId);
   }
 
-  const sessionKey = `web:${token}:${sessionId}`;
+  const sessionKey = `web:${userId}:${sessionId}`;
   const hasMedia = media.length > 0;
   const messageType =
     hasMedia && trimmedText
@@ -329,19 +369,19 @@ async function processUserMessage(
     text: trimmedText,
     messageType,
     chatType: "private",
-    senderId: token,
+    senderId: userId,
     ...(hasMedia ? { media } : {}),
   };
 
   const mediaLabel = hasMedia ? ` +${media.length} file(s)` : "";
   console.log(
-    `[Web] Received (web:${tokenLabel(token)}): ${trimmedText.slice(0, 120)}${mediaLabel}`,
+    `[Web] Received (${userId.slice(0, 8)}): ${trimmedText.slice(0, 120)}${mediaLabel}`,
   );
 
   // Stream tool events to the client via WebSocket
   const onToolEvent: ToolEventCallback = (event) => {
     try {
-      sendWsEvent(token, {
+      sendWsEvent(userId, {
         type: "tool",
         data: formatToolEvent(event),
         sessionId,
@@ -354,7 +394,7 @@ async function processUserMessage(
   // Stream text chunks to the client via WebSocket
   const onStreamChunk: StreamChunkCallback = (chunk) => {
     try {
-      sendWsEvent(token, { type: "stream", chunk, sessionId });
+      sendWsEvent(userId, { type: "stream", chunk, sessionId });
     } catch (err) {
       console.error("[Web] Failed to send stream chunk:", err);
     }
@@ -373,7 +413,7 @@ async function processUserMessage(
               resolve({ allow: false });
             }, PERMISSION_TIMEOUT_MS);
             pendingPermissions.set(request.requestId, { resolve, timer });
-            sendWsEvent(token, {
+            sendWsEvent(userId, {
               type: "permission",
               data: request,
               sessionId,
@@ -391,12 +431,12 @@ async function processUserMessage(
     );
     if (reply === null) {
       console.log("[Web] Message merged into batch, skipping reply");
-      sendWsEvent(token, { type: "merged", sessionId });
+      sendWsEvent(userId, { type: "merged", sessionId });
       return;
     }
 
     console.log(`[Web] Replying: ${reply.slice(0, 100)}...`);
-    sendWsEvent(token, {
+    sendWsEvent(userId, {
       type: "message",
       text: reply,
       id: Date.now().toString(36),
@@ -404,7 +444,7 @@ async function processUserMessage(
     });
   } catch (err) {
     console.error("[Web] Handler error:", err);
-    sendWsEvent(token, {
+    sendWsEvent(userId, {
       type: "error",
       message: "An internal error occurred. Please try again.",
       sessionId,
@@ -435,7 +475,7 @@ function handleWsMessage(
     return;
   }
 
-  const token = ws.klausToken;
+  const userId = ws.klausUserId;
   const ip = ws.klausIp;
 
   switch (parsed.type) {
@@ -447,7 +487,7 @@ function handleWsMessage(
         return;
       }
       processUserMessage(
-        token,
+        userId,
         parsed.text ?? "",
         parsed.files ?? [],
         parsed.sessionId ?? "default",
@@ -475,7 +515,6 @@ function handleWsMessage(
       break;
     }
     case "pong":
-      // Client heartbeat reply, no action needed
       break;
     default:
       break;
@@ -495,7 +534,7 @@ interface UploadMeta {
 
 const uploadedFiles = new Map<string, UploadMeta>();
 
-// Cleanup stale uploads every 10 minutes (files older than 30 min)
+// Cleanup stale upload metadata every 10 minutes (entries older than 30 min)
 setInterval(() => {
   const cutoff = Date.now() - 30 * 60_000;
   for (const [id, meta] of uploadedFiles) {
@@ -510,7 +549,6 @@ function inferMediaType(
   if (contentType.startsWith("image/")) return "image";
   if (contentType.startsWith("audio/")) return "audio";
   if (contentType.startsWith("video/")) return "video";
-  // Fallback: check extension
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
   if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext))
     return "image";
@@ -522,7 +560,6 @@ function inferMediaType(
 async function handleUpload(
   req: IncomingMessage,
   res: ServerResponse,
-  cfg: WebConfig,
 ): Promise<void> {
   const ip = getClientIp(req);
   if (!checkRateLimit(ip)) {
@@ -530,70 +567,73 @@ async function handleUpload(
     return;
   }
 
-  // Token in query string for upload
-  const url = new URL(req.url ?? "/", `http://localhost:${cfg.port}`);
-  const token = url.searchParams.get("token") ?? "";
-  const auth = authenticate(token, cfg);
+  const auth = authenticateRequest(req);
   if (auth.kind === "invalid") {
     jsonResponse(res, 401, { error: "unauthorized" });
     return;
   }
 
+  const url = new URL(req.url ?? "/", "http://localhost");
   const contentType = req.headers["content-type"] ?? "";
   const fileName = decodeURIComponent(url.searchParams.get("name") ?? "upload");
 
-  // Validate content type is present
   if (!contentType) {
     jsonResponse(res, 400, { error: "missing content-type" });
     return;
   }
 
+  // Validate MIME type against whitelist
+  const mimeAllowed = ALLOWED_MIME_PREFIXES.some((prefix) =>
+    contentType.startsWith(prefix),
+  );
+  if (!mimeAllowed) {
+    jsonResponse(res, 415, { error: "unsupported media type" });
+    return;
+  }
+
   const data = await readBody(req, MAX_UPLOAD_SIZE);
 
-  // Save to temp file
-  const safeBase = fileName.replace(/[^\w.\-]/g, "_");
+  // Sanitize file name: basename only, strip unsafe chars
+  const baseName = fileName.split(/[\\/]/).pop() ?? "upload";
+  const safeBase = baseName.replace(/[^\w.\-]/g, "_");
   const diskName = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${safeBase}`;
   const filePath = join(UPLOAD_DIR, diskName);
-  writeFileSync(filePath, data);
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(filePath, data);
 
   const fileId = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const mediaType = inferMediaType(contentType, fileName);
+  const mediaType = inferMediaType(contentType, baseName);
 
   uploadedFiles.set(fileId, {
     path: filePath,
-    originalName: fileName,
+    originalName: baseName,
     mediaType,
     createdAt: Date.now(),
   });
 
   console.log(
-    `[Web] Upload (${tokenLabel(token)}): ${fileName} → ${mediaType} [${data.length} bytes]`,
+    `[Web] Upload (${userLabel(auth.user)}): ${fileName} → ${mediaType} [${data.length} bytes]`,
   );
 
   jsonResponse(res, 200, { id: fileId, type: mediaType, name: fileName });
 }
 
 // ---------------------------------------------------------------------------
-// Admin: shared auth guard
+// Admin: shared auth guard (cookie-based, checks role)
 // ---------------------------------------------------------------------------
 
-function adminAuth(
-  req: IncomingMessage,
-  res: ServerResponse,
-  url: URL,
-  cfg: WebConfig,
-): boolean {
+function adminAuth(req: IncomingMessage, res: ServerResponse): User | null {
   const ip = getClientIp(req);
   if (!checkRateLimit(ip)) {
     jsonResponse(res, 429, { error: "too many requests" });
-    return false;
+    return null;
   }
-  const token = url.searchParams.get("token") ?? "";
-  if (!validateToken(token, cfg.token)) {
+  const auth = authenticateRequest(req);
+  if (auth.kind !== "admin") {
     jsonResponse(res, 401, { error: "admin access required" });
-    return false;
+    return null;
   }
-  return true;
+  return auth.user;
 }
 
 // ---------------------------------------------------------------------------
@@ -603,10 +643,8 @@ function adminAuth(
 async function handleAdminInvites(
   req: IncomingMessage,
   res: ServerResponse,
-  url: URL,
-  cfg: WebConfig,
 ): Promise<void> {
-  if (!adminAuth(req, res, url, cfg)) return;
+  if (!adminAuth(req, res)) return;
 
   if (!inviteStoreRef) {
     jsonResponse(res, 503, { error: "invite store unavailable" });
@@ -615,48 +653,6 @@ async function handleAdminInvites(
 
   if (req.method === "GET") {
     const invites = inviteStoreRef.list();
-
-    // Attach usage stats per invite code
-    const msgStore = messageStoreRef;
-    if (msgStore) {
-      const enriched = await Promise.all(
-        invites.map(async (inv) => {
-          const prefix = `web:${inv.code}:`;
-          const sessions = await msgStore.listSessions(prefix);
-          const totalMessages = sessions.reduce(
-            (sum, s) => sum + s.messageCount,
-            0,
-          );
-          const lastActive =
-            sessions.length > 0 ? sessions[0].updatedAt : inv.createdAt;
-          return {
-            ...inv,
-            sessionCount: sessions.length,
-            totalMessages,
-            lastActive,
-          };
-        }),
-      );
-
-      // Also compute admin's own stats
-      const adminPrefix = `web:${cfg.token}:`;
-      const adminSessions = await msgStore.listSessions(adminPrefix);
-      const adminMessages = adminSessions.reduce(
-        (sum, s) => sum + s.messageCount,
-        0,
-      );
-
-      jsonResponse(res, 200, {
-        invites: enriched,
-        admin: {
-          sessionCount: adminSessions.length,
-          totalMessages: adminMessages,
-          lastActive: adminSessions.length > 0 ? adminSessions[0].updatedAt : 0,
-        },
-      });
-      return;
-    }
-
     jsonResponse(res, 200, { invites });
     return;
   }
@@ -673,13 +669,14 @@ async function handleAdminInvites(
     }
     const invite = inviteStoreRef.create(label);
     console.log(
-      `[Web] Created invite code: ${tokenLabel(invite.code)} (label: ${label || "(none)"})`,
+      `[Web] Created invite code: ${invite.code.slice(0, 8)}... (label: ${label || "(none)"})`,
     );
     jsonResponse(res, 201, { invite });
     return;
   }
 
   if (req.method === "DELETE") {
+    const url = new URL(req.url ?? "/", "http://localhost");
     const code = url.searchParams.get("code") ?? "";
     if (!code) {
       jsonResponse(res, 400, { error: "missing code parameter" });
@@ -690,7 +687,7 @@ async function handleAdminInvites(
       jsonResponse(res, 404, { error: "invite code not found" });
       return;
     }
-    console.log(`[Web] Deleted invite code: ${tokenLabel(code)}`);
+    console.log(`[Web] Deleted invite code: ${code.slice(0, 8)}...`);
     jsonResponse(res, 200, { deleted: true });
     return;
   }
@@ -699,22 +696,96 @@ async function handleAdminInvites(
 }
 
 // ---------------------------------------------------------------------------
-// Admin: validate "code" param (must be "_admin" or 32-char hex invite code)
+// Admin: user management
 // ---------------------------------------------------------------------------
 
-const VALID_CODE_RE = /^(?:_admin|[0-9a-f]{32})$/;
+async function handleAdminUsers(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!adminAuth(req, res)) return;
+  if (!userStoreRef) {
+    jsonResponse(res, 503, { error: "unavailable" });
+    return;
+  }
+
+  if (req.method === "GET") {
+    const users = userStoreRef.listUsers();
+    // Enrich with session/message stats
+    const enriched = await Promise.all(
+      users.map(async (u) => {
+        let sessionCount = 0;
+        let totalMessages = 0;
+        if (messageStoreRef) {
+          const prefix = `web:${u.id}:`;
+          const sessions = await messageStoreRef.listSessions(prefix);
+          sessionCount = sessions.length;
+          totalMessages = sessions.reduce((sum, s) => sum + s.messageCount, 0);
+        }
+        return {
+          id: u.id,
+          email: u.email,
+          displayName: u.displayName,
+          role: u.role,
+          isActive: u.isActive,
+          createdAt: u.createdAt,
+          lastLoginAt: u.lastLoginAt,
+          inviteCode: u.inviteCode,
+          sessionCount,
+          totalMessages,
+        };
+      }),
+    );
+    jsonResponse(res, 200, { users: enriched });
+    return;
+  }
+
+  if (req.method === "PATCH") {
+    const body = await readBody(req, 1024);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(body.toString()) as Record<string, unknown>;
+    } catch {
+      jsonResponse(res, 400, { error: "invalid JSON" });
+      return;
+    }
+
+    const userId = String(parsed.userId ?? "");
+    if (!userId) {
+      jsonResponse(res, 400, { error: "missing userId" });
+      return;
+    }
+
+    if (typeof parsed.isActive === "boolean") {
+      userStoreRef.setActive(userId, parsed.isActive);
+    }
+    if (parsed.role === "admin" || parsed.role === "user") {
+      userStoreRef.setRole(userId, parsed.role);
+    }
+
+    const updated = userStoreRef.getUserById(userId);
+    if (!updated) {
+      jsonResponse(res, 404, { error: "user not found" });
+      return;
+    }
+    jsonResponse(res, 200, { user: updated });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
+}
 
 // ---------------------------------------------------------------------------
-// Admin: browse sessions for any token (admin or invite code)
+// Admin: browse sessions for any user
 // ---------------------------------------------------------------------------
+
+const VALID_USER_ID_RE = /^[0-9a-f]{32}$/;
 
 async function handleAdminSessions(
   req: IncomingMessage,
   res: ServerResponse,
-  url: URL,
-  cfg: WebConfig,
 ): Promise<void> {
-  if (!adminAuth(req, res, url, cfg)) return;
+  if (!adminAuth(req, res)) return;
   if (req.method !== "GET") {
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
@@ -724,20 +795,18 @@ async function handleAdminSessions(
     return;
   }
 
-  // "code" param: the invite code, or "_admin" for admin's own sessions
-  const code = url.searchParams.get("code") ?? "";
-  if (!code || !VALID_CODE_RE.test(code)) {
-    jsonResponse(res, 400, { error: "missing or invalid code parameter" });
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const userId = url.searchParams.get("userId") ?? "";
+  if (!userId || !VALID_USER_ID_RE.test(userId)) {
+    jsonResponse(res, 400, { error: "missing or invalid userId" });
     return;
   }
 
-  const effectiveToken = code === "_admin" ? cfg.token : code;
-  const prefix = `web:${effectiveToken}:`;
+  const prefix = `web:${userId}:`;
   const sessions = await messageStoreRef.listSessions(prefix);
 
-  // Enrich with model info from SessionStore
   const enriched = sessions.map((s) => {
-    const sessionKey = `web:${effectiveToken}:${s.sessionId}`;
+    const sessionKey = `web:${userId}:${s.sessionId}`;
     const persisted = sessionStoreRef?.get(sessionKey);
     return { ...s, model: persisted?.model ?? null };
   });
@@ -752,10 +821,8 @@ async function handleAdminSessions(
 async function handleAdminHistory(
   req: IncomingMessage,
   res: ServerResponse,
-  url: URL,
-  cfg: WebConfig,
 ): Promise<void> {
-  if (!adminAuth(req, res, url, cfg)) return;
+  if (!adminAuth(req, res)) return;
   if (req.method !== "GET") {
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
@@ -765,10 +832,11 @@ async function handleAdminHistory(
     return;
   }
 
-  const code = url.searchParams.get("code") ?? "";
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const userId = url.searchParams.get("userId") ?? "";
   const sessionId = url.searchParams.get("sessionId") ?? "";
-  if (!code || !VALID_CODE_RE.test(code)) {
-    jsonResponse(res, 400, { error: "missing or invalid code parameter" });
+  if (!userId || !VALID_USER_ID_RE.test(userId)) {
+    jsonResponse(res, 400, { error: "missing or invalid userId" });
     return;
   }
   if (!sessionId || !/^[\w\-]{1,64}$/.test(sessionId)) {
@@ -776,15 +844,14 @@ async function handleAdminHistory(
     return;
   }
 
-  const effectiveToken = code === "_admin" ? cfg.token : code;
-  const sessionKey = `web:${effectiveToken}:${sessionId}`;
+  const sessionKey = `web:${userId}:${sessionId}`;
   const messages = await messageStoreRef.readHistory(sessionKey);
 
   jsonResponse(res, 200, { messages });
 }
 
 // ---------------------------------------------------------------------------
-// Request router (HTTP-only routes)
+// Request router
 // ---------------------------------------------------------------------------
 
 async function handleRequest(
@@ -802,44 +869,65 @@ async function handleRequest(
 
   switch (url.pathname) {
     case "/":
-      return serveHtml(url, res, cfg);
+      return serveHtml(req, res);
+    case "/login":
+      return serveLogin(res, cfg);
     case "/admin":
-      return serveAdmin(req, url, res, cfg);
+      return serveAdmin(req, res);
+
+    // Auth routes
+    case "/api/auth/register":
+      if (!inviteStoreRef || !userStoreRef) {
+        jsonResponse(res, 503, { error: "not ready" });
+        return;
+      }
+      return handleAuthRegister(req, res, cfg, userStoreRef, inviteStoreRef);
+    case "/api/auth/login":
+      if (!userStoreRef) {
+        jsonResponse(res, 503, { error: "not ready" });
+        return;
+      }
+      return handleAuthLogin(req, res, cfg, userStoreRef);
+    case "/api/auth/logout":
+      if (!userStoreRef) {
+        jsonResponse(res, 503, { error: "not ready" });
+        return;
+      }
+      return handleAuthLogout(req, res, userStoreRef);
+    case "/api/auth/me":
+      if (!userStoreRef) {
+        jsonResponse(res, 503, { error: "not ready" });
+        return;
+      }
+      return handleAuthMe(req, res, userStoreRef, cfg);
+    case "/api/auth/google":
+      return handleGoogleRedirect(req, res, cfg);
+    case "/api/auth/google/callback":
+      if (!userStoreRef || !inviteStoreRef) {
+        jsonResponse(res, 503, { error: "not ready" });
+        return;
+      }
+      return handleGoogleCallback(req, res, cfg, userStoreRef, inviteStoreRef);
+
+    // Admin routes
     case "/api/admin/invites":
-      return handleAdminInvites(req, res, url, cfg);
+      return handleAdminInvites(req, res);
+    case "/api/admin/users":
+      return handleAdminUsers(req, res);
     case "/api/admin/sessions":
-      return handleAdminSessions(req, res, url, cfg);
+      return handleAdminSessions(req, res);
     case "/api/admin/history":
-      return handleAdminHistory(req, res, url, cfg);
-    case "/api/auth": {
-      if (req.method !== "POST") {
-        jsonResponse(res, 405, { error: "method not allowed" });
-        return;
-      }
-      const authIp = getClientIp(req);
-      if (!checkRateLimit(authIp)) {
-        jsonResponse(res, 429, { error: "too many requests" });
-        return;
-      }
-      const body = await readJsonBody(req);
-      if (!body) {
-        jsonResponse(res, 400, { error: "invalid JSON body" });
-        return;
-      }
-      const authToken = (body.token as string) ?? "";
-      const authResult = authenticate(authToken, cfg);
-      jsonResponse(res, 200, {
-        valid: authResult.kind !== "invalid",
-        isAdmin: authResult.kind === "admin",
-      });
-      return;
-    }
+      return handleAdminHistory(req, res);
+
+    // Upload
     case "/api/upload":
       if (req.method !== "POST") {
         jsonResponse(res, 405, { error: "method not allowed" });
         return;
       }
-      return handleUpload(req, res, cfg);
+      return handleUpload(req, res);
+
+    // History
     case "/api/history": {
       if (req.method !== "GET") {
         jsonResponse(res, 405, { error: "method not allowed" });
@@ -850,8 +938,7 @@ async function handleRequest(
         jsonResponse(res, 429, { error: "too many requests" });
         return;
       }
-      const histToken = url.searchParams.get("token") ?? "";
-      const histAuth = authenticate(histToken, cfg);
+      const histAuth = authenticateRequest(req);
       if (histAuth.kind === "invalid") {
         jsonResponse(res, 401, { error: "unauthorized" });
         return;
@@ -865,7 +952,7 @@ async function handleRequest(
         jsonResponse(res, 503, { error: "history unavailable" });
         return;
       }
-      const histKey = `web:${histToken}:${histSessionId}`;
+      const histKey = `web:${histAuth.user.id}:${histSessionId}`;
       const limitStr = url.searchParams.get("limit") ?? "200";
       const limit = Math.min(Math.max(parseInt(limitStr, 10) || 200, 1), 500);
       const all = await messageStoreRef.readHistory(histKey);
@@ -873,14 +960,15 @@ async function handleRequest(
       jsonResponse(res, 200, { messages, total: all.length });
       return;
     }
+
+    // Sessions
     case "/api/sessions": {
       const sessIp = getClientIp(req);
       if (!checkRateLimit(sessIp)) {
         jsonResponse(res, 429, { error: "too many requests" });
         return;
       }
-      const sessToken = url.searchParams.get("token") ?? "";
-      const sessAuth = authenticate(sessToken, cfg);
+      const sessAuth = authenticateRequest(req);
       if (sessAuth.kind === "invalid") {
         jsonResponse(res, 401, { error: "unauthorized" });
         return;
@@ -891,7 +979,7 @@ async function handleRequest(
       }
 
       if (req.method === "GET") {
-        const prefix = `web:${sessToken}:`;
+        const prefix = `web:${sessAuth.user.id}:`;
         const sessions = await messageStoreRef.listSessions(prefix);
         jsonResponse(res, 200, {
           sessions,
@@ -906,7 +994,7 @@ async function handleRequest(
           jsonResponse(res, 400, { error: "invalid sessionId" });
           return;
         }
-        const delKey = `web:${sessToken}:${delSessionId}`;
+        const delKey = `web:${sessAuth.user.id}:${delSessionId}`;
         const deleted = messageStoreRef.deleteSession(delKey);
         if (!deleted) {
           jsonResponse(res, 404, { error: "session not found" });
@@ -919,6 +1007,7 @@ async function handleRequest(
       jsonResponse(res, 405, { error: "method not allowed" });
       return;
     }
+
     case "/api/health":
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("ok");
@@ -956,7 +1045,7 @@ export const webPlugin: ChannelPlugin = {
       });
     });
 
-    // WebSocket server (noServer mode — manual upgrade handling)
+    // WebSocket server (noServer mode — manual upgrade handling via cookie)
     const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
     server.on("upgrade", (req, socket, head) => {
@@ -965,28 +1054,30 @@ export const webPlugin: ChannelPlugin = {
         socket.destroy();
         return;
       }
-      const token = url.searchParams.get("token") ?? "";
-      const auth = authenticate(token, cfg);
+
+      // Authenticate via cookie
+      const auth = authenticateRequest(req);
       if (auth.kind === "invalid") {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
       }
+
       wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit("connection", ws, req, token);
+        wss.emit("connection", ws, req, auth.user);
       });
     });
 
     wss.on(
       "connection",
-      (rawWs: WebSocket, req: IncomingMessage, token: string) => {
+      (rawWs: WebSocket, req: IncomingMessage, user: User) => {
         const ws = rawWs as KlausWebSocket;
         ws.isAlive = true;
-        ws.klausToken = token;
+        ws.klausUserId = user.id;
         ws.klausIp = getClientIp(req);
 
-        addWsClient(token, ws);
-        console.log(`[Web] WebSocket connected: ${tokenLabel(token)}`);
+        addWsClient(user.id, ws);
+        console.log(`[Web] WebSocket connected: ${userLabel(user)}`);
 
         ws.on("pong", () => {
           ws.isAlive = true;
@@ -997,16 +1088,16 @@ export const webPlugin: ChannelPlugin = {
         });
 
         ws.on("close", () => {
-          removeWsClient(token, ws);
-          console.log(`[Web] WebSocket disconnected: ${tokenLabel(token)}`);
+          removeWsClient(user.id, ws);
+          console.log(`[Web] WebSocket disconnected: ${userLabel(user)}`);
         });
 
         ws.on("error", (err) => {
           console.error(
-            `[Web] WebSocket error (${tokenLabel(token)}):`,
+            `[Web] WebSocket error (${userLabel(user)}):`,
             err.message,
           );
-          removeWsClient(token, ws);
+          removeWsClient(user.id, ws);
         });
       },
     );
@@ -1015,13 +1106,13 @@ export const webPlugin: ChannelPlugin = {
       console.log(
         `Klaus Web channel listening on http://localhost:${cfg.port}`,
       );
-      console.log(`Chat URL: http://localhost:${cfg.port}/?token=${cfg.token}`);
+      console.log(`Login: http://localhost:${cfg.port}/login`);
       console.log(
-        `Admin URL: http://localhost:${cfg.port}/admin?token=${cfg.token}`,
+        `Admin: http://localhost:${cfg.port}/admin (requires admin role)`,
       );
     });
 
-    // Config file watcher — notify clients when config.yaml changes externally
+    // Config file watcher
     let configWatcher: FSWatcher | null = null;
     let configDebounce: ReturnType<typeof setTimeout> | null = null;
     try {
@@ -1045,21 +1136,21 @@ export const webPlugin: ChannelPlugin = {
         }, 500);
       });
     } catch {
-      // config.yaml may not exist yet — non-fatal
+      // config.yaml may not exist yet
     }
 
-    // Application-layer ping — 25s keepalive to prevent proxy/tunnel timeouts
+    // Application-layer ping — 25s keepalive
     const keepalive = setInterval(() => {
-      for (const [token, clients] of wsClients) {
+      for (const [userId, clients] of wsClients) {
         for (const ws of [...clients]) {
           if (ws.readyState === WebSocket.OPEN) {
             try {
               ws.send(JSON.stringify({ type: "ping" }));
             } catch {
-              removeWsClient(token, ws);
+              removeWsClient(userId, ws);
             }
           } else {
-            removeWsClient(token, ws);
+            removeWsClient(userId, ws);
           }
         }
       }
@@ -1081,7 +1172,7 @@ export const webPlugin: ChannelPlugin = {
     // Tunnel (Cloudflare / ngrok / custom)
     let tunnelResult: import("./web-tunnel.js").TunnelResult | null = null;
     if (cfg.tunnel !== false) {
-      tunnelResult = startTunnel(cfg.tunnel, cfg.port, cfg.token);
+      tunnelResult = startTunnel(cfg.tunnel, cfg.port);
     }
 
     // Cleanup on process exit

@@ -51,11 +51,14 @@ export function runDoctor(): void {
   if (cfgExists) {
     const result = validateConfig();
     if (result.valid) {
-      const channel = result.config.channel as string;
-      allOk &&= check(`Config valid (channel: ${channel})`, true);
+      const rawChannel = result.config.channel;
+      const channels: string[] = Array.isArray(rawChannel)
+        ? rawChannel.map(String)
+        : [String(rawChannel)];
+      allOk &&= check(`Config valid (channel: ${channels.join(", ")})`, true);
 
       // Check tunnel CLI prerequisites for web channel
-      if (channel === "web") {
+      if (channels.includes("web")) {
         const webSection = (result.config.web as Record<string, unknown>) ?? {};
         const tunnel = webSection.tunnel;
         if (tunnel === true) {

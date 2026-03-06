@@ -50,7 +50,6 @@ const QQ_FIELDS: readonly FieldSpec[] = [
 ];
 
 const WEB_FIELDS: readonly FieldSpec[] = [
-  { key: "token", env: "KLAUS_WEB_TOKEN", label: "Access Token" },
   {
     key: "port",
     env: "KLAUS_WEB_PORT",
@@ -155,8 +154,14 @@ export function validateConfig(): ValidationResult {
   }
 
   // ---- channel field ----
-  const channel = raw.channel;
-  if (!channel || typeof channel !== "string") {
+  const rawChannel = raw.channel;
+  const channels: string[] = Array.isArray(rawChannel)
+    ? rawChannel.map(String)
+    : typeof rawChannel === "string"
+      ? [rawChannel]
+      : [];
+
+  if (channels.length === 0) {
     issues.push({
       path: "channel",
       message: 'missing required field "channel"',
@@ -166,47 +171,50 @@ export function validateConfig(): ValidationResult {
   }
 
   const knownIds = resolveKnownChannels();
-  if (!knownIds.includes(channel)) {
-    issues.push({
-      path: "channel",
-      message: `unknown channel "${channel}"`,
-      hint: `available: ${knownIds.join(", ")}`,
-    });
-    // Continue validating so we still report other issues
-  }
-
-  // ---- Channel-specific fields ----
-  const fieldSpecs = channelFieldSpecs(channel);
-  if (fieldSpecs) {
-    const section = (raw[channel] as Record<string, unknown>) ?? {};
-    for (const spec of fieldSpecs) {
-      const value =
-        section[spec.key] ?? (spec.env ? process.env[spec.env] : undefined);
-      if (value == null || value === "") {
-        const envNote = spec.env ? ` (or env: ${spec.env})` : "";
-        issues.push({
-          path: `${channel}.${spec.key}`,
-          message: `missing required field "${spec.key}"${envNote}`,
-          hint: `provide ${spec.label}`,
-        });
-        continue;
-      }
-      if (spec.validate) {
-        const err = spec.validate(value);
-        if (err) {
-          issues.push({
-            path: `${channel}.${spec.key}`,
-            message: `invalid "${spec.key}": ${err}`,
-          });
-        }
-      }
+  for (const channel of channels) {
+    if (!knownIds.includes(channel)) {
+      issues.push({
+        path: "channel",
+        message: `unknown channel "${channel}"`,
+        hint: `available: ${knownIds.join(", ")}`,
+      });
     }
   }
 
-  // Tunnel-specific validation for web channel
-  if (channel === "web") {
-    const webSection = (raw[channel] as Record<string, unknown>) ?? {};
-    validateTunnelConfig(webSection.tunnel, issues);
+  // ---- Channel-specific fields ----
+  for (const channel of channels) {
+    const fieldSpecs = channelFieldSpecs(channel);
+    if (fieldSpecs) {
+      const section = (raw[channel] as Record<string, unknown>) ?? {};
+      for (const spec of fieldSpecs) {
+        const value =
+          section[spec.key] ?? (spec.env ? process.env[spec.env] : undefined);
+        if (value == null || value === "") {
+          const envNote = spec.env ? ` (or env: ${spec.env})` : "";
+          issues.push({
+            path: `${channel}.${spec.key}`,
+            message: `missing required field "${spec.key}"${envNote}`,
+            hint: `provide ${spec.label}`,
+          });
+          continue;
+        }
+        if (spec.validate) {
+          const err = spec.validate(value);
+          if (err) {
+            issues.push({
+              path: `${channel}.${spec.key}`,
+              message: `invalid "${spec.key}": ${err}`,
+            });
+          }
+        }
+      }
+    }
+
+    // Tunnel-specific validation for web channel
+    if (channel === "web") {
+      const webSection = (raw[channel] as Record<string, unknown>) ?? {};
+      validateTunnelConfig(webSection.tunnel, issues);
+    }
   }
 
   return { valid: issues.length === 0, issues, config: raw };

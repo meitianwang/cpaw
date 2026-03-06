@@ -2,9 +2,13 @@ import { existsSync } from "node:fs";
 import { qqPlugin } from "./channels/qq.js";
 import { wecomPlugin } from "./channels/wecom.js";
 import { webPlugin } from "./channels/web.js";
-import { registerChannel, getChannel } from "./channels/types.js";
 import {
-  getChannelName,
+  registerChannel,
+  getChannel,
+  type ChannelPlugin,
+} from "./channels/types.js";
+import {
+  getChannelNames,
   CONFIG_FILE,
   loadSessionConfig,
   loadTranscriptsConfig,
@@ -48,11 +52,15 @@ async function start(): Promise<void> {
   // Validate config before attempting to connect (fail-fast)
   ensureConfigValid();
 
-  const channelName = getChannelName();
-  const plugin = getChannel(channelName);
-  if (!plugin) {
-    console.error(`Internal error: channel "${channelName}" not registered.`);
-    process.exit(1);
+  const channelNames = getChannelNames();
+  const plugins: ChannelPlugin[] = [];
+  for (const name of channelNames) {
+    const plugin = getChannel(name);
+    if (!plugin) {
+      console.error(`Internal error: channel "${name}" not registered.`);
+      process.exit(1);
+    }
+    plugins.push(plugin);
   }
 
   // Initialize session persistence
@@ -77,8 +85,9 @@ async function start(): Promise<void> {
 
   // Expose stores to web channel for API endpoints
   let inviteStoreInstance: { close(): void } | null = null;
-  if (channelName === "web") {
-    const { setMessageStore, setInviteStore, setSessionStore } =
+  let userStoreInstance: { close(): void } | null = null;
+  if (channelNames.includes("web")) {
+    const { setMessageStore, setInviteStore, setSessionStore, setUserStore } =
       await import("./channels/web.js");
     setMessageStore(messageStore);
     setSessionStore(store);
@@ -87,6 +96,20 @@ async function start(): Promise<void> {
     const inviteStore = new InviteStore();
     setInviteStore(inviteStore);
     inviteStoreInstance = inviteStore;
+
+    const { UserStore } = await import("./user-store.js");
+    const { loadWebConfig } = await import("./config.js");
+    const webCfg = loadWebConfig();
+    const sessionMaxAgeMs = webCfg.sessionMaxAgeDays * 24 * 60 * 60 * 1000;
+    const userStore = new UserStore(undefined, sessionMaxAgeMs);
+    setUserStore(userStore);
+    userStoreInstance = userStore;
+
+    // Prune expired auth sessions on startup
+    const pruned = userStore.pruneExpiredSessions();
+    if (pruned > 0) {
+      console.log(`[UserStore] Pruned ${pruned} expired auth session(s)`);
+    }
   }
 
   const handler = async (
@@ -147,10 +170,13 @@ async function start(): Promise<void> {
   };
 
   try {
-    await plugin.start(handler);
+    // Start all channels in parallel (each blocks forever).
+    // If any rejects, Promise.all rejects → finally runs → process.exit(1) in main().
+    await Promise.all(plugins.map((p) => p.start(handler)));
   } finally {
     await sessions.close();
     inviteStoreInstance?.close();
+    userStoreInstance?.close();
   }
 }
 

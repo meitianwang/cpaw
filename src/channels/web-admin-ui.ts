@@ -117,17 +117,17 @@ tr.clickable:hover { background: var(--card-bg); }
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-  var token = new URLSearchParams(location.search).get("token") || localStorage.getItem("klaus_token");
-  if (!token) { location.href = "/"; return; }
-
-  // Verify admin access before showing UI
-  fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: token }) })
-    .then(function(r) { return r.json(); })
+  // Verify admin access via cookie session
+  fetch("/api/auth/me", { credentials: "same-origin" })
+    .then(function(r) {
+      if (!r.ok) { location.href = "/login"; throw new Error("not authenticated"); }
+      return r.json();
+    })
     .then(function(data) {
-      if (!data.valid || !data.isAdmin) { location.href = "/"; return; }
+      if (data.user.role !== "admin") { location.href = "/"; return; }
       initAdmin();
     })
-    .catch(function() { location.href = "/"; });
+    .catch(function() {});
   return;
 
   function initAdmin() {
@@ -150,52 +150,60 @@ tr.clickable:hover { background: var(--card-bg); }
   function showToast(msg) { toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(function() { toastEl.classList.remove("show"); }, 2000); }
   function fmtDate(ts) { if (!ts) return "-"; return new Date(ts).toLocaleString(); }
   function fmtRelative(ts) { if (!ts) return "-"; var d = Date.now() - ts; if (d < 60000) return "just now"; if (d < 3600000) return Math.floor(d/60000) + "m ago"; if (d < 86400000) return Math.floor(d/3600000) + "h ago"; return Math.floor(d/86400000) + "d ago"; }
-  function shareUrl(code) { return location.origin + "/?token=" + encodeURIComponent(code); }
-
   function showView(name) {
     currentView = name;
     Object.keys(views).forEach(function(k) { views[k].classList.toggle("active", k === name); });
   }
 
   function api(path, method, params) {
-    var qs = "token=" + encodeURIComponent(token);
-    var opts = { method: method || "GET" };
-    if (method === "POST") {
+    var qs = "";
+    var opts = { method: method || "GET", credentials: "same-origin" };
+    if (method === "POST" || method === "PATCH") {
       opts.headers = { "Content-Type": "application/json" };
       opts.body = JSON.stringify(params || {});
+    } else if (method === "DELETE" && params) {
+      var pairs = [];
+      Object.keys(params).forEach(function(k) { pairs.push(k + "=" + encodeURIComponent(params[k])); });
+      qs = pairs.join("&");
     } else if (params) {
-      Object.keys(params).forEach(function(k) { qs += "&" + k + "=" + encodeURIComponent(params[k]); });
+      var pairs2 = [];
+      Object.keys(params).forEach(function(k) { pairs2.push(k + "=" + encodeURIComponent(params[k])); });
+      qs = pairs2.join("&");
     }
-    return fetch("/api/admin/" + path + "?" + qs, opts).then(function(r) { return r.json(); });
+    var url = "/api/admin/" + path + (qs ? "?" + qs : "");
+    return fetch(url, opts).then(function(r) { return r.json(); });
   }
 
-  // --- Main view: invite codes with stats ---
-  function renderMain(data) {
-    var codes = data.invites || [];
-    var admin = data.admin || {};
+  // --- Main view: users + invite codes ---
+  function renderMain(usersData, invitesData) {
+    var users = usersData.users || [];
+    var codes = invitesData.invites || [];
 
-    adminStatsEl.innerHTML =
-      "<div class='stat-card' id='admin-card'>"
-      + "<div class='stat-label'>Admin (You)</div>"
-      + "<div class='stat-value'>" + esc(String(admin.sessionCount || 0)) + " <span style='font-size:14px;font-weight:400;color:var(--muted)'>sessions</span></div>"
-      + "<div style='font-size:13px;color:var(--muted);margin-top:4px'>" + esc(String(admin.totalMessages || 0)) + " messages &middot; " + esc(fmtRelative(admin.lastActive)) + "</div>"
-      + "</div>";
+    // User stats cards
+    adminStatsEl.innerHTML = users.map(function(u) {
+      return "<div class='stat-card' data-uid='" + esc(u.id) + "'>"
+        + "<div class='stat-label'>" + esc(u.displayName) + " <span style='font-size:10px;text-transform:none'>(" + esc(u.role) + ")</span></div>"
+        + "<div class='stat-value'>" + esc(String(u.sessionCount || 0)) + " <span style='font-size:14px;font-weight:400;color:var(--muted)'>sessions</span></div>"
+        + "<div style='font-size:13px;color:var(--muted);margin-top:4px'>" + esc(u.email) + " &middot; " + esc(String(u.totalMessages || 0)) + " msgs</div>"
+        + "</div>";
+    }).join("");
 
-    document.getElementById("admin-card").onclick = function() { openSessions("_admin", "Admin"); };
+    adminStatsEl.querySelectorAll(".stat-card[data-uid]").forEach(function(card) {
+      card.onclick = function() { openSessions(card.dataset.uid, users.find(function(u) { return u.id === card.dataset.uid; })?.displayName || "User"); };
+    });
 
+    // Invite codes table
     if (!codes.length) { tableWrap.innerHTML = ""; emptyEl.style.display = "block"; return; }
     emptyEl.style.display = "none";
 
-    var html = "<table><thead><tr><th>Code</th><th>Label</th><th>Sessions</th><th>Messages</th><th>Last Active</th><th>Actions</th></tr></thead><tbody>";
+    var html = "<table><thead><tr><th>Code</th><th>Label</th><th>Created</th><th>Actions</th></tr></thead><tbody>";
     codes.forEach(function(c) {
-      html += "<tr class='clickable' data-view-code='" + esc(c.code) + "' data-view-label='" + esc(c.label || c.code.slice(0,8)) + "'>"
+      html += "<tr>"
         + "<td><span class='code-text'>" + esc(c.code.slice(0,8)) + "...</span></td>"
         + "<td>" + esc(c.label || "-") + "</td>"
-        + "<td class='stat'>" + esc(String(c.sessionCount || 0)) + "</td>"
-        + "<td class='stat'>" + esc(String(c.totalMessages || 0)) + "</td>"
-        + "<td class='stat-muted'>" + esc(fmtRelative(c.lastActive)) + "</td>"
+        + "<td class='stat-muted'>" + esc(fmtRelative(c.createdAt)) + "</td>"
         + "<td><div class='actions'>"
-        + "<button class='btn btn-sm btn-copy' data-url='" + esc(shareUrl(c.code)) + "'>Copy URL</button>"
+        + "<button class='btn btn-sm btn-copy' data-code='" + esc(c.code) + "'>Copy Code</button>"
         + "<button class='btn btn-sm btn-danger' data-del='" + esc(c.code) + "'>Delete</button>"
         + "</div></td></tr>";
     });
@@ -207,20 +215,19 @@ tr.clickable:hover { background: var(--card-bg); }
     var btn = e.target.closest("button");
     if (btn) {
       e.stopPropagation();
-      if (btn.dataset.url) {
-        navigator.clipboard.writeText(btn.dataset.url).then(function() { showToast("URL copied!"); });
+      if (btn.dataset.code) {
+        navigator.clipboard.writeText(btn.dataset.code).then(function() { showToast("Code copied!"); });
       } else if (btn.dataset.del) {
-        if (!confirm("Delete this invite code? Users with this code will lose access.")) return;
+        if (!confirm("Delete this invite code?")) return;
         api("invites", "DELETE", { code: btn.dataset.del }).then(function() { loadMain(); showToast("Deleted"); });
       }
-      return;
     }
-    var row = e.target.closest("tr[data-view-code]");
-    if (row) { openSessions(row.dataset.viewCode, row.dataset.viewLabel); }
   });
 
   function loadMain() {
-    api("invites", "GET").then(function(data) { renderMain(data); });
+    Promise.all([api("users", "GET"), api("invites", "GET")]).then(function(results) {
+      renderMain(results[0], results[1]);
+    });
   }
 
   createBtn.onclick = function() {
@@ -228,8 +235,8 @@ tr.clickable:hover { background: var(--card-bg); }
     api("invites", "POST", { label: label }).then(function(data) {
       labelInput.value = "";
       if (data.invite) {
-        navigator.clipboard.writeText(shareUrl(data.invite.code)).then(function() {
-          showToast("Created! URL copied");
+        navigator.clipboard.writeText(data.invite.code).then(function() {
+          showToast("Created! Code copied");
         }).catch(function() { showToast("Created!"); });
       }
       loadMain();
@@ -238,15 +245,15 @@ tr.clickable:hover { background: var(--card-bg); }
   labelInput.addEventListener("keydown", function(e) { if (e.key === "Enter") createBtn.onclick(); });
 
   // --- Sessions view ---
-  var sessCode = "", sessLabel = "";
+  var sessUserId = "", sessLabel = "";
 
-  function openSessions(code, label) {
-    sessCode = code; sessLabel = label;
+  function openSessions(userId, label) {
+    sessUserId = userId; sessLabel = label;
     document.getElementById("bc-code").textContent = label;
     document.getElementById("sessions-title").textContent = label + " — Sessions";
     showView("sessions");
     sessionsWrap.innerHTML = "<div class='empty'>Loading...</div>";
-    api("sessions", "GET", { code: code }).then(function(data) { renderSessions(data.sessions || []); });
+    api("sessions", "GET", { userId: userId }).then(function(data) { renderSessions(data.sessions || []); });
   }
 
   function renderSessions(sessions) {
@@ -274,12 +281,12 @@ tr.clickable:hover { background: var(--card-bg); }
   // --- History view ---
   function openHistory(sessionId, title) {
     document.getElementById("bc-sessions").textContent = sessLabel;
-    document.getElementById("bc-sessions").onclick = function(e) { e.preventDefault(); openSessions(sessCode, sessLabel); };
+    document.getElementById("bc-sessions").onclick = function(e) { e.preventDefault(); openSessions(sessUserId, sessLabel); };
     document.getElementById("bc-session").textContent = title;
     document.getElementById("history-title").textContent = title;
     showView("history");
     historyWrap.innerHTML = "<div class='empty'>Loading...</div>";
-    api("history", "GET", { code: sessCode, sessionId: sessionId }).then(function(data) { renderHistory(data.messages || []); });
+    api("history", "GET", { userId: sessUserId, sessionId: sessionId }).then(function(data) { renderHistory(data.messages || []); });
   }
 
   function renderMd(text) {

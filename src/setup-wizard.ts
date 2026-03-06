@@ -1,7 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { execSync, execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { CONFIG_FILE, loadConfig, saveConfig } from "./config.js";
@@ -178,17 +177,10 @@ async function collectWebConfig(
 ): Promise<Record<string, unknown>> {
   p.log.info(t("web_guide"));
 
-  const prevToken = (prev?.token as string) ?? "";
   const prevPort = prev?.port != null ? String(prev.port) : "3000";
 
-  // Basic config: token + port
+  // Basic config: port only (auth is now user-based with invite codes)
   const basic = await p.group({
-    token: () =>
-      p.text({
-        message: t("web_token"),
-        placeholder: prevToken || "(auto-generate)",
-        defaultValue: prevToken || "",
-      }),
     port: () =>
       p.text({
         message: t("web_port"),
@@ -197,18 +189,6 @@ async function collectWebConfig(
       }),
   });
   if (p.isCancel(basic)) process.exit(0);
-
-  // Auto-generate token if empty or placeholder
-  let token = (basic.token as string).trim();
-  if (!token || token === "(auto-generate)") {
-    // Keep previous token if available, otherwise generate new
-    if (prevToken && prevToken !== "(auto-generate)") {
-      token = prevToken;
-    } else {
-      token = randomBytes(24).toString("hex");
-      p.log.info(t("web_token_generated", { token }));
-    }
-  }
 
   // Tunnel mode selection
   const tunnelMode = await p.select({
@@ -310,7 +290,6 @@ async function collectWebConfig(
   p.log.success(t("web_setup_done"));
 
   return {
-    token,
     port: Number(basic.port) || 3000,
     tunnel: tunnelCfg,
   };
@@ -362,8 +341,11 @@ export async function runSetup(): Promise<void> {
   let prevConfig: Record<string, unknown> | null = null;
   if (existsSync(CONFIG_FILE)) {
     const existing = loadConfig();
-    const ch = (existing.channel as string) ?? "unknown";
-    p.log.warn(t("config_exists", { path: CONFIG_FILE, channel: ch }));
+    const rawCh = existing.channel;
+    const chDisplay = Array.isArray(rawCh)
+      ? rawCh.join(", ")
+      : String(rawCh ?? "unknown");
+    p.log.warn(t("config_exists", { path: CONFIG_FILE, channel: chDisplay }));
 
     const action = await p.select({
       message: t("config_action"),
@@ -395,73 +377,86 @@ export async function runSetup(): Promise<void> {
     return;
   }
 
-  // Step 2: Choose channel
-  const prevChannel = (prevConfig?.channel as string) ?? undefined;
-  const channel = await p.select({
+  // Step 2: Choose channel(s)
+  const prevChannelRaw = prevConfig?.channel;
+  const prevChannels: string[] = Array.isArray(prevChannelRaw)
+    ? prevChannelRaw.map(String)
+    : typeof prevChannelRaw === "string"
+      ? [prevChannelRaw]
+      : [];
+
+  p.log.info(t("choose_channel_hint"));
+  const channels = await p.multiselect({
     message: t("choose_channel"),
     options: [
-      { value: "qq" as const, label: `qq — ${t("channel_qq")}` },
-      { value: "wecom" as const, label: `wecom — ${t("channel_wecom")}` },
-      { value: "web" as const, label: `web — ${t("channel_web")}` },
+      {
+        value: "qq" as const,
+        label: `qq — ${t("channel_qq")}`,
+      },
+      {
+        value: "wecom" as const,
+        label: `wecom — ${t("channel_wecom")}`,
+      },
+      {
+        value: "web" as const,
+        label: `web — ${t("channel_web")}`,
+      },
     ],
-    initialValue: prevChannel as "qq" | "wecom" | "web" | undefined,
+    initialValues: prevChannels as ("qq" | "wecom" | "web")[],
+    required: true,
   });
-  if (p.isCancel(channel)) process.exit(0);
+  if (p.isCancel(channels)) process.exit(0);
 
-  // Step 3: Collect channel config & install deps
-  let channelCfg: Record<string, unknown> = {};
-  if (channel === "qq") {
-    p.log.step(t("qq_title"));
+  // Step 3: Collect channel config & install deps for each selected channel
+  const channelConfigs: Record<string, Record<string, unknown>> = {};
 
-    // Install qq-group-bot if missing (use require.resolve to avoid executing module code)
-    try {
-      require.resolve("qq-group-bot");
-    } catch {
-      const s2 = p.spinner();
-      s2.start(t("installing_qq_dep"));
+  for (const channel of channels) {
+    if (channel === "qq") {
+      p.log.step(t("qq_title"));
+
+      // Install qq-group-bot if missing
       try {
-        execSync("npm install -g qq-group-bot", { stdio: "pipe" });
-        s2.stop(pc.green(t("qq_dep_ok")));
+        require.resolve("qq-group-bot");
       } catch {
-        s2.stop(pc.yellow(t("qq_dep_fail")));
+        const s2 = p.spinner();
+        s2.start(t("installing_qq_dep"));
+        try {
+          execSync("npm install -g qq-group-bot", { stdio: "pipe" });
+          s2.stop(pc.green(t("qq_dep_ok")));
+        } catch {
+          s2.stop(pc.yellow(t("qq_dep_fail")));
+        }
       }
-    }
 
-    const prevQQ =
-      prevConfig && prevChannel === "qq"
-        ? (prevConfig.qq as Record<string, unknown>)
-        : undefined;
-    channelCfg = await collectQQConfig(prevQQ);
-    p.log.success(t("qq_verify_ok"));
-  } else if (channel === "wecom") {
-    p.log.step(t("wecom_title"));
-    const prevWeCom =
-      prevConfig && prevChannel === "wecom"
-        ? (prevConfig.wecom as Record<string, unknown>)
-        : undefined;
-    channelCfg = await collectWeComConfig(prevWeCom);
+      const prevQQ = prevConfig?.qq as Record<string, unknown> | undefined;
+      channelConfigs.qq = await collectQQConfig(prevQQ);
+      p.log.success(t("qq_verify_ok"));
+    } else if (channel === "wecom") {
+      p.log.step(t("wecom_title"));
+      const prevWeCom = prevConfig?.wecom as
+        | Record<string, unknown>
+        | undefined;
+      channelConfigs.wecom = await collectWeComConfig(prevWeCom);
 
-    // Verify WeCom credentials
-    const ok = await verifyWeComToken(
-      channelCfg.corp_id as string,
-      channelCfg.corp_secret as string,
-    );
-    if (!ok) {
-      const saveAnyway = await p.confirm({
-        message: lang === "zh" ? "仍然保存配置?" : "Save config anyway?",
-      });
-      if (p.isCancel(saveAnyway) || !saveAnyway) {
-        p.outro(lang === "zh" ? "已取消。" : "Cancelled.");
-        return;
+      // Verify WeCom credentials
+      const ok = await verifyWeComToken(
+        channelConfigs.wecom.corp_id as string,
+        channelConfigs.wecom.corp_secret as string,
+      );
+      if (!ok) {
+        const saveAnyway = await p.confirm({
+          message: lang === "zh" ? "仍然保存配置?" : "Save config anyway?",
+        });
+        if (p.isCancel(saveAnyway) || !saveAnyway) {
+          p.outro(lang === "zh" ? "已取消。" : "Cancelled.");
+          return;
+        }
       }
+    } else if (channel === "web") {
+      p.log.step(t("web_title"));
+      const prevWeb = prevConfig?.web as Record<string, unknown> | undefined;
+      channelConfigs.web = await collectWebConfig(prevWeb);
     }
-  } else if (channel === "web") {
-    p.log.step(t("web_title"));
-    const prevWeb =
-      prevConfig && prevChannel === "web"
-        ? (prevConfig.web as Record<string, unknown>)
-        : undefined;
-    channelCfg = await collectWebConfig(prevWeb);
   }
 
   // Step 4: Bot persona
@@ -554,9 +549,11 @@ export async function runSetup(): Promise<void> {
   }
 
   // Step 5: Save
-  const configData: Record<string, unknown> = { channel };
-  if (Object.keys(channelCfg).length > 0) {
-    configData[channel] = channelCfg;
+  const configData: Record<string, unknown> = {
+    channel: channels.length === 1 ? channels[0] : channels,
+  };
+  for (const [key, cfg] of Object.entries(channelConfigs)) {
+    configData[key] = cfg;
   }
   if (persona) {
     configData.persona = persona;
