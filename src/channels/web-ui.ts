@@ -164,9 +164,9 @@ html, body { height: 100dvh; width: 100vw; margin: 0; padding: 0; font-family: v
 .logout-btn:hover { color: var(--fg); }
 .msg.streaming .cursor { display: inline-block; width: 2px; height: 1em; background: var(--thinking); animation: blink 0.8s step-end infinite; vertical-align: text-bottom; margin-left: 1px; }
 @keyframes blink { 50% { opacity: 0; } }
-.sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 280px; background: var(--input-container); border-right: 1px solid var(--border); z-index: 30; transform: translateX(-100%); transition: transform 0.25s ease; display: flex; flex-direction: column; }
-.sidebar.open { transform: translateX(0); }
-@media (min-width: 769px) { .sidebar { position: relative; transform: none !important; } }
+.sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 280px; background: var(--input-container); border-right: 1px solid var(--border); z-index: 30; transform: translateX(-100%); transition: transform 0.25s ease, visibility 0s 0.25s; visibility: hidden; pointer-events: none; display: flex; flex-direction: column; }
+.sidebar.open { transform: translateX(0); visibility: visible; pointer-events: auto; transition: transform 0.25s ease, visibility 0s 0s; }
+@media (min-width: 769px) { .sidebar { position: relative; transform: none !important; visibility: visible !important; pointer-events: auto !important; transition: none; } }
 .sidebar-header { padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
 .sidebar-title { font-weight: 600; font-size: 15px; }
 .new-chat-btn { background: var(--accent); color: var(--accent-text); border: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: var(--font-main); transition: background 0.2s; }
@@ -189,7 +189,7 @@ html, body { height: 100dvh; width: 100vw; margin: 0; padding: 0; font-family: v
 .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 25; display: none; }
 .sidebar-overlay.show { display: block; }
 @media (min-width: 769px) { .sidebar-overlay { display: none !important; } }
-.menu-btn { background: transparent; border: none; cursor: pointer; color: var(--fg); padding: 8px; margin-left: -8px; display: flex; align-items: center; font-size: 18px; }
+.menu-btn { background: transparent; border: none; cursor: pointer; color: var(--fg); padding: 8px; margin-left: -8px; display: flex; align-items: center; font-size: 18px; touch-action: manipulation; position: relative; z-index: 50; }
 @media (min-width: 769px) { .menu-btn { display: none !important; } }
 .perm-banner { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); max-width: 600px; width: calc(100% - 32px); background: var(--input-container); border: 1px solid var(--border); border-radius: 16px; padding: 14px 18px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); z-index: 20; animation: fade-in 0.3s ease-out; display: flex; align-items: center; gap: 12px; }
 .perm-info { flex: 1; min-width: 0; }
@@ -1005,7 +1005,11 @@ html, body { height: 100dvh; width: 100vw; margin: 0; padding: 0; font-family: v
     
     const avatar = document.createElement("div");
     avatar.className = "avatar";
-    avatar.textContent = role === "user" ? "U" : "K";
+    if (role === "user") {
+      avatar.textContent = "U";
+    } else {
+      avatar.innerHTML = '<img src="/avatar.jpg" alt="K">';
+    }
     wrap.appendChild(avatar);
 
     const el = document.createElement("div");

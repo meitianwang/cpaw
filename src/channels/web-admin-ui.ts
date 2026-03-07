@@ -11,7 +11,7 @@
 
 export function getAdminHtml(): string {
   return `<!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -100,48 +100,48 @@ tr.clickable:hover { background: var(--card-bg); }
   <div id="header">
     <div class="brand"><div class="brand-icon"><img src="/logo.png" alt="Klaus AI Logo" /></div>Klaus Admin</div>
     <div class="header-links">
-      <a class="nav-link" id="back-link" href="#">← Chat</a>
+      <a class="nav-link" id="back-link" href="#" data-i18n="back_chat">← Chat</a>
     </div>
   </div>
   <div id="view-main" class="view active">
-    <h2 class="section-title">Settings</h2>
+    <h2 class="section-title" data-i18n="settings">Settings</h2>
     <div class="settings-section" id="settings-section">
       <div class="setting-row">
-        <label class="setting-label" for="setting-model">Default Model</label>
+        <label class="setting-label" for="setting-model" data-i18n="default_model">Default Model</label>
         <div class="setting-control">
           <select id="setting-model" class="setting-select"><option value="">Loading...</option></select>
         </div>
       </div>
       <div class="setting-row">
-        <label class="setting-label" for="setting-persona">System Prompt</label>
+        <label class="setting-label" for="setting-persona" data-i18n="system_prompt">System Prompt</label>
         <div class="setting-control">
-          <textarea id="setting-persona" class="setting-textarea" rows="3" placeholder="Optional persona / system prompt for Claude"></textarea>
+          <textarea id="setting-persona" class="setting-textarea" rows="3" data-i18n="persona_placeholder" placeholder="Optional persona / system prompt for Claude"></textarea>
         </div>
       </div>
       <div class="setting-row" style="justify-content:flex-end">
-        <button class="btn btn-primary btn-sm" id="save-settings-btn">Save Settings</button>
+        <button class="btn btn-primary btn-sm" id="save-settings-btn" data-i18n="save_settings">Save Settings</button>
         <span id="settings-status" style="font-size:13px;color:var(--success);margin-left:10px;opacity:0;transition:opacity 0.3s"></span>
       </div>
     </div>
 
-    <h2 class="section-title" style="margin-top:32px">Users</h2>
+    <h2 class="section-title" style="margin-top:32px" data-i18n="users">Users</h2>
     <div class="stats-row" id="admin-stats"></div>
-    <h2 class="section-title">Invite Codes</h2>
+    <h2 class="section-title" data-i18n="invite_codes">Invite Codes</h2>
     <div class="create-row">
-      <input id="label-input" placeholder="Label (optional, e.g. 'Alice', 'Team A')" maxlength="100">
-      <button class="btn btn-primary" id="create-btn">Create</button>
+      <input id="label-input" data-i18n="label_placeholder" placeholder="Label (optional, e.g. 'Alice', 'Team A')" maxlength="100">
+      <button class="btn btn-primary" id="create-btn" data-i18n="create">Create</button>
     </div>
     <div id="table-wrap"></div>
-    <div id="empty" class="empty" style="display:none">No invite codes yet. Create one above.</div>
+    <div id="empty" class="empty" style="display:none" data-i18n="no_invites">No invite codes yet. Create one above.</div>
   </div>
   <div id="view-sessions" class="view">
     <div class="breadcrumb"><a href="#" id="bc-home">Admin</a> &rsaquo; <span id="bc-code"></span></div>
-    <h2 class="section-title" id="sessions-title">Sessions</h2>
+    <h2 class="section-title" id="sessions-title" data-i18n="sessions_label">Sessions</h2>
     <div id="sessions-wrap"></div>
   </div>
   <div id="view-history" class="view">
     <div class="breadcrumb"><a href="#" id="bc-home2">Admin</a> &rsaquo; <a href="#" id="bc-sessions"></a> &rsaquo; <span id="bc-session"></span></div>
-    <h2 class="section-title" id="history-title">Conversation</h2>
+    <h2 class="section-title" id="history-title" data-i18n="conversation">Conversation</h2>
     <div id="history-wrap" class="chat-wrap"></div>
   </div>
 </div>
@@ -162,6 +162,88 @@ tr.clickable:hover { background: var(--card-bg); }
   return;
 
   function initAdmin() {
+
+  // --- i18n ---
+  var I18N = {
+    en: {
+      back_chat: "← Chat",
+      settings: "Settings",
+      default_model: "Default Model",
+      system_prompt: "System Prompt",
+      persona_placeholder: "Optional persona / system prompt for Claude",
+      save_settings: "Save Settings",
+      saved: "Saved!",
+      users: "Users",
+      sessions_label: "sessions",
+      msgs_label: "msgs",
+      invite_codes: "Invite Codes",
+      label_placeholder: "Label (optional, e.g. 'Alice', 'Team A')",
+      create: "Create",
+      no_invites: "No invite codes yet. Create one above.",
+      code: "Code",
+      label: "Label",
+      created: "Created",
+      actions: "Actions",
+      copy_code: "Copy Code",
+      delete: "Delete",
+      used_codes: "Used Codes",
+      used_by: "Used By",
+      used_at: "Used At",
+      code_copied: "Code copied!",
+      confirm_delete: "Delete this invite code?",
+      deleted: "Deleted",
+      created_copied: "Created! Code copied",
+      created_ok: "Created!",
+      conversation: "Conversation",
+      no_sessions: "No sessions found",
+      no_messages: "No messages in this session",
+    },
+    zh: {
+      back_chat: "← 对话",
+      settings: "设置",
+      default_model: "默认模型",
+      system_prompt: "系统提示词",
+      persona_placeholder: "可选的人设 / 系统提示词",
+      save_settings: "保存设置",
+      saved: "已保存!",
+      users: "用户",
+      sessions_label: "会话",
+      msgs_label: "消息",
+      invite_codes: "邀请码",
+      label_placeholder: "标签 (可选，如 'Alice', 'Team A')",
+      create: "创建",
+      no_invites: "还没有邀请码，点击上方创建。",
+      code: "代码",
+      label: "标签",
+      created: "创建时间",
+      actions: "操作",
+      copy_code: "复制",
+      delete: "删除",
+      used_codes: "已使用",
+      used_by: "使用者",
+      used_at: "使用时间",
+      code_copied: "已复制!",
+      confirm_delete: "确定删除此邀请码？",
+      deleted: "已删除",
+      created_copied: "已创建并复制!",
+      created_ok: "已创建!",
+      conversation: "对话记录",
+      no_sessions: "暂无会话",
+      no_messages: "该会话暂无消息",
+    }
+  };
+  var currentLang = localStorage.getItem("klaus_lang") || "en";
+  function tt(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.en[key] || key; }
+
+  // Apply i18n to static elements
+  document.querySelectorAll("[data-i18n]").forEach(function(el) {
+    var key = el.getAttribute("data-i18n");
+    if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+      el.placeholder = tt(key);
+    } else {
+      el.textContent = tt(key);
+    }
+  });
 
   document.getElementById("back-link").href = "/";
 
@@ -197,7 +279,7 @@ tr.clickable:hover { background: var(--card-bg); }
     })
       .then(function(r) { return r.json(); })
       .then(function() {
-        settingsStatus.textContent = "Saved!";
+        settingsStatus.textContent = tt("saved");
         settingsStatus.style.opacity = "1";
         setTimeout(function() { settingsStatus.style.opacity = "0"; }, 2000);
       })
@@ -261,8 +343,8 @@ tr.clickable:hover { background: var(--card-bg); }
     adminStatsEl.innerHTML = users.map(function(u) {
       return "<div class='stat-card' data-uid='" + esc(u.id) + "'>"
         + "<div class='stat-label'>" + esc(u.displayName) + " <span style='font-size:10px;text-transform:none'>(" + esc(u.role) + ")</span></div>"
-        + "<div class='stat-value'>" + esc(String(u.sessionCount || 0)) + " <span style='font-size:14px;font-weight:400;color:var(--muted)'>sessions</span></div>"
-        + "<div style='font-size:13px;color:var(--muted);margin-top:4px'>" + esc(u.email) + " &middot; " + esc(String(u.totalMessages || 0)) + " msgs</div>"
+        + "<div class='stat-value'>" + esc(String(u.sessionCount || 0)) + " <span style='font-size:14px;font-weight:400;color:var(--muted)'>" + tt("sessions_label") + "</span></div>"
+        + "<div style='font-size:13px;color:var(--muted);margin-top:4px'>" + esc(u.email) + " &middot; " + esc(String(u.totalMessages || 0)) + " " + tt("msgs_label") + "</div>"
         + "</div>";
     }).join("");
 
@@ -281,15 +363,15 @@ tr.clickable:hover { background: var(--card-bg); }
 
     // Active invite codes
     if (activeCodes.length) {
-      html += "<table><thead><tr><th>Code</th><th>Label</th><th>Created</th><th>Actions</th></tr></thead><tbody>";
+      html += "<table><thead><tr><th>" + tt("code") + "</th><th>" + tt("label") + "</th><th>" + tt("created") + "</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
       activeCodes.forEach(function(c) {
         html += "<tr>"
           + "<td><span class='code-text'>" + esc(c.code.slice(0,8)) + "...</span></td>"
           + "<td>" + esc(c.label || "-") + "</td>"
           + "<td class='stat-muted'>" + esc(fmtRelative(c.createdAt)) + "</td>"
           + "<td><div class='actions'>"
-          + "<button class='btn btn-sm btn-copy' data-code='" + esc(c.code) + "'>Copy Code</button>"
-          + "<button class='btn btn-sm btn-danger' data-del='" + esc(c.code) + "'>Delete</button>"
+          + "<button class='btn btn-sm btn-copy' data-code='" + esc(c.code) + "'>" + tt("copy_code") + "</button>"
+          + "<button class='btn btn-sm btn-danger' data-del='" + esc(c.code) + "'>" + tt("delete") + "</button>"
           + "</div></td></tr>";
       });
       html += "</tbody></table>";
@@ -297,8 +379,8 @@ tr.clickable:hover { background: var(--card-bg); }
 
     // Used invite codes history
     if (usedCodes.length) {
-      html += "<div style='margin-top:20px;font-weight:600;font-size:14px;color:var(--muted)'>Used Codes</div>";
-      html += "<table><thead><tr><th>Code</th><th>Label</th><th>Used By</th><th>Used At</th></tr></thead><tbody>";
+      html += "<div style='margin-top:20px;font-weight:600;font-size:14px;color:var(--muted)'>" + tt("used_codes") + "</div>";
+      html += "<table><thead><tr><th>" + tt("code") + "</th><th>" + tt("label") + "</th><th>" + tt("used_by") + "</th><th>" + tt("used_at") + "</th></tr></thead><tbody>";
       usedCodes.forEach(function(c) {
         html += "<tr style='opacity:0.7'>"
           + "<td><span class='code-text'>" + esc(c.code.slice(0,8)) + "...</span></td>"
@@ -318,10 +400,10 @@ tr.clickable:hover { background: var(--card-bg); }
     if (btn) {
       e.stopPropagation();
       if (btn.dataset.code) {
-        navigator.clipboard.writeText(btn.dataset.code).then(function() { showToast("Code copied!"); });
+        navigator.clipboard.writeText(btn.dataset.code).then(function() { showToast(tt("code_copied")); });
       } else if (btn.dataset.del) {
-        if (!confirm("Delete this invite code?")) return;
-        api("invites", "DELETE", { code: btn.dataset.del }).then(function() { loadMain(); showToast("Deleted"); });
+        if (!confirm(tt("confirm_delete"))) return;
+        api("invites", "DELETE", { code: btn.dataset.del }).then(function() { loadMain(); showToast(tt("deleted")); });
       }
     }
   });
@@ -338,8 +420,8 @@ tr.clickable:hover { background: var(--card-bg); }
       labelInput.value = "";
       if (data.invite) {
         navigator.clipboard.writeText(data.invite.code).then(function() {
-          showToast("Created! Code copied");
-        }).catch(function() { showToast("Created!"); });
+          showToast(tt("created_copied"));
+        }).catch(function() { showToast(tt("created_ok")); });
       }
       loadMain();
     });
@@ -359,7 +441,7 @@ tr.clickable:hover { background: var(--card-bg); }
   }
 
   function renderSessions(sessions) {
-    if (!sessions.length) { sessionsWrap.innerHTML = "<div class='empty'>No sessions found.</div>"; return; }
+    if (!sessions.length) { sessionsWrap.innerHTML = "<div class='empty'>" + esc(tt("no_sessions")) + "</div>"; return; }
     var html = "<table><thead><tr><th>Title</th><th>Messages</th><th>Model</th><th>Last Updated</th></tr></thead><tbody>";
     sessions.forEach(function(s) {
       html += "<tr class='clickable' data-sid='" + esc(s.sessionId) + "' data-stitle='" + esc(s.title) + "'>"
@@ -401,7 +483,7 @@ tr.clickable:hover { background: var(--card-bg); }
   }
 
   function renderHistory(messages) {
-    if (!messages.length) { historyWrap.innerHTML = "<div class='empty'>No messages.</div>"; return; }
+    if (!messages.length) { historyWrap.innerHTML = "<div class='empty'>" + esc(tt("no_messages")) + "</div>"; return; }
     var html = "";
     messages.forEach(function(m) {
       html += "<div class='chat-msg " + esc(m.role) + "'>"

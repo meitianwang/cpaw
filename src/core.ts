@@ -424,14 +424,24 @@ export class ChatSessionManager {
     this.idleMs = idleMs ?? 4 * 60 * 60 * 1000; // 4 hours default
   }
 
-  /** Update the default model for new sessions. */
+  /** Update the default model for new and existing sessions. */
   setDefaultModel(model: string | undefined): void {
     this.options = { ...this.options, model };
+    for (const session of this.sessions.values()) {
+      if (model) {
+        session.setModel(model);
+      }
+    }
   }
 
   /** Get the current default model. */
   getDefaultModel(): string | undefined {
     return this.options.model;
+  }
+
+  /** Update the system prompt for new sessions (existing sessions keep their prompt until reset). */
+  setPersona(persona: string): void {
+    this.options = { ...this.options, systemPrompt: persona };
   }
 
   private persistSession(key: string, session: ClaudeChat): void {

@@ -70,6 +70,7 @@ import {
   handleGoogleRedirect,
   handleGoogleCallback,
 } from "./web-auth.js";
+import { DEFAULT_PERSONA } from "../persona.js";
 
 // ---------------------------------------------------------------------------
 // File upload storage
@@ -102,6 +103,7 @@ let userStoreRef: UserStore | null = null;
 let chatManagerRef: {
   getDefaultModel(): string | undefined;
   setDefaultModel(m: string | undefined): void;
+  setPersona(persona: string): void;
 } | null = null;
 
 export function setMessageStore(store: MessageStore): void {
@@ -123,6 +125,7 @@ export function setUserStore(store: UserStore): void {
 export function setChatManager(manager: {
   getDefaultModel(): string | undefined;
   setDefaultModel(m: string | undefined): void;
+  setPersona(persona: string): void;
 }): void {
   chatManagerRef = manager;
 }
@@ -965,8 +968,10 @@ async function handleAdminSettings(
       const persona = String(parsed.persona ?? "").trim();
       if (persona) {
         cfg.persona = persona;
+        chatManagerRef?.setPersona(persona);
       } else {
         delete cfg.persona;
+        chatManagerRef?.setPersona(DEFAULT_PERSONA);
       }
     }
 
