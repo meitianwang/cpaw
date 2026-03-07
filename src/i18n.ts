@@ -504,14 +504,16 @@ const TEXTS: Record<string, Record<Lang, string>> = {
       "/help — Show this help\n" +
       "/session — Show session info\n" +
       "/model — Show current model\n" +
-      "/model <name> — Switch model (sonnet/opus/haiku)",
+      "/model <name> — Switch model (sonnet/opus/haiku)\n" +
+      "/skills — Show enabled skills",
     zh:
       "可用命令:\n" +
       "/new /reset /clear — 重置对话\n" +
       "/help — 显示帮助\n" +
       "/session — 查看会话信息\n" +
       "/model — 查看当前模型\n" +
-      "/model <名称> — 切换模型 (sonnet/opus/haiku)",
+      "/model <名称> — 切换模型 (sonnet/opus/haiku)\n" +
+      "/skills — 查看已启用的技能",
   },
   cmd_session_info: {
     en: "Session: {key}\nStatus: {status}\nModel: {model}",
@@ -540,6 +542,14 @@ const TEXTS: Record<string, Record<Lang, string>> = {
   cmd_default_model: {
     en: "default",
     zh: "默认",
+  },
+  cmd_skills_list: {
+    en: "Enabled skills ({count}):\n{list}\n\nSkills are auto-gated by binary/env presence.\nUser overrides: ~/.klaus/skills/<name>/SKILL.md",
+    zh: "已启用的技能 ({count}):\n{list}\n\n技能会根据二进制/环境变量自动判断可用性。\n用户自定义: ~/.klaus/skills/<name>/SKILL.md",
+  },
+  cmd_skills_none: {
+    en: "No skills enabled.\n\nAvailable: {available}\n\nEnable in ~/.klaus/config.yaml:\n  skills: all\n  # or list specific skills:\n  skills:\n    - video-frames\n    - xurl\n\nSkills require their CLI tools installed (auto-gated).",
+    zh: "未启用任何技能。\n\n可用: {available}\n\n在 ~/.klaus/config.yaml 中启用:\n  skills: all\n  # 或指定具体技能:\n  skills:\n    - video-frames\n    - xurl\n\n技能需要相应 CLI 工具已安装（自动检测）。",
   },
   // ── Done ──
   config_saved: {

@@ -12,6 +12,7 @@ import { DEFAULT_PERSONA } from "./persona.js";
 import type { SessionStore, PersistedSession } from "./session-store.js";
 import type { MessageStore } from "./message-store.js";
 import { type MemoryStore, buildMemoryFlushPrompt } from "./memory-store.js";
+import { buildSkillsPrompt } from "./skills/index.js";
 import type {
   ToolEventCallback,
   StreamChunkCallback,
@@ -501,10 +502,23 @@ export class ChatSessionManager {
   }
 
   private buildSystemPrompt(sessionKey: string): string {
-    const base = this.options.systemPrompt;
-    if (!this.memoryStore) return base;
-    const memorySection = this.memoryStore.buildMemoryPrompt(sessionKey);
-    return memorySection ? `${base}\n\n${memorySection}` : base;
+    let prompt = this.options.systemPrompt;
+
+    // Append skills section
+    const skillsSection = buildSkillsPrompt();
+    if (skillsSection) {
+      prompt = `${prompt}\n\n${skillsSection}`;
+    }
+
+    // Append memory section
+    if (this.memoryStore) {
+      const memorySection = this.memoryStore.buildMemoryPrompt(sessionKey);
+      if (memorySection) {
+        prompt = `${prompt}\n\n${memorySection}`;
+      }
+    }
+
+    return prompt;
   }
 
   private getSession(sessionKey: string): ClaudeChat {

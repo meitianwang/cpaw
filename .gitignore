@@ -8,3 +8,4 @@ claudecodeui/
 release.sh
 OPENCLAW-ANALYSIS.md
 *.md
+!skills/**/SKILL.md

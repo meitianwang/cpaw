@@ -17,6 +17,11 @@ import { ensureConfigValid } from "./config-validate.js";
 import { ChatSessionManager } from "./core.js";
 import { t } from "./i18n.js";
 import { type InboundMessage, formatPrompt } from "./message.js";
+import {
+  loadEnabledSkills,
+  listSkillNames,
+  applySkillEnvOverrides,
+} from "./skills/index.js";
 import type {
   ToolEventCallback,
   StreamChunkCallback,
@@ -51,6 +56,9 @@ async function start(): Promise<void> {
 
   // Validate config before attempting to connect (fail-fast)
   ensureConfigValid();
+
+  // Apply skill environment overrides (scoped to process lifetime)
+  applySkillEnvOverrides();
 
   const channelNames = getChannelNames();
   const plugins: ChannelPlugin[] = [];
@@ -150,6 +158,24 @@ async function start(): Promise<void> {
         status: info.busy ? t("cmd_session_active") : t("cmd_session_idle"),
         model: info.model ?? t("cmd_default_model"),
       });
+    }
+
+    // /skills — list enabled skills
+    if (trimmed === "/skills") {
+      const enabled = loadEnabledSkills();
+      if (enabled.length === 0) {
+        return t("cmd_skills_none", {
+          available: listSkillNames().join(", "),
+        });
+      }
+      const list = enabled
+        .map((s) => {
+          const emoji = s.metadata?.emoji ? `${s.metadata.emoji} ` : "";
+          const src = s.source === "user" ? " (user)" : "";
+          return `  ${emoji}${s.name} — ${s.description}${src}`;
+        })
+        .join("\n");
+      return t("cmd_skills_list", { list, count: String(enabled.length) });
     }
 
     // /model [name] — show or switch model
