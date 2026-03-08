@@ -295,6 +295,101 @@ async function collectWebConfig(
   };
 }
 
+async function collectFeishuConfig(
+  prev?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  p.log.info(t("feishu_guide"));
+
+  const result = await p.group({
+    app_id: () =>
+      p.text({
+        message: t("feishu_app_id"),
+        defaultValue: (prev?.app_id as string) ?? "",
+        validate: (v) => (v ? undefined : "Required"),
+      }),
+    app_secret: () =>
+      p.text({
+        message: t("feishu_app_secret"),
+        defaultValue: (prev?.app_secret as string) ?? "",
+        validate: (v) => (v ? undefined : "Required"),
+      }),
+  });
+  if (p.isCancel(result)) process.exit(0);
+
+  const mode = await p.select({
+    message: t("feishu_mode"),
+    options: [
+      { value: "websocket" as const, label: t("feishu_mode_ws") },
+      { value: "webhook" as const, label: t("feishu_mode_webhook") },
+    ],
+  });
+  if (p.isCancel(mode)) process.exit(0);
+
+  const cfg: Record<string, unknown> = {
+    app_id: result.app_id,
+    app_secret: result.app_secret,
+    mode,
+  };
+
+  if (mode === "webhook") {
+    const webhookResult = await p.group({
+      port: () =>
+        p.text({
+          message: t("feishu_port"),
+          defaultValue: prev?.port != null ? String(prev.port) : "9000",
+          placeholder: "9000",
+        }),
+      encrypt_key: () =>
+        p.text({
+          message: t("feishu_encrypt_key"),
+          defaultValue: (prev?.encrypt_key as string) ?? "",
+        }),
+      verification_token: () =>
+        p.text({
+          message: t("feishu_verification_token"),
+          defaultValue: (prev?.verification_token as string) ?? "",
+        }),
+    });
+    if (p.isCancel(webhookResult)) process.exit(0);
+
+    cfg.port = Number(webhookResult.port) || 9000;
+    if (webhookResult.encrypt_key) cfg.encrypt_key = webhookResult.encrypt_key;
+    if (webhookResult.verification_token)
+      cfg.verification_token = webhookResult.verification_token;
+  }
+
+  return cfg;
+}
+
+async function verifyFeishuCredentials(
+  appId: string,
+  appSecret: string,
+): Promise<boolean> {
+  const s = p.spinner();
+  s.start(t("feishu_verify"));
+
+  try {
+    const resp = await fetch(
+      "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+      },
+    );
+    const data = (await resp.json()) as { code?: number; msg?: string };
+    if (data.code !== 0) {
+      s.stop(pc.red(`${t("feishu_verify_fail")}: ${data.msg ?? "unknown"}`));
+      return false;
+    }
+    s.stop(pc.green(t("feishu_verify_ok")));
+    return true;
+  } catch (err) {
+    s.stop(pc.red(`${err}`));
+    return false;
+  }
+}
+
 async function verifyWeComToken(
   corpId: string,
   corpSecret: string,
@@ -401,8 +496,12 @@ export async function runSetup(): Promise<void> {
         value: "web" as const,
         label: `web — ${t("channel_web")}`,
       },
+      {
+        value: "feishu" as const,
+        label: `feishu — ${t("channel_feishu")}`,
+      },
     ],
-    initialValues: prevChannels as ("qq" | "wecom" | "web")[],
+    initialValues: prevChannels as ("qq" | "wecom" | "web" | "feishu")[],
     required: true,
   });
   if (p.isCancel(channels)) process.exit(0);
@@ -456,6 +555,27 @@ export async function runSetup(): Promise<void> {
       p.log.step(t("web_title"));
       const prevWeb = prevConfig?.web as Record<string, unknown> | undefined;
       channelConfigs.web = await collectWebConfig(prevWeb);
+    } else if (channel === "feishu") {
+      p.log.step(t("feishu_title"));
+      const prevFeishu = prevConfig?.feishu as
+        | Record<string, unknown>
+        | undefined;
+      channelConfigs.feishu = await collectFeishuConfig(prevFeishu);
+
+      // Verify Feishu credentials
+      const ok = await verifyFeishuCredentials(
+        channelConfigs.feishu.app_id as string,
+        channelConfigs.feishu.app_secret as string,
+      );
+      if (!ok) {
+        const saveAnyway = await p.confirm({
+          message: lang === "zh" ? "仍然保存配置?" : "Save config anyway?",
+        });
+        if (p.isCancel(saveAnyway) || !saveAnyway) {
+          p.outro(lang === "zh" ? "已取消。" : "Cancelled.");
+          return;
+        }
+      }
     }
   }
 

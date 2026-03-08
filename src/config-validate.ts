@@ -10,7 +10,7 @@ import { CONFIG_FILE } from "./config.js";
 import { listChannelIds } from "./channels/types.js";
 
 // Builtin channel IDs — fallback when registry is empty (e.g. doctor command)
-const BUILTIN_CHANNELS = ["qq", "wecom", "web"] as const;
+const BUILTIN_CHANNELS = ["qq", "wecom", "web", "feishu"] as const;
 
 function resolveKnownChannels(): readonly string[] {
   const registered = listChannelIds();
@@ -54,6 +54,33 @@ const WEB_FIELDS: readonly FieldSpec[] = [
     key: "port",
     env: "KLAUS_WEB_PORT",
     label: "HTTP Port",
+    validate: (v) => {
+      if (v == null || v === "") return null; // optional, has default
+      const n = Number(v);
+      return Number.isInteger(n) && n >= 1 && n <= 65535
+        ? null
+        : "must be a valid port number (1–65535)";
+    },
+  },
+];
+
+const FEISHU_FIELDS: readonly FieldSpec[] = [
+  { key: "app_id", env: "FEISHU_APP_ID", label: "Feishu App ID" },
+  { key: "app_secret", env: "FEISHU_APP_SECRET", label: "Feishu App Secret" },
+  {
+    key: "mode",
+    label: "Connection mode",
+    validate: (v) => {
+      if (v == null || v === "") return null; // optional, defaults to websocket
+      return v === "websocket" || v === "webhook"
+        ? null
+        : 'must be "websocket" or "webhook"';
+    },
+  },
+  {
+    key: "port",
+    env: "FEISHU_PORT",
+    label: "Webhook Port",
     validate: (v) => {
       if (v == null || v === "") return null; // optional, has default
       const n = Number(v);
@@ -299,6 +326,8 @@ function channelFieldSpecs(channel: string): readonly FieldSpec[] | null {
       return WECOM_FIELDS;
     case "web":
       return WEB_FIELDS;
+    case "feishu":
+      return FEISHU_FIELDS;
     default:
       return null;
   }

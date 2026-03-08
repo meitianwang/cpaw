@@ -6,6 +6,7 @@ import type {
   QQBotConfig,
   WeComConfig,
   WebConfig,
+  FeishuConfig,
   SessionConfig,
   TranscriptsConfig,
   TunnelConfig,
@@ -61,6 +62,29 @@ export function loadWeComConfig(): WeComConfig {
       process.env.WECOM_ENCODING_AES_KEY ??
       "",
     port: Number(cfg.port ?? process.env.WECOM_PORT ?? 8080),
+  };
+}
+
+export function loadFeishuConfig(): FeishuConfig {
+  const cfg = (loadConfig().feishu as Record<string, unknown>) ?? {};
+  const mode = String(cfg.mode ?? process.env.FEISHU_MODE ?? "websocket");
+  const domain =
+    (cfg.domain as string) ?? process.env.FEISHU_DOMAIN ?? undefined;
+  return {
+    appId: (cfg.app_id as string) ?? process.env.FEISHU_APP_ID ?? "",
+    appSecret:
+      (cfg.app_secret as string) ?? process.env.FEISHU_APP_SECRET ?? "",
+    mode: mode === "webhook" ? "webhook" : "websocket",
+    port: Number(cfg.port ?? process.env.FEISHU_PORT ?? 9000),
+    encryptKey:
+      (cfg.encrypt_key as string) ??
+      process.env.FEISHU_ENCRYPT_KEY ??
+      undefined,
+    verificationToken:
+      (cfg.verification_token as string) ??
+      process.env.FEISHU_VERIFICATION_TOKEN ??
+      undefined,
+    domain,
   };
 }
 

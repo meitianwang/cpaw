@@ -242,12 +242,28 @@ export interface CronSchedulerStatus {
   readonly nextWakeAt: string | null;
 }
 
+export interface FeishuConfig {
+  readonly appId: string;
+  readonly appSecret: string;
+  /** "websocket" (default, no public URL) or "webhook" (needs callback URL). */
+  readonly mode: "websocket" | "webhook";
+  /** Webhook-only: HTTP port for event callback. Default 9000. */
+  readonly port: number;
+  /** Webhook-only: encryption key for AES-256-CBC message decryption. */
+  readonly encryptKey?: string;
+  /** Webhook-only: token for SHA1 signature verification. */
+  readonly verificationToken?: string;
+  /** API domain: "feishu" (default), "lark" (international), or custom URL. */
+  readonly domain?: string;
+}
+
 export interface KlausConfig {
   channel: string;
   persona?: string;
   qq?: QQBotConfig;
   wecom?: WeComConfig;
   web?: WebConfig;
+  feishu?: FeishuConfig;
   session?: SessionConfig;
   transcripts?: TranscriptsConfig;
   cron?: CronConfig;

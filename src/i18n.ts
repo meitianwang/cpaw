@@ -78,6 +78,101 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     en: "WeChat Work (Webhook, needs public URL)",
     zh: "企业微信 (Webhook, 需要公网地址)",
   },
+  channel_feishu: {
+    en: "Feishu / Lark (WebSocket default, no public IP needed)",
+    zh: "飞书 / Lark (默认 WebSocket, 无需公网 IP)",
+  },
+  // ── Feishu Guide ──
+  feishu_title: {
+    en: "Feishu (Lark) Setup",
+    zh: "飞书配置",
+  },
+  feishu_guide: {
+    en:
+      "How to get your Feishu Bot credentials:\n\n" +
+      "1. Open Feishu Developer Console: https://open.feishu.cn/app\n" +
+      "   (For Lark: https://open.larksuite.com/app)\n" +
+      "2. Click 'Create Custom App'\n" +
+      "3. Fill in app name and description\n" +
+      "4. Go to 'Credentials & Basic Info' to get App ID and App Secret\n\n" +
+      "── Permission Setup ──\n\n" +
+      "5. Go to 'Permissions & Scopes', add these scopes:\n" +
+      "   - im:message (Send and receive messages)\n" +
+      "   - im:message:send_as_bot (Send messages as bot)\n" +
+      "   - im:resource (Download message resources)\n" +
+      "6. Go to 'Event Subscriptions':\n" +
+      "   - For WebSocket mode (recommended): enable 'Use long connection'\n" +
+      "   - For Webhook mode: set your callback URL\n" +
+      "   - Subscribe to event: im.message.receive_v1\n" +
+      "7. Create a version and publish (or use in test mode)\n\n" +
+      "── After setup ──\n\n" +
+      "For WebSocket mode (default), just run: klaus start\n" +
+      "For Webhook mode, make sure your callback URL is reachable.",
+    zh:
+      "如何获取飞书机器人凭证:\n\n" +
+      "1. 打开飞书开发者后台: https://open.feishu.cn/app\n" +
+      "   (Lark 用户: https://open.larksuite.com/app)\n" +
+      "2. 点击「创建企业自建应用」\n" +
+      "3. 填写应用名称和描述\n" +
+      "4. 进入「凭证与基础信息」获取 App ID 和 App Secret\n\n" +
+      "── 权限配置 ──\n\n" +
+      "5. 进入「权限管理」, 添加以下权限:\n" +
+      "   - im:message (收发消息)\n" +
+      "   - im:message:send_as_bot (以机器人身份发消息)\n" +
+      "   - im:resource (下载消息资源)\n" +
+      "6. 进入「事件订阅」:\n" +
+      "   - WebSocket 模式 (推荐): 开启「使用长连接」\n" +
+      "   - Webhook 模式: 设置回调地址\n" +
+      "   - 订阅事件: im.message.receive_v1\n" +
+      "7. 创建版本并发布 (或在测试模式下使用)\n\n" +
+      "── 配置完成后 ──\n\n" +
+      "WebSocket 模式 (默认): 直接运行 klaus start\n" +
+      "Webhook 模式: 确保回调地址可访问。",
+  },
+  feishu_app_id: {
+    en: "App ID",
+    zh: "App ID",
+  },
+  feishu_app_secret: {
+    en: "App Secret",
+    zh: "App Secret",
+  },
+  feishu_mode: {
+    en: "Connection mode",
+    zh: "连接模式",
+  },
+  feishu_mode_ws: {
+    en: "WebSocket (recommended, no public URL needed)",
+    zh: "WebSocket (推荐, 无需公网地址)",
+  },
+  feishu_mode_webhook: {
+    en: "Webhook (needs public callback URL)",
+    zh: "Webhook (需要公网回调地址)",
+  },
+  feishu_encrypt_key: {
+    en: "Encrypt Key (optional, for webhook encryption)",
+    zh: "Encrypt Key (可选, 用于 webhook 加密)",
+  },
+  feishu_verification_token: {
+    en: "Verification Token (optional, for webhook verification)",
+    zh: "Verification Token (可选, 用于 webhook 验证)",
+  },
+  feishu_port: {
+    en: "Webhook Port (default 9000)",
+    zh: "Webhook 端口 (默认 9000)",
+  },
+  feishu_verify: {
+    en: "Testing Feishu API credentials...",
+    zh: "测试飞书 API 凭证...",
+  },
+  feishu_verify_ok: {
+    en: "Feishu credentials verified!",
+    zh: "飞书凭证验证成功!",
+  },
+  feishu_verify_fail: {
+    en: "Failed to verify Feishu credentials",
+    zh: "飞书凭证验证失败",
+  },
   // ── QQ Guide ──
   qq_title: {
     en: "QQ Bot Setup",
