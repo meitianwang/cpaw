@@ -107,6 +107,29 @@ export interface TranscriptsConfig {
   readonly maxAgeDays: number;
 }
 
+// ---------------------------------------------------------------------------
+// Cron (scheduled tasks)
+// ---------------------------------------------------------------------------
+
+export type CronScheduleType =
+  | { readonly kind: "cron"; readonly expr: string; readonly tz?: string }
+  | { readonly kind: "every"; readonly intervalMs: number }
+  | { readonly kind: "at"; readonly at: string };
+
+export interface CronTask {
+  readonly id: string;
+  readonly name?: string;
+  readonly schedule: string | CronScheduleType;
+  readonly prompt: string;
+  readonly model?: string;
+  readonly enabled?: boolean;
+}
+
+export interface CronConfig {
+  readonly enabled: boolean;
+  readonly tasks: readonly CronTask[];
+}
+
 export interface KlausConfig {
   channel: string;
   persona?: string;
@@ -115,4 +138,5 @@ export interface KlausConfig {
   web?: WebConfig;
   session?: SessionConfig;
   transcripts?: TranscriptsConfig;
+  cron?: CronConfig;
 }

@@ -505,7 +505,8 @@ const TEXTS: Record<string, Record<Lang, string>> = {
       "/session — Show session info\n" +
       "/model — Show current model\n" +
       "/model <name> — Switch model (sonnet/opus/haiku)\n" +
-      "/skills — Show enabled skills",
+      "/skills — Show enabled skills\n" +
+      "/cron — Show scheduled tasks",
     zh:
       "可用命令:\n" +
       "/new /reset /clear — 重置对话\n" +
@@ -513,7 +514,8 @@ const TEXTS: Record<string, Record<Lang, string>> = {
       "/session — 查看会话信息\n" +
       "/model — 查看当前模型\n" +
       "/model <名称> — 切换模型 (sonnet/opus/haiku)\n" +
-      "/skills — 查看已启用的技能",
+      "/skills — 查看已启用的技能\n" +
+      "/cron — 查看定时任务",
   },
   cmd_session_info: {
     en: "Session: {key}\nStatus: {status}\nModel: {model}",
@@ -546,6 +548,19 @@ const TEXTS: Record<string, Record<Lang, string>> = {
   cmd_skills_list: {
     en: "Enabled skills ({count}):\n{list}\n\nSkills are auto-gated by binary/env presence.\nUser overrides: ~/.klaus/skills/<name>/SKILL.md",
     zh: "已启用的技能 ({count}):\n{list}\n\n技能会根据二进制/环境变量自动判断可用性。\n用户自定义: ~/.klaus/skills/<name>/SKILL.md",
+  },
+  // ── Cron Commands ──
+  cmd_cron_disabled: {
+    en: 'Cron is not enabled.\n\nTo enable, add to ~/.klaus/config.yaml:\n\ncron:\n  enabled: true\n  tasks:\n    - id: daily-summary\n      schedule: "0 9 * * *"\n      prompt: "Summarize recent events"',
+    zh: '定时任务未启用。\n\n在 ~/.klaus/config.yaml 中添加:\n\ncron:\n  enabled: true\n  tasks:\n    - id: daily-summary\n      schedule: "0 9 * * *"\n      prompt: "总结近期事件"',
+  },
+  cmd_cron_empty: {
+    en: "No cron tasks configured.",
+    zh: "未配置任何定时任务。",
+  },
+  cmd_cron_list: {
+    en: "Cron tasks ({count}):\n{list}",
+    zh: "定时任务 ({count}):\n{list}",
   },
   cmd_skills_none: {
     en: "No skills enabled.\n\nAvailable: {available}\n\nEnable in ~/.klaus/config.yaml:\n  skills: all\n  # or list specific skills:\n  skills:\n    - video-frames\n    - xurl\n\nSkills require their CLI tools installed (auto-gated).",

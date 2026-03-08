@@ -12,6 +12,7 @@ import {
   CONFIG_FILE,
   loadSessionConfig,
   loadTranscriptsConfig,
+  loadCronConfig,
 } from "./config.js";
 import { ensureConfigValid } from "./config-validate.js";
 import { ChatSessionManager } from "./core.js";
@@ -96,6 +97,15 @@ async function start(): Promise<void> {
     memoryStore,
   );
 
+  // Initialize cron scheduler (if configured)
+  let cronScheduler: import("./cron.js").CronScheduler | null = null;
+  const cronCfg = loadCronConfig();
+  if (cronCfg.enabled && cronCfg.tasks.length > 0) {
+    const { CronScheduler } = await import("./cron.js");
+    cronScheduler = new CronScheduler(cronCfg.tasks, sessions);
+    cronScheduler.start();
+  }
+
   // Expose stores to web channel for API endpoints
   let inviteStoreInstance: { close(): void } | null = null;
   let userStoreInstance: { close(): void } | null = null;
@@ -178,6 +188,29 @@ async function start(): Promise<void> {
       return t("cmd_skills_list", { list, count: String(enabled.length) });
     }
 
+    // /cron — show cron task status
+    if (trimmed === "/cron") {
+      if (!cronScheduler) {
+        return t("cmd_cron_disabled");
+      }
+      const status = cronScheduler.getStatus();
+      if (status.length === 0) {
+        return t("cmd_cron_empty");
+      }
+      const lines = status.map((s) => {
+        const state = s.enabled ? "✓" : "✗";
+        const last = s.lastRun
+          ? `${s.lastRun.status === "ok" ? "✓" : "✗"} ${new Date(s.lastRun.finishedAt).toLocaleString()}`
+          : "-";
+        const next = s.nextRun ? new Date(s.nextRun).toLocaleString() : "-";
+        return `  ${state} ${s.id}${s.name ? ` (${s.name})` : ""}\n    schedule: ${s.schedule}\n    last: ${last} | next: ${next}`;
+      });
+      return t("cmd_cron_list", {
+        count: String(status.length),
+        list: lines.join("\n"),
+      });
+    }
+
     // /model [name] — show or switch model
     if (trimmed === "/model" || trimmed.startsWith("/model ")) {
       const arg = trimmed.slice("/model".length).trim();
@@ -211,6 +244,7 @@ async function start(): Promise<void> {
     // If any rejects, Promise.all rejects → finally runs → process.exit(1) in main().
     await Promise.all(plugins.map((p) => p.start(handler)));
   } finally {
+    cronScheduler?.stop();
     await sessions.close();
     inviteStoreInstance?.close();
     userStoreInstance?.close();

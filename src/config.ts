@@ -10,6 +10,8 @@ import type {
   TranscriptsConfig,
   TunnelConfig,
   GoogleOAuthConfig,
+  CronConfig,
+  CronTask,
 } from "./types.js";
 
 export const CONFIG_DIR = join(homedir(), ".klaus");
@@ -165,4 +167,27 @@ export function loadTranscriptsConfig(): TranscriptsConfig {
     maxFiles: Math.floor(positiveNumber(cfg.max_files, 200)),
     maxAgeDays: positiveNumber(cfg.max_age_days, 30),
   };
+}
+
+export function loadCronConfig(): CronConfig {
+  const cfg = (loadConfig().cron as Record<string, unknown>) ?? {};
+  const enabled = cfg.enabled === true;
+  const rawTasks = Array.isArray(cfg.tasks) ? cfg.tasks : [];
+
+  const tasks: CronTask[] = rawTasks
+    .filter(
+      (t: unknown): t is Record<string, unknown> =>
+        typeof t === "object" && t !== null,
+    )
+    .map((t) => ({
+      id: String(t.id ?? ""),
+      name: t.name != null ? String(t.name) : undefined,
+      schedule: String(t.schedule ?? ""),
+      prompt: String(t.prompt ?? ""),
+      model: t.model != null ? String(t.model) : undefined,
+      enabled: t.enabled !== false,
+    }))
+    .filter((t) => t.id && t.schedule && t.prompt);
+
+  return { enabled, tasks };
 }
