@@ -258,36 +258,43 @@ function resolveSkillConfig(skillName: string): SkillConfig | undefined {
 export function loadEnabledSkills(): readonly SkillEntry[] {
   const cfg = loadConfig();
   const raw = cfg.skills;
-
-  // No skills section → return nothing
-  if (!raw) return [];
-
   const all = loadAllSkillEntries();
 
-  // "all" → load all, still apply gating
-  if (raw === "all") {
-    return all.filter((e) => isEligible(e, resolveSkillConfig(e.name)));
-  }
+  // always: true skills are loaded regardless of config
+  const alwaysOn = all.filter(
+    (e) => e.metadata?.always && isEligible(e, resolveSkillConfig(e.name)),
+  );
 
-  // Object with entries → per-skill config
-  if (typeof raw === "object" && !Array.isArray(raw)) {
-    return all.filter((e) => {
+  // No skills section → return only always-on skills
+  if (!raw) return alwaysOn;
+
+  let configured: SkillEntry[];
+
+  if (raw === "all") {
+    // "all" → load all, still apply gating
+    configured = all.filter((e) => isEligible(e, resolveSkillConfig(e.name)));
+  } else if (typeof raw === "object" && !Array.isArray(raw)) {
+    // Object with entries → per-skill config
+    configured = all.filter((e) => {
       const sc = resolveSkillConfig(e.name);
-      // If entries exist but this skill isn't listed, check if explicitly enabled
       if (sc?.enabled === false) return false;
       return isEligible(e, sc);
     });
-  }
-
-  // Array of skill names → whitelist
-  if (Array.isArray(raw)) {
+  } else if (Array.isArray(raw)) {
+    // Array of skill names → whitelist
     const names = new Set(raw.map(String));
-    return all
+    configured = all
       .filter((e) => names.has(e.name))
       .filter((e) => isEligible(e, resolveSkillConfig(e.name)));
+  } else {
+    configured = [];
   }
 
-  return [];
+  // Merge: configured + always-on (deduplicate by name)
+  const byName = new Map<string, SkillEntry>();
+  for (const e of alwaysOn) byName.set(e.name, e);
+  for (const e of configured) byName.set(e.name, e);
+  return Array.from(byName.values());
 }
 
 /** List all available skill names (before gating). */
