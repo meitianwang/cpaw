@@ -120,6 +120,10 @@ export interface CronDelivery {
   readonly channel: string;
   readonly to?: string;
   readonly mode?: "announce" | "webhook" | "none";
+  /** Skip delivery failures instead of failing the task. */
+  readonly bestEffort?: boolean;
+  /** Multi-account: target a specific channel account. */
+  readonly accountId?: string;
 }
 
 export interface CronRetryConfig {
@@ -134,6 +138,12 @@ export interface CronFailureAlert {
   readonly cooldownMs: number;
   readonly channel?: string;
   readonly to?: string;
+  /** Delivery mode: announce to channel, POST to webhook, or both. */
+  readonly mode?: "announce" | "webhook";
+  /** Webhook URL for failure alert delivery. */
+  readonly webhookUrl?: string;
+  /** Bearer token for failure alert webhook. */
+  readonly webhookToken?: string;
 }
 
 export interface CronRunLogConfig {
@@ -144,6 +154,7 @@ export interface CronRunLogConfig {
 export interface CronTask {
   readonly id: string;
   readonly name?: string;
+  readonly description?: string;
   readonly schedule: string | CronScheduleType;
   readonly prompt: string;
   readonly model?: string;
@@ -157,6 +168,10 @@ export interface CronTask {
   readonly webhookUrl?: string;
   readonly webhookToken?: string;
   readonly failureAlert?: CronFailureAlert | false;
+  /** Timestamp when task was created (epoch ms). */
+  readonly createdAt?: number;
+  /** Timestamp when task was last updated (epoch ms). */
+  readonly updatedAt?: number;
 }
 
 export interface CronConfig {
@@ -167,6 +182,43 @@ export interface CronConfig {
   readonly sessionRetentionMs?: number;
   readonly runLog?: CronRunLogConfig;
   readonly failureAlert?: CronFailureAlert;
+  /** Max concurrent cron task executions. Default: unlimited. */
+  readonly maxConcurrentRuns?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Cron runtime types (used by CronScheduler + CLI)
+// ---------------------------------------------------------------------------
+
+export interface CronRunRecord {
+  readonly taskId: string;
+  readonly startedAt: number;
+  readonly finishedAt: number;
+  readonly status: "ok" | "error" | "skipped";
+  readonly resultPreview?: string;
+  readonly error?: string;
+}
+
+export interface CronTaskStatus {
+  readonly id: string;
+  readonly name?: string;
+  readonly description?: string;
+  readonly schedule: string;
+  readonly enabled: boolean;
+  readonly nextRun: string | null;
+  readonly lastRun: CronRunRecord | null;
+  readonly consecutiveErrors: number;
+  readonly createdAt?: number;
+  readonly updatedAt?: number;
+}
+
+export interface CronSchedulerStatus {
+  readonly running: boolean;
+  readonly taskCount: number;
+  readonly activeJobs: number;
+  readonly runningTasks: number;
+  readonly maxConcurrentRuns: number | null;
+  readonly nextWakeAt: string | null;
 }
 
 export interface KlausConfig {

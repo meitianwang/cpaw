@@ -179,16 +179,65 @@ export function loadTranscriptsConfig(): TranscriptsConfig {
 
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high"]);
 
+/**
+ * Parse a relative duration string (e.g., "20m", "1h", "2h30m", "90s")
+ * into an absolute ISO 8601 timestamp from now.
+ * Returns undefined if not a valid relative duration.
+ */
+export function parseRelativeTime(input: string): string | undefined {
+  const trimmed = input.trim().toLowerCase();
+  // Must contain at least one digit followed by a unit letter
+  if (!/^\d/.test(trimmed)) return undefined;
+  // Must NOT look like ISO 8601
+  if (/^\d{4}-\d{2}/.test(trimmed)) return undefined;
+
+  let totalMs = 0;
+  const re = /(\d+)\s*(s|sec|m|min|h|hr|d|day)s?/g;
+  let match: RegExpExecArray | null;
+  let matched = false;
+
+  while ((match = re.exec(trimmed)) !== null) {
+    matched = true;
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    switch (unit) {
+      case "s":
+      case "sec":
+        totalMs += value * 1000;
+        break;
+      case "m":
+      case "min":
+        totalMs += value * 60 * 1000;
+        break;
+      case "h":
+      case "hr":
+        totalMs += value * 60 * 60 * 1000;
+        break;
+      case "d":
+      case "day":
+        totalMs += value * 24 * 60 * 60 * 1000;
+        break;
+    }
+  }
+
+  if (!matched || totalMs <= 0) return undefined;
+  return new Date(Date.now() + totalMs).toISOString();
+}
+
 function parseFailureAlert(raw: unknown): CronFailureAlert | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const o = raw as Record<string, unknown>;
   if (o.enabled === false) return undefined;
+  const mode = String(o.mode ?? "");
   return {
     enabled: o.enabled !== false,
     after: Math.floor(positiveNumber(o.after, 2)),
     cooldownMs: positiveNumber(o.cooldown_minutes, 60) * 60 * 1000,
     ...(o.channel ? { channel: String(o.channel) } : {}),
     ...(o.to ? { to: String(o.to) } : {}),
+    ...(mode === "announce" || mode === "webhook" ? { mode } : {}),
+    ...(o.webhook_url ? { webhookUrl: String(o.webhook_url) } : {}),
+    ...(o.webhook_token ? { webhookToken: String(o.webhook_token) } : {}),
   };
 }
 
@@ -231,6 +280,8 @@ function parseDelivery(raw: unknown): CronDelivery | undefined {
     ...(mode === "announce" || mode === "webhook" || mode === "none"
       ? { mode }
       : {}),
+    ...(d.best_effort === true ? { bestEffort: true } : {}),
+    ...(d.account_id ? { accountId: String(d.account_id) } : {}),
   };
 }
 
@@ -246,14 +297,18 @@ export function loadCronConfig(): CronConfig {
     )
     .map((t) => {
       const thinking = String(t.thinking ?? "");
+      // Resolve relative time for at-type schedules
+      const rawSchedule = String(t.schedule ?? "");
+      const resolvedSchedule = parseRelativeTime(rawSchedule) ?? rawSchedule;
+
       return {
         id: String(t.id ?? ""),
         name: t.name != null ? String(t.name) : undefined,
-        schedule: String(t.schedule ?? ""),
+        description: t.description != null ? String(t.description) : undefined,
+        schedule: resolvedSchedule,
         prompt: String(t.prompt ?? ""),
         model: t.model != null ? String(t.model) : undefined,
         enabled: t.enabled !== false,
-        // New fields
         fallbacks: Array.isArray(t.fallbacks)
           ? t.fallbacks.map(String)
           : undefined,
@@ -273,6 +328,8 @@ export function loadCronConfig(): CronConfig {
           t.failure_alert === false
             ? (false as const)
             : parseFailureAlert(t.failure_alert),
+        createdAt: t.created_at != null ? Number(t.created_at) : Date.now(),
+        updatedAt: t.updated_at != null ? Number(t.updated_at) : Date.now(),
       };
     })
     .filter((t) => t.id && t.schedule && t.prompt);
@@ -289,5 +346,9 @@ export function loadCronConfig(): CronConfig {
         : undefined,
     runLog: parseRunLogConfig(cfg.run_log),
     failureAlert: parseFailureAlert(cfg.failure_alert),
+    maxConcurrentRuns:
+      cfg.max_concurrent_runs != null
+        ? Math.floor(positiveNumber(cfg.max_concurrent_runs, 0))
+        : undefined,
   };
 }

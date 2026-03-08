@@ -293,22 +293,32 @@ async function handleCronCommand(
   // /cron status — scheduler status
   if (args === "status") {
     const s = cronScheduler.getSchedulerStatus();
+    const concurrency = s.maxConcurrentRuns
+      ? `${s.runningTasks}/${s.maxConcurrentRuns}`
+      : String(s.runningTasks);
     return t("cmd_cron_status", {
       state: s.running ? "Running" : "Stopped",
       total: String(s.taskCount),
       active: String(s.activeJobs),
+      running: concurrency,
       next: s.nextWakeAt ? new Date(s.nextWakeAt).toLocaleString() : "-",
     });
   }
 
-  // /cron run <id> — trigger task
+  // /cron run <id> [--due] — trigger task (optionally only if due)
   if (args.startsWith("run ")) {
-    const id = args.slice(4).trim();
+    const runArgs = args.slice(4).trim().split(/\s+/);
+    const id = runArgs[0];
     if (!id) return t("cmd_cron_help");
     const idErr = validateCronId(id);
     if (idErr) return idErr;
-    const result = await cronScheduler.runTask(id);
-    if (!result) return t("cmd_cron_not_found", { id });
+    const onlyIfDue = runArgs.includes("--due");
+    const result = await cronScheduler.runTask(id, { onlyIfDue });
+    if (!result) {
+      return onlyIfDue
+        ? t("cmd_cron_not_due", { id })
+        : t("cmd_cron_not_found", { id });
+    }
     return t("cmd_cron_triggered", {
       id,
       status:
@@ -318,15 +328,37 @@ async function handleCronCommand(
     });
   }
 
-  // /cron runs <id> — view run history
+  // /cron runs <id> [--status=ok|error|skipped] [--page=N] — view run history
   if (args.startsWith("runs ")) {
-    const id = args.slice(5).trim();
+    const runsParts = args.slice(5).trim().split(/\s+/);
+    const id = runsParts[0];
     if (!id) return t("cmd_cron_help");
     const idErr = validateCronId(id);
     if (idErr) return idErr;
-    const runs = cronScheduler.getRunHistory(id, 10);
-    if (runs.length === 0) return t("cmd_cron_runs_empty", { id });
-    const lines = runs.map((r) => {
+
+    // Parse optional flags
+    let statusFilter: "ok" | "error" | "skipped" | undefined;
+    let page = 0;
+    const limit = 10;
+    for (const flag of runsParts.slice(1)) {
+      if (flag.startsWith("--status=")) {
+        const val = flag.slice(9);
+        if (val === "ok" || val === "error" || val === "skipped") {
+          statusFilter = val;
+        }
+      } else if (flag.startsWith("--page=")) {
+        page = Math.max(0, parseInt(flag.slice(7), 10) - 1);
+      }
+    }
+
+    const result = cronScheduler.queryRunHistory(id, {
+      limit,
+      offset: page * limit,
+      status: statusFilter,
+    });
+
+    if (result.entries.length === 0) return t("cmd_cron_runs_empty", { id });
+    const lines = result.entries.map((r) => {
       const time = new Date(r.ts).toLocaleString();
       const dur = `${(r.durationMs / 1000).toFixed(1)}s`;
       const status =
@@ -335,23 +367,48 @@ async function handleCronCommand(
       const delivery = r.deliveryStatus ? ` [${r.deliveryStatus}]` : "";
       return `  ${status} ${time} (${dur})${delivery}\n    ${detail}`;
     });
+    const pageInfo = result.hasMore
+      ? `\n  (page ${page + 1}, ${result.total} total, --page=${page + 2} for more)`
+      : "";
     return t("cmd_cron_runs_header", {
       id,
-      count: String(runs.length),
-      list: lines.join("\n"),
+      count: String(result.total),
+      list: lines.join("\n") + pageInfo,
     });
   }
 
-  // /cron add <id> <schedule> <prompt>
+  // /cron add <id> <schedule> <prompt> [--model=X] [--light] [--name=X]
   if (args.startsWith("add ")) {
     const parts = args.slice(4).trim().split(/\s+/);
     if (parts.length < 3) return t("cmd_cron_help");
     const id = parts[0];
     const idErr = validateCronId(id);
     if (idErr) return idErr;
-    const schedule = parts[1];
-    const prompt = parts.slice(2).join(" ");
-    cronScheduler.addTask({ id, schedule, prompt, enabled: true });
+
+    // Separate flags from positional args
+    const positional: string[] = [];
+    let model: string | undefined;
+    let light = false;
+    let name: string | undefined;
+    for (const p of parts.slice(1)) {
+      if (p.startsWith("--model=")) model = p.slice(8);
+      else if (p === "--light") light = true;
+      else if (p.startsWith("--name=")) name = p.slice(7);
+      else positional.push(p);
+    }
+    if (positional.length < 2) return t("cmd_cron_help");
+
+    const schedule = positional[0];
+    const prompt = positional.slice(1).join(" ");
+    cronScheduler.addTask({
+      id,
+      schedule,
+      prompt,
+      enabled: true,
+      ...(model ? { model } : {}),
+      ...(light ? { lightContext: true } : {}),
+      ...(name ? { name } : {}),
+    });
     return t("cmd_cron_added", { id, schedule, prompt: prompt.slice(0, 60) });
   }
 
@@ -369,13 +426,21 @@ async function handleCronCommand(
       const key = kv.slice(0, eqIdx);
       const value = kv.slice(eqIdx + 1);
       if (key === "enabled") patch[key] = value === "true";
+      else if (key === "light_context" || key === "lightContext")
+        patch["lightContext"] = value === "true";
+      else if (key === "delete_after_run" || key === "deleteAfterRun")
+        patch["deleteAfterRun"] = value === "true";
       else if (
         key === "schedule" ||
         key === "prompt" ||
         key === "model" ||
-        key === "name"
+        key === "name" ||
+        key === "description" ||
+        key === "webhook_url" ||
+        key === "webhookUrl"
       ) {
-        patch[key] = value;
+        const patchKey = key === "webhook_url" ? "webhookUrl" : key;
+        patch[patchKey] = value;
       }
     }
     const ok = cronScheduler.editTask(

@@ -36,6 +36,20 @@ export interface CronRunLogEntry {
   readonly deliveryError?: string;
 }
 
+/** Query options for paginated/filtered run history. */
+export interface CronRunLogQuery {
+  readonly limit?: number;
+  readonly offset?: number;
+  readonly status?: "ok" | "error" | "skipped";
+  readonly deliveryStatus?: "delivered" | "not-delivered" | "not-requested";
+}
+
+export interface CronRunLogPage {
+  readonly entries: readonly CronRunLogEntry[];
+  readonly total: number;
+  readonly hasMore: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
@@ -78,7 +92,7 @@ export class CronRunLog {
     this.pruneIfNeeded(filePath);
   }
 
-  /** Read the most recent N entries for a job. */
+  /** Read the most recent N entries for a job (simple API). */
   read(jobId: string, limit: number = 20): CronRunLogEntry[] {
     const filePath = this.getFilePath(jobId);
     if (!existsSync(filePath)) return [];
@@ -98,6 +112,51 @@ export class CronRunLog {
     }
 
     return entries;
+  }
+
+  /**
+   * Query run history with pagination and filtering.
+   * Returns entries sorted by timestamp descending (most recent first).
+   */
+  query(jobId: string, opts?: CronRunLogQuery): CronRunLogPage {
+    const filePath = this.getFilePath(jobId);
+    if (!existsSync(filePath)) {
+      return { entries: [], total: 0, hasMore: false };
+    }
+
+    const content = readFileSync(filePath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+
+    // Parse all entries (newest first)
+    let allEntries: CronRunLogEntry[] = [];
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        allEntries.push(JSON.parse(lines[i]) as CronRunLogEntry);
+      } catch {
+        // Skip malformed lines
+      }
+    }
+
+    // Apply filters
+    if (opts?.status) {
+      allEntries = allEntries.filter((e) => e.status === opts.status);
+    }
+    if (opts?.deliveryStatus) {
+      allEntries = allEntries.filter(
+        (e) => e.deliveryStatus === opts.deliveryStatus,
+      );
+    }
+
+    const total = allEntries.length;
+    const offset = opts?.offset ?? 0;
+    const limit = opts?.limit ?? 20;
+    const entries = allEntries.slice(offset, offset + limit);
+
+    return {
+      entries,
+      total,
+      hasMore: offset + limit < total,
+    };
   }
 
   /** Delete log file for a job. */

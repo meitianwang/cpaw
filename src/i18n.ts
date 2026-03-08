@@ -606,6 +606,10 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     en: 'Task "{id}" triggered. Status: {status}',
     zh: '任务 "{id}" 已触发。状态: {status}',
   },
+  cmd_cron_not_due: {
+    en: 'Task "{id}" is not due yet.',
+    zh: '任务 "{id}" 尚未到期。',
+  },
   cmd_cron_runs_header: {
     en: "Run history for {id} (last {count}):\n{list}",
     zh: "{id} 的运行历史 (最近 {count} 条):\n{list}",
@@ -615,8 +619,8 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     zh: '任务 "{id}" 暂无运行记录。',
   },
   cmd_cron_status: {
-    en: "Scheduler: {state}\nTasks: {total} total, {active} active\nNext wake: {next}",
-    zh: "调度器: {state}\n任务: 共 {total} 个, {active} 个活跃\n下次触发: {next}",
+    en: "Scheduler: {state}\nTasks: {total} total, {active} active\nRunning: {running}\nNext wake: {next}",
+    zh: "调度器: {state}\n任务: 共 {total} 个, {active} 个活跃\n执行中: {running}\n下次触发: {next}",
   },
   cmd_cron_enabled: {
     en: 'Task "{id}" enabled.',

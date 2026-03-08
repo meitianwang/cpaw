@@ -1,22 +1,4 @@
-/**
- * Cron scheduler for Klaus — fully aligned with OpenClaw.
- *
- * Features:
- * - Cron/every/at scheduling via croner
- * - Isolated sessions per task (`cron:{id}`)
- * - Overlap protection (skip if already running)
- * - Task deduplication (last definition wins)
- * - Result delivery: announce (channel) / webhook / none
- * - Failure retry with exponential backoff + error classification
- * - One-shot (at) task auto-disable/delete
- * - Deterministic stagger for top-of-hour expressions
- * - JSONL run log with auto-pruning
- * - Failure alerts after N consecutive errors
- * - Session retention pruning
- * - Light context mode
- * - Model/thinking override per task
- * - CLI management: add/edit/remove/run/runs/status
- */
+/** Cron scheduler for Klaus — aligned with OpenClaw. See CLAUDE.md for feature list. */
 
 import { Cron, type CronOptions } from "croner";
 import type {
@@ -24,20 +6,28 @@ import type {
   CronConfig,
   CronRetryConfig,
   CronFailureAlert,
+  CronRunRecord,
+  CronTaskStatus,
+  CronSchedulerStatus,
 } from "./types.js";
 import type { ChatSessionManager } from "./core.js";
 import type { SessionStore } from "./session-store.js";
 import { classifyCronError } from "./cron-errors.js";
-import { CronRunLog, type CronRunLogEntry } from "./cron-log.js";
+import {
+  CronRunLog,
+  type CronRunLogEntry,
+  type CronRunLogQuery,
+  type CronRunLogPage,
+} from "./cron-log.js";
 import { resolveStaggerMs } from "./cron-stagger.js";
 import { sleep } from "./retry.js";
+import { parseRelativeTime } from "./config.js";
+import { validateWebhookUrl, postWebhook } from "./cron-webhook.js";
 
 /** Delivery function: send a message to a channel target. */
 export type DeliverFn = (to: string, text: string) => Promise<void>;
 
-// ---------------------------------------------------------------------------
 // Defaults
-// ---------------------------------------------------------------------------
 
 const DEFAULT_RETRY: CronRetryConfig = {
   maxAttempts: 3,
@@ -54,31 +44,14 @@ const DEFAULT_FAILURE_ALERT: CronFailureAlert = {
 const DEFAULT_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const SESSION_PRUNE_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-// ---------------------------------------------------------------------------
-// Run record (in-memory, most recent per task)
-// ---------------------------------------------------------------------------
+export type { CronRunRecord, CronTaskStatus, CronSchedulerStatus };
 
-export interface CronRunRecord {
-  readonly taskId: string;
-  readonly startedAt: number;
-  readonly finishedAt: number;
-  readonly status: "ok" | "error" | "skipped";
-  readonly resultPreview?: string;
-  readonly error?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Per-task runtime state
-// ---------------------------------------------------------------------------
+// Per-task runtime state (immutable updates)
 
 interface TaskState {
-  consecutiveErrors: number;
-  lastFailureAlertAtMs: number;
+  readonly consecutiveErrors: number;
+  readonly lastFailureAlertAtMs: number;
 }
-
-// ---------------------------------------------------------------------------
-// CronScheduler
-// ---------------------------------------------------------------------------
 
 export class CronScheduler {
   private readonly jobs = new Map<string, Cron>();
@@ -94,6 +67,8 @@ export class CronScheduler {
   private readonly taskState = new Map<string, TaskState>();
   private readonly sessionStore: SessionStore | undefined;
   private lastSessionPruneAt = 0;
+  /** Track last channel used for delivery inference. */
+  private lastActiveChannel: string | undefined;
   private started = false;
 
   constructor(
@@ -117,6 +92,11 @@ export class CronScheduler {
         : undefined,
     );
     this.sessionStore = sessionStore;
+
+    // Record first available channel as last-route default
+    if (deliverers && deliverers.size > 0) {
+      this.lastActiveChannel = deliverers.keys().next().value as string;
+    }
   }
 
   /** Deduplicate tasks by ID, warn on conflicts, keep last occurrence. */
@@ -138,9 +118,7 @@ export class CronScheduler {
     return result;
   }
 
-  // -----------------------------------------------------------------------
-  // Lifecycle
-  // -----------------------------------------------------------------------
+  // --- Lifecycle
 
   start(): void {
     this.started = true;
@@ -175,9 +153,7 @@ export class CronScheduler {
     console.log("[Cron] Stopped all tasks");
   }
 
-  // -----------------------------------------------------------------------
-  // Scheduling
-  // -----------------------------------------------------------------------
+  // --- Scheduling
 
   private scheduleTask(task: CronTask): void {
     const schedule = this.resolveScheduleExpr(task);
@@ -257,9 +233,7 @@ export class CronScheduler {
     return false;
   }
 
-  // -----------------------------------------------------------------------
-  // Execution
-  // -----------------------------------------------------------------------
+  // --- Execution
 
   private async executeTask(task: CronTask): Promise<void> {
     // Overlap guard
@@ -267,6 +241,17 @@ export class CronScheduler {
       console.log(`[Cron] Task "${task.id}" skipped (still running)`);
       this.logRun(task, 0, "skipped");
       return;
+    }
+
+    // Max concurrent runs guard
+    if (this.config.maxConcurrentRuns && this.config.maxConcurrentRuns > 0) {
+      if (this.running.size >= this.config.maxConcurrentRuns) {
+        console.log(
+          `[Cron] Task "${task.id}" skipped (max concurrent ${this.config.maxConcurrentRuns} reached)`,
+        );
+        this.logRun(task, 0, "skipped");
+        return;
+      }
     }
 
     const sessionKey = `cron:${task.id}`;
@@ -367,9 +352,7 @@ export class CronScheduler {
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Delivery routing
-  // -----------------------------------------------------------------------
+  // --- Delivery routing
 
   private async handleDelivery(
     task: CronTask,
@@ -393,6 +376,8 @@ export class CronScheduler {
       return { delivered: false, deliveryStatus: "not-requested" };
     }
 
+    const bestEffort = task.deliver?.bestEffort === true;
+
     try {
       // Channel announce delivery
       if (hasChannelDeliver) {
@@ -405,6 +390,16 @@ export class CronScheduler {
       return { delivered: true, deliveryStatus: "delivered" };
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      if (bestEffort) {
+        console.warn(
+          `[Cron] Task "${task.id}" delivery failed (best-effort, ignoring): ${errMsg}`,
+        );
+        return {
+          delivered: false,
+          deliveryStatus: "not-delivered",
+          deliveryError: errMsg,
+        };
+      }
       return {
         delivered: false,
         deliveryStatus: "not-delivered",
@@ -413,9 +408,7 @@ export class CronScheduler {
     }
   }
 
-  // -----------------------------------------------------------------------
-  // One-shot handling
-  // -----------------------------------------------------------------------
+  // --- One-shot handling
 
   private handleOneShotCompletion(task: CronTask): void {
     const deleteAfterRun = task.deleteAfterRun !== false; // default true for one-shot
@@ -470,12 +463,18 @@ export class CronScheduler {
     }, delayMs);
   }
 
-  // -----------------------------------------------------------------------
-  // Delivery: channel announce
-  // -----------------------------------------------------------------------
+  // --- Delivery: channel announce (with last-route inference)
 
   private async deliverResult(task: CronTask, reply: string): Promise<void> {
-    const { channel, to } = task.deliver!;
+    // Fallback: if task has no explicit deliver.channel, use last active channel (last-route inference)
+    const channel = task.deliver?.channel ?? this.lastActiveChannel;
+    if (!channel) {
+      console.warn(
+        `[Cron] Task "${task.id}": no delivery channel available (no last-route)`,
+      );
+      return;
+    }
+
     const deliverFn = this.deliverers.get(channel);
     if (!deliverFn) {
       console.warn(
@@ -484,17 +483,19 @@ export class CronScheduler {
       return;
     }
 
-    const target = to ?? "*";
+    const to = task.deliver?.to ?? "*";
     const label = task.name ?? task.id;
-    const message = `[定时任务: ${label}]\n\n${reply}`;
+    const accountSuffix = task.deliver?.accountId
+      ? ` [${task.deliver.accountId}]`
+      : "";
+    const message = `[定时任务: ${label}${accountSuffix}]\n\n${reply}`;
 
-    await deliverFn(target, message);
-    console.log(`[Cron] Task "${task.id}" delivered to ${channel}:${target}`);
+    await deliverFn(to, message);
+    this.lastActiveChannel = channel;
+    console.log(`[Cron] Task "${task.id}" delivered to ${channel}:${to}`);
   }
 
-  // -----------------------------------------------------------------------
-  // Delivery: webhook (HTTP POST)
-  // -----------------------------------------------------------------------
+  // --- Delivery: webhook (HTTP POST)
 
   private async deliverWebhook(task: CronTask, reply: string): Promise<void> {
     const url = task.webhookUrl ?? task.deliver?.to;
@@ -504,74 +505,23 @@ export class CronScheduler {
       );
     }
 
-    // Validate URL format and block internal/private addresses (SSRF prevention)
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw new Error(`Invalid webhook URL: "${url}"`);
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error(`Invalid webhook URL protocol: "${parsed.protocol}"`);
-    }
-    const host = parsed.hostname.toLowerCase();
-    const blockedHosts = [
-      "localhost",
-      "127.0.0.1",
-      "::1",
-      "0.0.0.0",
-      "169.254.169.254", // AWS IMDS
-      "metadata.google.internal",
-    ];
-    if (blockedHosts.includes(host)) {
-      throw new Error(`Webhook URL blocked (internal address): "${host}"`);
-    }
-    // Block RFC-1918 / link-local ranges
-    if (
-      host.startsWith("10.") ||
-      host.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-      host.startsWith("169.254.")
-    ) {
-      throw new Error(`Webhook URL blocked (private network): "${host}"`);
-    }
-
     const token = task.webhookToken ?? this.config.webhookToken;
-
-    const payload = {
-      jobId: task.id,
-      name: task.name,
-      status: "ok",
-      reply,
-      timestamp: Date.now(),
-    };
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Webhook POST failed: ${response.status} ${response.statusText}`,
-      );
-    }
+    await postWebhook(
+      url,
+      {
+        jobId: task.id,
+        name: task.name,
+        status: "ok",
+        reply,
+        timestamp: Date.now(),
+      },
+      token,
+    );
 
     console.log(`[Cron] Task "${task.id}" webhook delivered to ${url}`);
   }
 
-  // -----------------------------------------------------------------------
-  // Failure alerts
-  // -----------------------------------------------------------------------
+  // --- Failure alerts (channel + webhook)
 
   private checkFailureAlert(task: CronTask, errorMsg: string): void {
     if (task.failureAlert === false) return;
@@ -594,29 +544,59 @@ export class CronScheduler {
       `[告警] 定时任务 "${label}" 连续失败 ${state.consecutiveErrors} 次\n` +
       `最近错误: ${errorMsg}`;
 
-    const channel = alertConfig.channel;
-    const to = alertConfig.to ?? "*";
+    const alertMode = alertConfig.mode ?? "announce";
 
-    if (channel) {
-      const deliverFn = this.deliverers.get(channel);
-      if (deliverFn) {
-        deliverFn(to, message).catch((err) => {
+    // Channel announce alert
+    if (alertMode === "announce" || !alertConfig.webhookUrl) {
+      const channel = alertConfig.channel ?? this.lastActiveChannel;
+      const to = alertConfig.to ?? "*";
+
+      if (channel) {
+        const deliverFn = this.deliverers.get(channel);
+        if (deliverFn) {
+          deliverFn(to, message).catch((err) => {
+            console.error(
+              `[Cron] Failure alert delivery failed for "${task.id}":`,
+              err,
+            );
+          });
+        } else {
+          console.warn(
+            `[Cron] Failure alert channel "${channel}" not available`,
+          );
+        }
+      }
+    }
+
+    // Webhook alert
+    if (alertMode === "webhook" || alertConfig.webhookUrl) {
+      const webhookUrl = alertConfig.webhookUrl;
+      if (webhookUrl) {
+        const token = alertConfig.webhookToken ?? this.config.webhookToken;
+        postWebhook(
+          webhookUrl,
+          {
+            type: "failure_alert",
+            jobId: task.id,
+            name: label,
+            consecutiveErrors: state.consecutiveErrors,
+            error: errorMsg,
+            timestamp: Date.now(),
+          },
+          token,
+        ).catch((err) => {
           console.error(
-            `[Cron] Failure alert delivery failed for "${task.id}":`,
+            `[Cron] Failure alert webhook failed for "${task.id}":`,
             err,
           );
         });
-      } else {
-        console.warn(`[Cron] Failure alert channel "${channel}" not available`);
       }
     }
 
     console.warn(`[Cron] ALERT: ${message}`);
   }
 
-  // -----------------------------------------------------------------------
-  // Run logging
-  // -----------------------------------------------------------------------
+  // --- Run logging
 
   private logRun(
     task: CronTask,
@@ -655,9 +635,7 @@ export class CronScheduler {
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Session retention
-  // -----------------------------------------------------------------------
+  // --- Session retention
 
   private pruneCronSessions(): void {
     const now = Date.now();
@@ -671,9 +649,7 @@ export class CronScheduler {
     this.sessionStore.pruneStale(retentionMs);
   }
 
-  // -----------------------------------------------------------------------
-  // Task state helpers
-  // -----------------------------------------------------------------------
+  // --- Task state helpers (immutable)
 
   private getTaskState(taskId: string): Readonly<TaskState> {
     return (
@@ -710,24 +686,40 @@ export class CronScheduler {
     this.taskState.delete(taskId);
   }
 
-  // -----------------------------------------------------------------------
-  // CLI management: add / edit / remove / run / runs / status
-  // -----------------------------------------------------------------------
+  // --- Last-route: update when a channel delivers successfully
+
+  /** Update the last active channel (called by external code if needed). */
+  setLastActiveChannel(channel: string): void {
+    this.lastActiveChannel = channel;
+  }
+
+  // --- CLI management: add / edit / remove / run / runs / status
 
   addTask(task: CronTask): void {
-    this.removeTaskInternal(task.id);
-    this.tasks.push(task);
-    if (task.enabled !== false && this.started) {
-      this.scheduleTask(task);
+    // Resolve relative time for schedule
+    const resolved = this.resolveRelativeSchedule(task);
+    const withTimestamps: CronTask = {
+      ...resolved,
+      createdAt: resolved.createdAt ?? Date.now(),
+      updatedAt: Date.now(),
+    };
+    this.removeTaskInternal(withTimestamps.id);
+    this.tasks.push(withTimestamps);
+    if (withTimestamps.enabled !== false && this.started) {
+      this.scheduleTask(withTimestamps);
     }
-    console.log(`[Cron] Task "${task.id}" added`);
+    console.log(`[Cron] Task "${withTimestamps.id}" added`);
   }
 
   editTask(id: string, patch: Partial<CronTask>): boolean {
     const idx = this.tasks.findIndex((t) => t.id === id);
     if (idx === -1) return false;
 
-    const updated = { ...this.tasks[idx], ...patch };
+    const updated: CronTask = {
+      ...this.tasks[idx],
+      ...patch,
+      updatedAt: Date.now(),
+    };
     this.tasks[idx] = updated;
 
     const job = this.jobs.get(id);
@@ -751,27 +743,41 @@ export class CronScheduler {
     return true;
   }
 
-  async runTask(id: string): Promise<CronRunRecord | null> {
+  /**
+   * Run a task immediately.
+   * @param onlyIfDue If true, only run if the task's next scheduled time is past.
+   */
+  async runTask(
+    id: string,
+    opts?: { onlyIfDue?: boolean },
+  ): Promise<CronRunRecord | null> {
     const task = this.tasks.find((t) => t.id === id);
     if (!task) return null;
+
+    if (opts?.onlyIfDue) {
+      const job = this.jobs.get(id);
+      if (job) {
+        const nextRun = job.nextRun();
+        if (nextRun && nextRun.getTime() > Date.now()) {
+          console.log(
+            `[Cron] Task "${id}" not due yet (next: ${nextRun.toISOString()})`,
+          );
+          return null;
+        }
+      }
+    }
+
     await this.executeTask(task);
     return this.lastRuns.get(id) ?? null;
   }
 
-  getRunHistory(id: string, limit: number = 20): CronRunLogEntry[] {
-    return this.runLog.read(id, limit);
+  /** Paginated/filtered run history query. */
+  queryRunHistory(id: string, query?: CronRunLogQuery): CronRunLogPage {
+    return this.runLog.query(id, query);
   }
 
   /** Get status of all tasks (for /cron list). */
-  getStatus(): readonly {
-    id: string;
-    name?: string;
-    schedule: string;
-    enabled: boolean;
-    nextRun: string | null;
-    lastRun: CronRunRecord | null;
-    consecutiveErrors: number;
-  }[] {
+  getStatus(): readonly CronTaskStatus[] {
     return this.tasks.map((task) => {
       const job = this.jobs.get(task.id);
       const next = job?.nextRun();
@@ -779,22 +785,20 @@ export class CronScheduler {
       return {
         id: task.id,
         name: task.name,
+        description: task.description,
         schedule: this.resolveScheduleExpr(task),
         enabled: task.enabled !== false,
         nextRun: next ? next.toISOString() : null,
         lastRun: this.lastRuns.get(task.id) ?? null,
         consecutiveErrors: state?.consecutiveErrors ?? 0,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
       };
     });
   }
 
   /** Get scheduler-level status. */
-  getSchedulerStatus(): {
-    running: boolean;
-    taskCount: number;
-    activeJobs: number;
-    nextWakeAt: string | null;
-  } {
+  getSchedulerStatus(): CronSchedulerStatus {
     let earliest: Date | null = null;
     for (const job of this.jobs.values()) {
       const next = job.nextRun();
@@ -806,7 +810,21 @@ export class CronScheduler {
       running: this.started,
       taskCount: this.tasks.length,
       activeJobs: this.jobs.size,
+      runningTasks: this.running.size,
+      maxConcurrentRuns: this.config.maxConcurrentRuns ?? null,
       nextWakeAt: earliest ? earliest.toISOString() : null,
     };
+  }
+
+  // --- Helpers
+
+  /** Resolve relative time strings in schedule field for CLI-added tasks. */
+  private resolveRelativeSchedule(task: CronTask): CronTask {
+    if (typeof task.schedule !== "string") return task;
+    const resolved = parseRelativeTime(task.schedule);
+    if (resolved) {
+      return { ...task, schedule: resolved };
+    }
+    return task;
   }
 }
