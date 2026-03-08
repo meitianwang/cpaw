@@ -1363,6 +1363,32 @@ async function handleRequest(
 // Plugin export
 // ---------------------------------------------------------------------------
 
+/**
+ * Deliver a message proactively to a Web channel user via WebSocket.
+ * `to` can be a userId or "*" to broadcast to all connected users.
+ */
+function deliverWebMessage(to: string, text: string): Promise<void> {
+  const event: WsEvent = {
+    type: "message",
+    text,
+    id: `cron-${Date.now().toString(36)}`,
+  };
+
+  if (to === "*") {
+    for (const userId of wsClients.keys()) {
+      sendWsEvent(userId, event);
+    }
+  } else if (wsClients.has(to)) {
+    sendWsEvent(to, event);
+  } else {
+    console.warn(
+      `[Web] deliver: user "${to}" has no active WebSocket connection, message dropped`,
+    );
+  }
+
+  return Promise.resolve();
+}
+
 export const webPlugin: ChannelPlugin = {
   meta: {
     id: "web",
@@ -1373,6 +1399,7 @@ export const webPlugin: ChannelPlugin = {
   capabilities: {
     dm: true,
   },
+  deliver: deliverWebMessage,
   start: async (handler: Handler) => {
     const cfg = loadWebConfig();
 

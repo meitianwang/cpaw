@@ -9,6 +9,8 @@ export type { Handler };
 
 export abstract class Channel {
   abstract start(handler: Handler): Promise<void>;
+  /** Optional: proactively send a message to a user. */
+  deliver?(to: string, text: string): Promise<void>;
 }
 
 /**
@@ -21,9 +23,21 @@ export function fromLegacyChannel(
   meta: ChannelMeta,
   capabilities: ChannelCapabilities,
 ): ChannelPlugin {
+  let instance: Channel | undefined;
   return {
     meta,
     capabilities,
-    start: (handler) => new ChannelCls().start(handler),
+    start: (handler) => {
+      instance = new ChannelCls();
+      return instance.start(handler);
+    },
+    deliver: (to, text) => {
+      if (!instance?.deliver) {
+        return Promise.reject(
+          new Error(`Channel "${meta.id}" does not support proactive delivery`),
+        );
+      }
+      return instance.deliver(to, text);
+    },
   };
 }

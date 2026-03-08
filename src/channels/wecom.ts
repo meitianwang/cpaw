@@ -355,6 +355,17 @@ export class WeComChannel extends Channel {
   }
 
   // ------------------------------------------------------------------
+  // Proactive delivery (used by cron scheduler)
+  // ------------------------------------------------------------------
+
+  async deliver(to: string, text: string): Promise<void> {
+    const chunks = chunkTextByBytes(text, WECOM_TEXT_BYTE_LIMIT);
+    for (const chunk of chunks) {
+      await this.sendText(to, chunk);
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Send message via API
   // ------------------------------------------------------------------
 

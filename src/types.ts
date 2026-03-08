@@ -116,6 +116,11 @@ export type CronScheduleType =
   | { readonly kind: "every"; readonly intervalMs: number }
   | { readonly kind: "at"; readonly at: string };
 
+export interface CronDelivery {
+  readonly channel: string;
+  readonly to?: string;
+}
+
 export interface CronTask {
   readonly id: string;
   readonly name?: string;
@@ -123,6 +128,7 @@ export interface CronTask {
   readonly prompt: string;
   readonly model?: string;
   readonly enabled?: boolean;
+  readonly deliver?: CronDelivery;
 }
 
 export interface CronConfig {

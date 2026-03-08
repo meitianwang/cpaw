@@ -12,6 +12,9 @@ import { Cron, type CronOptions } from "croner";
 import type { CronTask } from "./types.js";
 import type { ChatSessionManager } from "./core.js";
 
+/** Delivery function: send a message to a channel target. */
+export type DeliverFn = (to: string, text: string) => Promise<void>;
+
 // ---------------------------------------------------------------------------
 // Run record (in-memory, most recent per task)
 // ---------------------------------------------------------------------------
@@ -35,10 +38,16 @@ export class CronScheduler {
   private readonly running = new Set<string>();
   private readonly tasks: readonly CronTask[];
   private readonly sessions: ChatSessionManager;
+  private readonly deliverers: ReadonlyMap<string, DeliverFn>;
 
-  constructor(tasks: readonly CronTask[], sessions: ChatSessionManager) {
+  constructor(
+    tasks: readonly CronTask[],
+    sessions: ChatSessionManager,
+    deliverers?: ReadonlyMap<string, DeliverFn>,
+  ) {
     this.tasks = this.deduplicateTasks(tasks);
     this.sessions = sessions;
+    this.deliverers = deliverers ?? new Map();
   }
 
   /** Deduplicate tasks by ID, warn on conflicts, keep last occurrence. */
@@ -162,6 +171,11 @@ export class CronScheduler {
       console.log(
         `[Cron] Task "${task.id}" completed in ${durationSec}s: ${reply?.slice(0, 120) ?? "(no reply)"}`,
       );
+
+      // Deliver result to configured channel
+      if (reply && task.deliver) {
+        await this.deliverResult(task, reply);
+      }
     } catch (err) {
       const finishedAt = Date.now();
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -178,6 +192,32 @@ export class CronScheduler {
       console.error(`[Cron] Task "${task.id}" failed: ${errMsg}`);
     } finally {
       this.running.delete(task.id);
+    }
+  }
+
+  /** Deliver task result to the configured channel. */
+  private async deliverResult(task: CronTask, reply: string): Promise<void> {
+    const { channel, to } = task.deliver!;
+    const deliverFn = this.deliverers.get(channel);
+    if (!deliverFn) {
+      console.warn(
+        `[Cron] Task "${task.id}": delivery channel "${channel}" not available`,
+      );
+      return;
+    }
+
+    const target = to ?? "*";
+    const label = task.name ?? task.id;
+    const message = `[定时任务: ${label}]\n\n${reply}`;
+
+    try {
+      await deliverFn(target, message);
+      console.log(`[Cron] Task "${task.id}" delivered to ${channel}:${target}`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[Cron] Task "${task.id}" delivery failed (${channel}:${target}): ${errMsg}`,
+      );
     }
   }
 

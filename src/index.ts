@@ -101,8 +101,18 @@ async function start(): Promise<void> {
   let cronScheduler: import("./cron.js").CronScheduler | null = null;
   const cronCfg = loadCronConfig();
   if (cronCfg.enabled && cronCfg.tasks.length > 0) {
+    // Build delivery registry from active channel plugins
+    const deliverers = new Map<
+      string,
+      (to: string, text: string) => Promise<void>
+    >();
+    for (const p of plugins) {
+      if (p.deliver) {
+        deliverers.set(p.meta.id, p.deliver);
+      }
+    }
     const { CronScheduler } = await import("./cron.js");
-    cronScheduler = new CronScheduler(cronCfg.tasks, sessions);
+    cronScheduler = new CronScheduler(cronCfg.tasks, sessions, deliverers);
     cronScheduler.start();
   }
 

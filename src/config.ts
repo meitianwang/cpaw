@@ -12,6 +12,7 @@ import type {
   GoogleOAuthConfig,
   CronConfig,
   CronTask,
+  CronDelivery,
 } from "./types.js";
 
 export const CONFIG_DIR = join(homedir(), ".klaus");
@@ -179,14 +180,27 @@ export function loadCronConfig(): CronConfig {
       (t: unknown): t is Record<string, unknown> =>
         typeof t === "object" && t !== null,
     )
-    .map((t) => ({
-      id: String(t.id ?? ""),
-      name: t.name != null ? String(t.name) : undefined,
-      schedule: String(t.schedule ?? ""),
-      prompt: String(t.prompt ?? ""),
-      model: t.model != null ? String(t.model) : undefined,
-      enabled: t.enabled !== false,
-    }))
+    .map((t) => {
+      let deliver: CronDelivery | undefined;
+      if (t.deliver && typeof t.deliver === "object") {
+        const d = t.deliver as Record<string, unknown>;
+        if (d.channel && typeof d.channel === "string") {
+          deliver = {
+            channel: d.channel,
+            ...(d.to ? { to: String(d.to) } : {}),
+          };
+        }
+      }
+      return {
+        id: String(t.id ?? ""),
+        name: t.name != null ? String(t.name) : undefined,
+        schedule: String(t.schedule ?? ""),
+        prompt: String(t.prompt ?? ""),
+        model: t.model != null ? String(t.model) : undefined,
+        enabled: t.enabled !== false,
+        deliver,
+      };
+    })
     .filter((t) => t.id && t.schedule && t.prompt);
 
   return { enabled, tasks };
