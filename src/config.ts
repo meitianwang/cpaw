@@ -15,6 +15,7 @@ import type {
   CronDelivery,
   CronRetryConfig,
   CronFailureAlert,
+  CronFailureDestination,
   CronRunLogConfig,
 } from "./types.js";
 
@@ -269,6 +270,20 @@ function parseRunLogConfig(raw: unknown): CronRunLogConfig | undefined {
   };
 }
 
+function parseFailureDestination(
+  raw: unknown,
+): CronFailureDestination | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const o = raw as Record<string, unknown>;
+  const mode = String(o.mode ?? "");
+  return {
+    ...(o.channel ? { channel: String(o.channel) } : {}),
+    ...(o.to ? { to: String(o.to) } : {}),
+    ...(o.account_id ? { accountId: String(o.account_id) } : {}),
+    ...(mode === "announce" || mode === "webhook" ? { mode } : {}),
+  };
+}
+
 function parseDelivery(raw: unknown): CronDelivery | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const d = raw as Record<string, unknown>;
@@ -282,6 +297,9 @@ function parseDelivery(raw: unknown): CronDelivery | undefined {
       : {}),
     ...(d.best_effort === true ? { bestEffort: true } : {}),
     ...(d.account_id ? { accountId: String(d.account_id) } : {}),
+    ...(d.failure_destination
+      ? { failureDestination: parseFailureDestination(d.failure_destination) }
+      : {}),
   };
 }
 
@@ -316,6 +334,10 @@ export function loadCronConfig(): CronConfig {
           ? (thinking as CronTask["thinking"])
           : undefined,
         lightContext: t.light_context === true ? true : undefined,
+        timeoutSeconds:
+          t.timeout_seconds != null
+            ? Math.floor(Number(t.timeout_seconds))
+            : undefined,
         deleteAfterRun:
           t.delete_after_run != null ? t.delete_after_run === true : undefined,
         staggerMs:
@@ -350,5 +372,7 @@ export function loadCronConfig(): CronConfig {
       cfg.max_concurrent_runs != null
         ? Math.floor(positiveNumber(cfg.max_concurrent_runs, 0))
         : undefined,
+    failureDestination: parseFailureDestination(cfg.failure_destination),
+    storePath: cfg.store != null ? String(cfg.store) : undefined,
   };
 }

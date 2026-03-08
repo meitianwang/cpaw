@@ -34,6 +34,11 @@ export interface CronRunLogEntry {
   readonly delivered?: boolean;
   readonly deliveryStatus?: "delivered" | "not-delivered" | "not-requested";
   readonly deliveryError?: string;
+  readonly usage?: {
+    readonly inputTokens?: number;
+    readonly outputTokens?: number;
+    readonly totalTokens?: number;
+  };
 }
 
 /** Query options for paginated/filtered run history. */
@@ -42,12 +47,17 @@ export interface CronRunLogQuery {
   readonly offset?: number;
   readonly status?: "ok" | "error" | "skipped";
   readonly deliveryStatus?: "delivered" | "not-delivered" | "not-requested";
+  /** Case-insensitive text search across summary, error, and jobId. */
+  readonly query?: string;
+  /** Sort direction by timestamp. Default: "desc" (newest first). */
+  readonly sortDir?: "asc" | "desc";
 }
 
 export interface CronRunLogPage {
   readonly entries: readonly CronRunLogEntry[];
   readonly total: number;
   readonly hasMore: boolean;
+  readonly nextOffset: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,13 +131,13 @@ export class CronRunLog {
   query(jobId: string, opts?: CronRunLogQuery): CronRunLogPage {
     const filePath = this.getFilePath(jobId);
     if (!existsSync(filePath)) {
-      return { entries: [], total: 0, hasMore: false };
+      return { entries: [], total: 0, hasMore: false, nextOffset: null };
     }
 
     const content = readFileSync(filePath, "utf-8");
     const lines = content.trim().split("\n").filter(Boolean);
 
-    // Parse all entries (newest first)
+    // Parse all entries (newest first by default)
     let allEntries: CronRunLogEntry[] = [];
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
@@ -146,16 +156,33 @@ export class CronRunLog {
         (e) => e.deliveryStatus === opts.deliveryStatus,
       );
     }
+    // Text search: case-insensitive substring match across summary, error, jobId
+    const queryText = opts?.query?.trim().toLowerCase();
+    if (queryText) {
+      allEntries = allEntries.filter((e) => {
+        const text = [e.summary ?? "", e.error ?? "", e.jobId]
+          .join(" ")
+          .toLowerCase();
+        return text.includes(queryText);
+      });
+    }
+    // Sort direction
+    if (opts?.sortDir === "asc") {
+      allEntries.sort((a, b) => a.ts - b.ts);
+    }
+    // Default is desc (already in desc order from parsing)
 
     const total = allEntries.length;
     const offset = opts?.offset ?? 0;
     const limit = opts?.limit ?? 20;
     const entries = allEntries.slice(offset, offset + limit);
+    const hasMore = offset + limit < total;
 
     return {
       entries,
       total,
-      hasMore: offset + limit < total,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
     };
   }
 

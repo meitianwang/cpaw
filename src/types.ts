@@ -116,6 +116,13 @@ export type CronScheduleType =
   | { readonly kind: "every"; readonly intervalMs: number }
   | { readonly kind: "at"; readonly at: string };
 
+export interface CronFailureDestination {
+  readonly channel?: string;
+  readonly to?: string;
+  readonly accountId?: string;
+  readonly mode?: "announce" | "webhook";
+}
+
 export interface CronDelivery {
   readonly channel: string;
   readonly to?: string;
@@ -124,6 +131,8 @@ export interface CronDelivery {
   readonly bestEffort?: boolean;
   /** Multi-account: target a specific channel account. */
   readonly accountId?: string;
+  /** Separate destination for failure notifications. */
+  readonly failureDestination?: CronFailureDestination;
 }
 
 export interface CronRetryConfig {
@@ -163,6 +172,8 @@ export interface CronTask {
   readonly lightContext?: boolean;
   readonly enabled?: boolean;
   readonly deleteAfterRun?: boolean;
+  /** Task execution timeout in seconds. 0 = disable. Default: 600 (10 min). */
+  readonly timeoutSeconds?: number;
   readonly staggerMs?: number;
   readonly deliver?: CronDelivery;
   readonly webhookUrl?: string;
@@ -184,6 +195,16 @@ export interface CronConfig {
   readonly failureAlert?: CronFailureAlert;
   /** Max concurrent cron task executions. Default: unlimited. */
   readonly maxConcurrentRuns?: number;
+  /** Separate destination for failure notifications (global default). */
+  readonly failureDestination?: CronFailureDestination;
+  /** Path to persistent job store file. Default: ~/.klaus/cron/jobs.json */
+  readonly storePath?: string;
+}
+
+export interface CronUsageSummary {
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly totalTokens?: number;
 }
 
 // ---------------------------------------------------------------------------

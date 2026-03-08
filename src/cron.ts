@@ -6,6 +6,7 @@ import type {
   CronConfig,
   CronRetryConfig,
   CronFailureAlert,
+  CronFailureDestination,
   CronRunRecord,
   CronTaskStatus,
   CronSchedulerStatus,
@@ -22,7 +23,8 @@ import {
 import { resolveStaggerMs } from "./cron-stagger.js";
 import { sleep } from "./retry.js";
 import { parseRelativeTime } from "./config.js";
-import { validateWebhookUrl, postWebhook } from "./cron-webhook.js";
+import { postWebhook } from "./cron-webhook.js";
+import { CronJobStore } from "./cron-store.js";
 
 /** Delivery function: send a message to a channel target. */
 export type DeliverFn = (to: string, text: string) => Promise<void>;
@@ -43,6 +45,8 @@ const DEFAULT_FAILURE_ALERT: CronFailureAlert = {
 
 const DEFAULT_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const SESSION_PRUNE_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_SCHEDULE_ERRORS = 3; // Auto-disable after 3 consecutive schedule errors
 
 export type { CronRunRecord, CronTaskStatus, CronSchedulerStatus };
 
@@ -51,6 +55,7 @@ export type { CronRunRecord, CronTaskStatus, CronSchedulerStatus };
 interface TaskState {
   readonly consecutiveErrors: number;
   readonly lastFailureAlertAtMs: number;
+  readonly scheduleErrorCount: number;
 }
 
 export class CronScheduler {
@@ -66,6 +71,7 @@ export class CronScheduler {
   private readonly runLog: CronRunLog;
   private readonly taskState = new Map<string, TaskState>();
   private readonly sessionStore: SessionStore | undefined;
+  private readonly jobStore: CronJobStore;
   private lastSessionPruneAt = 0;
   /** Track last channel used for delivery inference. */
   private lastActiveChannel: string | undefined;
@@ -77,7 +83,6 @@ export class CronScheduler {
     deliverers?: ReadonlyMap<string, DeliverFn>,
     sessionStore?: SessionStore,
   ) {
-    this.tasks = [...this.deduplicateTasks(config.tasks)];
     this.sessions = sessions;
     this.deliverers = deliverers ?? new Map();
     this.config = config;
@@ -92,6 +97,14 @@ export class CronScheduler {
         : undefined,
     );
     this.sessionStore = sessionStore;
+
+    // Load persistent job store and merge with config tasks
+    this.jobStore = new CronJobStore(config.storePath);
+    const storedJobs = this.jobStore.load();
+    const configTaskIds = new Set(config.tasks.map((t) => t.id));
+    // Config tasks take precedence; store-only tasks are appended
+    const storeOnly = storedJobs.filter((j) => !configTaskIds.has(j.id));
+    this.tasks = [...this.deduplicateTasks([...config.tasks, ...storeOnly])];
 
     // Record first available channel as last-route default
     if (deliverers && deliverers.size > 0) {
@@ -181,10 +194,32 @@ export class CronScheduler {
 
     const stagger = resolveStaggerMs(task.schedule, task.id, task.staggerMs);
 
-    const job = new Cron(schedule, opts, () => {
-      void this.executeWithStagger(task, stagger);
-    });
+    // Schedule error isolation: auto-disable after MAX_SCHEDULE_ERRORS
+    let job: Cron;
+    try {
+      job = new Cron(schedule, opts, () => {
+        void this.executeWithStagger(task, stagger);
+      });
+    } catch (err) {
+      const state = this.getTaskState(task.id);
+      const newCount = state.scheduleErrorCount + 1;
+      this.updateTaskState(task.id, { scheduleErrorCount: newCount });
 
+      if (newCount >= MAX_SCHEDULE_ERRORS) {
+        console.error(
+          `[Cron] Task "${task.id}" auto-disabled after ${newCount} schedule errors: ${err}`,
+        );
+        this.disableTaskInternal(task.id);
+      } else {
+        console.error(
+          `[Cron] Task "${task.id}" schedule error (${newCount}/${MAX_SCHEDULE_ERRORS}): ${err}`,
+        );
+      }
+      return;
+    }
+
+    // Reset schedule error count on successful parse
+    this.updateTaskState(task.id, { scheduleErrorCount: 0 });
     this.jobs.set(task.id, job);
   }
 
@@ -271,9 +306,35 @@ export class CronScheduler {
     const useLight = task.lightContext === true;
 
     try {
-      const reply = useLight
-        ? await this.sessions.chatLight(sessionKey, task.prompt)
-        : await this.sessions.chat(sessionKey, task.prompt);
+      const timeoutMs =
+        task.timeoutSeconds != null
+          ? task.timeoutSeconds === 0
+            ? 0 // 0 = no timeout
+            : task.timeoutSeconds * 1000
+          : DEFAULT_TIMEOUT_MS;
+
+      const chatPromise = useLight
+        ? this.sessions.chatLight(sessionKey, task.prompt)
+        : this.sessions.chat(sessionKey, task.prompt);
+
+      let reply: string | null;
+      if (timeoutMs > 0) {
+        let timer: ReturnType<typeof setTimeout>;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Task timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          );
+        });
+        try {
+          reply = await Promise.race([chatPromise, timeoutPromise]);
+        } finally {
+          clearTimeout(timer!);
+        }
+      } else {
+        reply = await chatPromise;
+      }
+
       const finishedAt = Date.now();
       const durationMs = finishedAt - startedAt;
       const durationSec = (durationMs / 1000).toFixed(1);
@@ -544,12 +605,17 @@ export class CronScheduler {
       `[告警] 定时任务 "${label}" 连续失败 ${state.consecutiveErrors} 次\n` +
       `最近错误: ${errorMsg}`;
 
-    const alertMode = alertConfig.mode ?? "announce";
+    // Resolve failure destination: per-task deliver.failureDestination → global config → alertConfig
+    const failDest: CronFailureDestination | undefined =
+      task.deliver?.failureDestination ?? this.config.failureDestination;
+
+    const alertMode = failDest?.mode ?? alertConfig.mode ?? "announce";
 
     // Channel announce alert
     if (alertMode === "announce" || !alertConfig.webhookUrl) {
-      const channel = alertConfig.channel ?? this.lastActiveChannel;
-      const to = alertConfig.to ?? "*";
+      const channel =
+        failDest?.channel ?? alertConfig.channel ?? this.lastActiveChannel;
+      const to = failDest?.to ?? alertConfig.to ?? "*";
 
       if (channel) {
         const deliverFn = this.deliverers.get(channel);
@@ -656,6 +722,7 @@ export class CronScheduler {
       this.taskState.get(taskId) ?? {
         consecutiveErrors: 0,
         lastFailureAlertAtMs: 0,
+        scheduleErrorCount: 0,
       }
     );
   }
@@ -708,6 +775,8 @@ export class CronScheduler {
     if (withTimestamps.enabled !== false && this.started) {
       this.scheduleTask(withTimestamps);
     }
+    // Persist to job store
+    this.jobStore.upsert(withTimestamps);
     console.log(`[Cron] Task "${withTimestamps.id}" added`);
   }
 
@@ -731,6 +800,11 @@ export class CronScheduler {
       this.scheduleTask(updated);
     }
 
+    // Persist to job store (only if it's a store-managed task)
+    if (this.jobStore.has(id)) {
+      this.jobStore.update(id, { ...patch, updatedAt: Date.now() });
+    }
+
     console.log(`[Cron] Task "${id}" edited`);
     return true;
   }
@@ -739,6 +813,8 @@ export class CronScheduler {
     const exists = this.tasks.some((t) => t.id === id);
     if (!exists) return false;
     this.removeTaskInternal(id);
+    // Remove from job store
+    this.jobStore.remove(id);
     console.log(`[Cron] Task "${id}" removed`);
     return true;
   }

@@ -377,7 +377,7 @@ async function handleCronCommand(
     });
   }
 
-  // /cron add <id> <schedule> <prompt> [--model=X] [--light] [--name=X]
+  // /cron add <id> <schedule> <prompt> [--model=X] [--light] [--name=X] [--timeout=N]
   if (args.startsWith("add ")) {
     const parts = args.slice(4).trim().split(/\s+/);
     if (parts.length < 3) return t("cmd_cron_help");
@@ -390,11 +390,15 @@ async function handleCronCommand(
     let model: string | undefined;
     let light = false;
     let name: string | undefined;
+    let timeoutSeconds: number | undefined;
     for (const p of parts.slice(1)) {
       if (p.startsWith("--model=")) model = p.slice(8);
       else if (p === "--light") light = true;
       else if (p.startsWith("--name=")) name = p.slice(7);
-      else positional.push(p);
+      else if (p.startsWith("--timeout=")) {
+        const n = parseInt(p.slice(10), 10);
+        if (Number.isFinite(n) && n >= 0) timeoutSeconds = n;
+      } else positional.push(p);
     }
     if (positional.length < 2) return t("cmd_cron_help");
 
@@ -408,6 +412,7 @@ async function handleCronCommand(
       ...(model ? { model } : {}),
       ...(light ? { lightContext: true } : {}),
       ...(name ? { name } : {}),
+      ...(timeoutSeconds != null ? { timeoutSeconds } : {}),
     });
     return t("cmd_cron_added", { id, schedule, prompt: prompt.slice(0, 60) });
   }
@@ -431,6 +436,13 @@ async function handleCronCommand(
       else if (key === "delete_after_run" || key === "deleteAfterRun")
         patch["deleteAfterRun"] = value === "true";
       else if (
+        key === "timeout" ||
+        key === "timeout_seconds" ||
+        key === "timeoutSeconds"
+      ) {
+        const n = parseInt(value, 10);
+        if (Number.isFinite(n) && n >= 0) patch["timeoutSeconds"] = n;
+      } else if (
         key === "schedule" ||
         key === "prompt" ||
         key === "model" ||
