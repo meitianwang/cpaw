@@ -589,15 +589,34 @@ async function handleCronCommand(
 function main(): void {
   const cmd = process.argv[2] ?? "start";
 
+  const runWizard = (
+    fn: (m: typeof import("./setup-wizard.js")) => Promise<void>,
+  ) =>
+    import("./setup-wizard.js")
+      .then(fn)
+      .then(() => process.exit(0))
+      .catch((err) => {
+        console.error(err);
+        process.exit(1);
+      });
+
   switch (cmd) {
-    case "setup":
-      import("./setup-wizard.js")
-        .then((m) => m.runSetup())
-        .then(() => process.exit(0))
-        .catch((err) => {
-          console.error(err);
-          process.exit(1);
-        });
+    case "setup": {
+      const sub = process.argv[3];
+      if (sub === "--add-channel") {
+        runWizard((m) => m.runAddChannel());
+      } else if (sub === "--remove-channel") {
+        runWizard((m) => m.runRemoveChannel());
+      } else {
+        runWizard((m) => m.runSetup());
+      }
+      break;
+    }
+    case "add-channel":
+      runWizard((m) => m.runAddChannel());
+      break;
+    case "remove-channel":
+      runWizard((m) => m.runRemoveChannel());
       break;
     case "doctor":
       import("./doctor.js")
@@ -619,9 +638,11 @@ function main(): void {
         "Klaus — Use Claude Code from any messaging platform\n\n" +
           "Usage: klaus [command]\n\n" +
           "Commands:\n" +
-          "  setup    Interactive setup wizard\n" +
-          "  start    Start the bot (default)\n" +
-          "  doctor   Diagnose environment issues\n",
+          "  setup              Interactive setup wizard\n" +
+          "  add-channel        Add a channel to existing config\n" +
+          "  remove-channel     Remove a channel from config\n" +
+          "  start              Start the bot (default)\n" +
+          "  doctor             Diagnose environment issues\n",
       );
       process.exit(1);
   }

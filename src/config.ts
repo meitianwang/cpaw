@@ -41,6 +41,51 @@ export function getChannelNames(): string[] {
   return [(raw as string) ?? "qq"];
 }
 
+/**
+ * Add a channel to the existing config without overwriting other sections.
+ * Handles string→array conversion for the `channel` field.
+ */
+export function addChannelToConfig(
+  channelId: string,
+  channelCfg: Record<string, unknown>,
+): void {
+  const cfg = loadConfig();
+  const raw = cfg.channel;
+  const existing: string[] = Array.isArray(raw)
+    ? raw.map(String)
+    : raw
+      ? [String(raw)]
+      : [];
+
+  if (!existing.includes(channelId)) {
+    existing.push(channelId);
+  }
+  cfg.channel = existing.length === 1 ? existing[0] : existing;
+  cfg[channelId] = channelCfg;
+  saveConfig(cfg);
+}
+
+/**
+ * Remove a channel from config. Returns false if it's the last channel.
+ */
+export function removeChannelFromConfig(channelId: string): boolean {
+  const cfg = loadConfig();
+  const raw = cfg.channel;
+  const existing: string[] = Array.isArray(raw)
+    ? raw.map(String)
+    : raw
+      ? [String(raw)]
+      : [];
+
+  const filtered = existing.filter((c) => c !== channelId);
+  if (filtered.length === 0) return false;
+
+  cfg.channel = filtered.length === 1 ? filtered[0] : filtered;
+  delete cfg[channelId];
+  saveConfig(cfg);
+  return true;
+}
+
 export function loadQQBotConfig(): QQBotConfig {
   const cfg = (loadConfig().qq as Record<string, string>) ?? {};
   return {

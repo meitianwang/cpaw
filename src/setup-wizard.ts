@@ -3,7 +3,13 @@ import pc from "picocolors";
 import { execSync, execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { CONFIG_FILE, loadConfig, saveConfig } from "./config.js";
+import {
+  CONFIG_FILE,
+  loadConfig,
+  saveConfig,
+  addChannelToConfig,
+  removeChannelFromConfig,
+} from "./config.js";
 import { setLang, t } from "./i18n.js";
 
 const require = createRequire(import.meta.url);
@@ -682,4 +688,207 @@ export async function runSetup(): Promise<void> {
   saveConfig(configData);
   p.log.success(t("config_saved", { path: CONFIG_FILE }));
   p.outro(pc.green(t("setup_done")));
+}
+
+// ---------------------------------------------------------------------------
+// Channel labels (shared by add/remove)
+// ---------------------------------------------------------------------------
+
+const ALL_CHANNELS = ["qq", "wecom", "web", "feishu"] as const;
+
+function channelLabel(id: string): string {
+  switch (id) {
+    case "qq":
+      return `qq — ${t("channel_qq")}`;
+    case "wecom":
+      return `wecom — ${t("channel_wecom")}`;
+    case "web":
+      return `web — ${t("channel_web")}`;
+    case "feishu":
+      return `feishu — ${t("channel_feishu")}`;
+    default:
+      return id;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Collect & verify a single channel (extracted from runSetup loop)
+// ---------------------------------------------------------------------------
+
+async function collectAndVerifyChannel(
+  channel: string,
+  prev?: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  if (channel === "qq") {
+    p.log.step(t("qq_title"));
+    try {
+      require.resolve("qq-group-bot");
+    } catch {
+      const s2 = p.spinner();
+      s2.start(t("installing_qq_dep"));
+      try {
+        execSync("npm install -g qq-group-bot", { stdio: "pipe" });
+        s2.stop(pc.green(t("qq_dep_ok")));
+      } catch {
+        s2.stop(pc.yellow(t("qq_dep_fail")));
+      }
+    }
+    const cfg = await collectQQConfig(prev);
+    p.log.success(t("qq_verify_ok"));
+    return cfg;
+  }
+
+  if (channel === "wecom") {
+    p.log.step(t("wecom_title"));
+    const cfg = await collectWeComConfig(prev);
+    const ok = await verifyWeComToken(
+      cfg.corp_id as string,
+      cfg.corp_secret as string,
+    );
+    if (!ok) {
+      const saveAnyway = await p.confirm({
+        message: t("setup_cancelled").includes("取消")
+          ? "仍然保存配置?"
+          : "Save config anyway?",
+      });
+      if (p.isCancel(saveAnyway) || !saveAnyway) return null;
+    }
+    return cfg;
+  }
+
+  if (channel === "web") {
+    p.log.step(t("web_title"));
+    return collectWebConfig(prev);
+  }
+
+  if (channel === "feishu") {
+    p.log.step(t("feishu_title"));
+    const cfg = await collectFeishuConfig(prev);
+    const ok = await verifyFeishuCredentials(
+      cfg.app_id as string,
+      cfg.app_secret as string,
+    );
+    if (!ok) {
+      const saveAnyway = await p.confirm({
+        message: t("setup_cancelled").includes("取消")
+          ? "仍然保存配置?"
+          : "Save config anyway?",
+      });
+      if (p.isCancel(saveAnyway) || !saveAnyway) return null;
+    }
+    return cfg;
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Add Channel
+// ---------------------------------------------------------------------------
+
+async function selectLang(): Promise<void> {
+  const lang = await p.select({
+    message: "Choose language / 选择语言",
+    options: [
+      { value: "en" as const, label: "English" },
+      { value: "zh" as const, label: "中文" },
+    ],
+  });
+  if (p.isCancel(lang)) process.exit(0);
+  setLang(String(lang) as "en" | "zh");
+}
+
+export async function runAddChannel(): Promise<void> {
+  if (!existsSync(CONFIG_FILE)) {
+    console.log(t("add_channel_no_config"));
+    return;
+  }
+
+  p.intro(pc.bgCyan(pc.black(t("add_channel_title"))));
+  await selectLang();
+
+  const cfg = loadConfig();
+  const raw = cfg.channel;
+  const configured: string[] = Array.isArray(raw)
+    ? raw.map(String)
+    : raw
+      ? [String(raw)]
+      : [];
+
+  const available = ALL_CHANNELS.filter((c) => !configured.includes(c));
+  if (available.length === 0) {
+    p.log.warn(t("add_channel_none"));
+    p.outro("");
+    return;
+  }
+
+  const selected = await p.select({
+    message: t("add_channel_select"),
+    options: available.map((c) => ({ value: c, label: channelLabel(c) })),
+  });
+  if (p.isCancel(selected)) process.exit(0);
+
+  const channelId = String(selected);
+  const channelCfg = await collectAndVerifyChannel(channelId);
+  if (!channelCfg) {
+    p.outro(t("setup_cancelled"));
+    return;
+  }
+
+  addChannelToConfig(channelId, channelCfg);
+  p.log.success(t("add_channel_success", { channel: channelId }));
+  p.outro(pc.green(t("config_saved", { path: CONFIG_FILE })));
+}
+
+// ---------------------------------------------------------------------------
+// Remove Channel
+// ---------------------------------------------------------------------------
+
+export async function runRemoveChannel(): Promise<void> {
+  if (!existsSync(CONFIG_FILE)) {
+    console.log(t("add_channel_no_config"));
+    return;
+  }
+
+  p.intro(pc.bgCyan(pc.black(t("remove_channel_title"))));
+  await selectLang();
+
+  const cfg = loadConfig();
+  const raw = cfg.channel;
+  const configured: string[] = Array.isArray(raw)
+    ? raw.map(String)
+    : raw
+      ? [String(raw)]
+      : [];
+
+  if (configured.length === 0) {
+    p.log.warn(t("remove_channel_none"));
+    p.outro("");
+    return;
+  }
+
+  if (configured.length === 1) {
+    p.log.warn(t("remove_channel_last"));
+    p.outro("");
+    return;
+  }
+
+  const selected = await p.select({
+    message: t("remove_channel_select"),
+    options: configured.map((c) => ({ value: c, label: channelLabel(c) })),
+  });
+  if (p.isCancel(selected)) process.exit(0);
+
+  const channelId = String(selected);
+  const confirmed = await p.confirm({
+    message: t("remove_channel_confirm", { channel: channelId }),
+  });
+  if (p.isCancel(confirmed) || !confirmed) {
+    p.outro(t("setup_cancelled"));
+    return;
+  }
+
+  removeChannelFromConfig(channelId);
+  p.log.success(t("remove_channel_success", { channel: channelId }));
+  p.outro(pc.green(t("config_saved", { path: CONFIG_FILE })));
 }

@@ -82,6 +82,51 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     en: "Feishu / Lark (WebSocket default, no public IP needed)",
     zh: "飞书 / Lark (默认 WebSocket, 无需公网 IP)",
   },
+  // ── Add / Remove Channel ──
+  add_channel_title: {
+    en: " Add Channel ",
+    zh: " 添加通道 ",
+  },
+  add_channel_select: {
+    en: "Select a channel to add:",
+    zh: "选择要添加的通道：",
+  },
+  add_channel_none: {
+    en: "All channels are already configured.",
+    zh: "所有通道均已配置。",
+  },
+  add_channel_success: {
+    en: "Channel {channel} added successfully.",
+    zh: "通道 {channel} 添加成功。",
+  },
+  add_channel_no_config: {
+    en: "No config found. Run `klaus setup` first.",
+    zh: "未找到配置文件。请先运行 `klaus setup`。",
+  },
+  remove_channel_title: {
+    en: " Remove Channel ",
+    zh: " 移除通道 ",
+  },
+  remove_channel_select: {
+    en: "Select a channel to remove:",
+    zh: "选择要移除的通道：",
+  },
+  remove_channel_confirm: {
+    en: "Remove channel {channel}? Its config will be deleted.",
+    zh: "移除通道 {channel}？其配置将被删除。",
+  },
+  remove_channel_success: {
+    en: "Channel {channel} removed.",
+    zh: "通道 {channel} 已移除。",
+  },
+  remove_channel_last: {
+    en: "Cannot remove the last channel. At least one must remain.",
+    zh: "无法移除最后一个通道，至少保留一个。",
+  },
+  remove_channel_none: {
+    en: "No channels configured.",
+    zh: "没有已配置的通道。",
+  },
   // ── Feishu Guide ──
   feishu_title: {
     en: "Feishu (Lark) Setup",
