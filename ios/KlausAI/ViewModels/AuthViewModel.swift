@@ -1,15 +1,14 @@
 import Foundation
 
 /// ViewModel for login and register forms.
-@Observable
-final class AuthViewModel {
-    var email = ""
-    var password = ""
-    var displayName = ""
-    var inviteCode = ""
-    var isLoading = false
-    var errorMessage: String?
-    var isRegisterMode = false
+final class AuthViewModel: ObservableObject {
+    @Published var email = ""
+    @Published var password = ""
+    @Published var displayName = ""
+    @Published var inviteCode = ""
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var isRegisterMode = false
 
     var isLoginValid: Bool {
         !email.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 8

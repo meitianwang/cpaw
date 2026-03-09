@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct KlausAIApp: App {
-    @State private var appState = AppState()
+    @StateObject private var appState = AppState()
 
     var body: some Scene {
         WindowGroup {
@@ -12,10 +12,10 @@ struct KlausAIApp: App {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if appState.isAuthenticated {
                     MainView()
-                        .environment(appState)
+                        .environmentObject(appState)
                 } else {
                     AuthView()
-                        .environment(appState)
+                        .environmentObject(appState)
                 }
             }
             .task {

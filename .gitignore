@@ -11,10 +11,8 @@ OPENCLAW-ANALYSIS.md
 !skills/**/SKILL.md
 
 # iOS / Xcode
-ios/KlausAI.xcodeproj/
 ios/KlausAI.xcworkspace/
 ios/build/
 ios/DerivedData/
-ios/*.xcuserstate
 ios/**/*.xcuserstate
 ios/**/xcuserdata/

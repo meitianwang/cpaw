@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Root auth view that switches between login and register.
 struct AuthView: View {
-    @Environment(AppState.self) private var appState
-    @State private var viewModel = AuthViewModel()
+    @EnvironmentObject private var appState: AppState
+    @StateObject private var viewModel = AuthViewModel()
 
     var body: some View {
         NavigationStack {
@@ -18,19 +18,6 @@ struct AuthView: View {
                             .font(.largeTitle.bold())
                     }
                     .padding(.top, 60)
-
-                    // Server URL
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(L10n.serverLabel)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        @Bindable var state = appState
-                        TextField("http://localhost:3000", text: $state.serverURL)
-                            .textFieldStyle(.roundedBorder)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                    }
 
                     // Form
                     if viewModel.isRegisterMode {
@@ -64,7 +51,7 @@ struct AuthView: View {
 }
 
 private struct LoginFormView: View {
-    @Bindable var viewModel: AuthViewModel
+    @ObservedObject var viewModel: AuthViewModel
     let appState: AppState
 
     var body: some View {
@@ -98,7 +85,7 @@ private struct LoginFormView: View {
 }
 
 private struct RegisterFormView: View {
-    @Bindable var viewModel: AuthViewModel
+    @ObservedObject var viewModel: AuthViewModel
     let appState: AppState
 
     var body: some View {

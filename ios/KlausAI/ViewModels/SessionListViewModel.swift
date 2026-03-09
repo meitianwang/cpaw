@@ -1,11 +1,10 @@
 import Foundation
 
 /// ViewModel for session list (sidebar).
-@Observable
-final class SessionListViewModel {
-    var sessions: [SessionSummary] = []
-    var isLoading = false
-    var errorMessage: String?
+final class SessionListViewModel: ObservableObject {
+    @Published var sessions: [SessionSummary] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
 
     private let appState: AppState
 

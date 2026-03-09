@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Main app view with sidebar (sessions) and detail (chat).
 struct MainView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @State private var chatVM: ChatViewModel?
     @State private var sessionVM: SessionListViewModel?
     @State private var showSettings = false
@@ -15,7 +15,7 @@ struct MainView: View {
                 SessionListView(sessionVM: sessionVM, chatVM: chatVM)
                     .navigationTitle(L10n.appName)
                     .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .navigationBarTrailing) {
                             Button {
                                 showSettings = true
                             } label: {
@@ -32,23 +32,23 @@ struct MainView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         // Connection status dot in toolbar
-                        ToolbarItem(placement: .topBarTrailing) {
+                        ToolbarItem(placement: .navigationBarTrailing) {
                             Circle()
                                 .fill(connectionColor)
                                 .frame(width: 8, height: 8)
                         }
                     }
             } else {
-                ContentUnavailableView(
-                    L10n.noConversations,
+                EmptyStateView(
+                    title: L10n.noConversations,
                     systemImage: "bubble.left.and.bubble.right",
-                    description: Text(L10n.startNewChat)
+                    description: L10n.startNewChat
                 )
             }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
-                .environment(appState)
+                .environmentObject(appState)
         }
         .onAppear {
             if chatVM == nil {
@@ -75,5 +75,26 @@ struct MainView: View {
         case .connecting: return .yellow
         case .disconnected: return .red
         }
+    }
+}
+
+/// Replacement for ContentUnavailableView (iOS 17+)
+struct EmptyStateView: View {
+    let title: String
+    let systemImage: String
+    let description: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.headline)
+            Text(description)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

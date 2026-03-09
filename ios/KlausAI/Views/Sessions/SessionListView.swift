@@ -2,9 +2,9 @@ import SwiftUI
 
 /// Sidebar view listing all chat sessions (Chinese localized).
 struct SessionListView: View {
-    @Bindable var sessionVM: SessionListViewModel
-    @Bindable var chatVM: ChatViewModel
-    @Environment(AppState.self) private var appState
+    @ObservedObject var sessionVM: SessionListViewModel
+    @ObservedObject var chatVM: ChatViewModel
+    @EnvironmentObject private var appState: AppState
 
     var body: some View {
         List {
@@ -18,10 +18,10 @@ struct SessionListView: View {
             // Session list
             Section(L10n.conversations) {
                 if sessionVM.sessions.isEmpty && !sessionVM.isLoading {
-                    ContentUnavailableView(
-                        L10n.noConversations,
+                    EmptyStateView(
+                        title: L10n.noConversations,
                         systemImage: "bubble.left.and.bubble.right",
-                        description: Text(L10n.startNewChat)
+                        description: L10n.startNewChat
                     )
                 }
 

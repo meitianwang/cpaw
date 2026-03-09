@@ -1,28 +1,28 @@
 import Foundation
 import SwiftUI
+import Combine
 
 /// Root application state managing auth, API client, and WebSocket connection.
-@Observable
-final class AppState {
-    private(set) var currentUser: User?
-    private(set) var isCheckingAuth = true
-    var serverURL: String {
-        didSet {
-            UserDefaults.standard.set(serverURL, forKey: "klaus_server_url")
-            rebuildClient()
-        }
-    }
+final class AppState: ObservableObject {
+    @Published private(set) var currentUser: User?
+    @Published private(set) var isCheckingAuth = true
 
-    private(set) var api: APIClient
+    let serverURL = "https://klaus-ai.site"
+    let api: APIClient
     let webSocket = WebSocketManager()
+
+    private var wsCancellable: AnyCancellable?
 
     var isAuthenticated: Bool { currentUser != nil }
 
     init() {
-        let saved = UserDefaults.standard.string(forKey: "klaus_server_url") ?? "http://localhost:3000"
-        self.serverURL = saved
-        let url = URL(string: saved) ?? URL(string: "http://localhost:3000")!
+        let url = URL(string: "https://klaus-ai.site")!
         self.api = APIClient(baseURL: url)
+
+        // Forward WebSocket objectWillChange to AppState
+        wsCancellable = webSocket.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     /// Check existing session on app launch.
@@ -77,11 +77,5 @@ final class AppState {
     private func connectWebSocket() {
         guard let url = URL(string: serverURL) else { return }
         webSocket.connect(baseURL: url)
-    }
-
-    private func rebuildClient() {
-        guard let url = URL(string: serverURL) else { return }
-        api = APIClient(baseURL: url)
-        webSocket.disconnect()
     }
 }

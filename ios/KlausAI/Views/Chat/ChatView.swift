@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Main chat view with message list, streaming indicator, and input bar.
 struct ChatView: View {
-    @Bindable var viewModel: ChatViewModel
-    @Environment(AppState.self) private var appState
+    @ObservedObject var viewModel: ChatViewModel
+    @EnvironmentObject private var appState: AppState
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,7 +18,7 @@ struct ChatView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
-                .background(appState.webSocket.state == .connecting ? .yellow.opacity(0.15) : .red.opacity(0.1))
+                .background(appState.webSocket.state == .connecting ? Color.yellow.opacity(0.15) : Color.red.opacity(0.1))
             }
 
             // Config update banner (auto-dismiss after 15s)
@@ -36,14 +36,14 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(.blue.opacity(0.08))
+                .background(Color.blue.opacity(0.08))
             }
 
             // Messages
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 16) {
-                        ForEach(viewModel.messages) { message in
+                        ForEach(viewModel.messages, id: \.id) { message in
                             MessageBubble(message: message, baseURL: appState.api.baseURL)
                                 .id(message.id)
                         }
@@ -51,13 +51,10 @@ struct ChatView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                 }
-                .onChange(of: viewModel.messages.count) {
+                .onChange(of: viewModel.messages.count) { _ in
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo(viewModel.messages.last?.id, anchor: .bottom)
                     }
-                }
-                .onChange(of: viewModel.messages.last?.content) {
-                    proxy.scrollTo(viewModel.messages.last?.id, anchor: .bottom)
                 }
             }
 
@@ -77,7 +74,7 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(.red.opacity(0.08))
+                .background(Color.red.opacity(0.08))
             }
 
             Divider()

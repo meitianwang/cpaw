@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 /// Chat input bar with text field, multi-file upload (photos + documents), preview, and send.
 struct ChatInputBar: View {
-    @Bindable var viewModel: ChatViewModel
+    @ObservedObject var viewModel: ChatViewModel
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var showDocumentPicker = false
     @State private var isUploading = false
@@ -58,7 +58,7 @@ struct ChatInputBar: View {
                         .font(.title2)
                         .foregroundStyle(.secondary)
                 }
-                .onChange(of: selectedPhotoItems) { _, newItems in
+                .onChange(of: selectedPhotoItems) { newItems in
                     guard !newItems.isEmpty else { return }
                     Task {
                         for item in newItems {
@@ -89,7 +89,7 @@ struct ChatInputBar: View {
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(canSend ? .accent : .secondary)
+                        .foregroundStyle(canSend ? Color.accentColor : Color.secondary)
                 }
                 .disabled(!canSend)
             }
@@ -133,10 +133,9 @@ struct ChatInputBar: View {
                 fileName: fileName,
                 contentType: mimeType
             )
-            let thumbnail: Data? = if mimeType.hasPrefix("image/") && data.count < 100_000 {
-                data
-            } else {
-                nil
+            var thumbnail: Data?
+            if mimeType.hasPrefix("image/") && data.count < 100_000 {
+                thumbnail = data
             }
             viewModel.uploadedFiles.append(UploadedFile(
                 id: response.id,

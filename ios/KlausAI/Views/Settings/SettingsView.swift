@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Settings view: server URL, user info, logout (Chinese localized).
 struct SettingsView: View {
-    @Environment(AppState.self) private var appState
+    @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var showLogoutConfirm = false
 
@@ -18,14 +18,8 @@ struct SettingsView: View {
                     }
                 }
 
-                // Server
-                Section(L10n.serverSection) {
-                    @Bindable var state = appState
-                    TextField(L10n.serverURLLabel, text: $state.serverURL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-
+                // Connection
+                Section {
                     HStack {
                         Circle()
                             .fill(connectionColor)
@@ -52,7 +46,7 @@ struct SettingsView: View {
             .navigationTitle(L10n.settings)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(L10n.done) { dismiss() }
                 }
             }

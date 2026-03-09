@@ -1,20 +1,20 @@
 import Foundation
+import Combine
 
 /// Manages WebSocket connection to Klaus backend with auto-reconnect.
-@Observable
-final class WebSocketManager: @unchecked Sendable {
+final class WebSocketManager: ObservableObject {
     enum ConnectionState: Sendable {
         case disconnected
         case connecting
         case connected
     }
 
-    private(set) var state: ConnectionState = .disconnected
+    @Published private(set) var state: ConnectionState = .disconnected
 
     var onServerMessage: ((ServerMessage) -> Void)?
 
     private var webSocketTask: URLSessionWebSocketTask?
-    private var session: URLSession?
+    private var urlSession: URLSession?
     private var baseURL: URL?
     private var reconnectAttempts = 0
     private var isIntentionalDisconnect = false
@@ -78,10 +78,10 @@ final class WebSocketManager: @unchecked Sendable {
 
         let config = URLSessionConfiguration.default
         config.httpCookieStorage = .shared
-        let urlSession = URLSession(configuration: config)
-        self.session = urlSession
+        let session = URLSession(configuration: config)
+        self.urlSession = session
 
-        let task = urlSession.webSocketTask(with: request)
+        let task = session.webSocketTask(with: request)
         self.webSocketTask = task
         task.resume()
 
@@ -114,7 +114,7 @@ final class WebSocketManager: @unchecked Sendable {
     private func startPingLoop() {
         pingTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(25))
+                try? await Task.sleep(nanoseconds: 25_000_000_000)
                 guard !Task.isCancelled else { break }
                 self?.webSocketTask?.sendPing { error in
                     if let error {
@@ -165,7 +165,7 @@ final class WebSocketManager: @unchecked Sendable {
         let totalDelay = delay + jitter
 
         print("[WS] Reconnecting in \(String(format: "%.1f", totalDelay))s (attempt \(reconnectAttempts))")
-        try? await Task.sleep(for: .seconds(totalDelay))
+        try? await Task.sleep(nanoseconds: UInt64(totalDelay * 1_000_000_000))
 
         guard !isIntentionalDisconnect, !Task.isCancelled else { return }
         await MainActor.run { self.doConnect() }
@@ -178,8 +178,8 @@ final class WebSocketManager: @unchecked Sendable {
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
-        session?.invalidateAndCancel()
-        session = nil
+        urlSession?.invalidateAndCancel()
+        urlSession = nil
     }
 
     deinit {

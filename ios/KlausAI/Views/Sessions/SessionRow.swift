@@ -33,7 +33,7 @@ struct SessionRow: View {
 
             if isActive {
                 Circle()
-                    .fill(.accent)
+                    .fill(Color.accentColor)
                     .frame(width: 8, height: 8)
             }
         }

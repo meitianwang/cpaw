@@ -1,18 +1,18 @@
 import Foundation
+import Combine
 
 /// Core chat ViewModel: manages messages, streaming, tool events, permissions,
 /// slash commands, and config notifications.
-@Observable
-final class ChatViewModel {
-    var messages: [ChatMessage] = []
-    var inputText = ""
-    var isProcessing = false
-    var pendingPermission: PermissionRequest?
-    var errorMessage: String?
-    var currentSessionId = "default"
-    var currentSessionTitle: String?
-    var uploadedFiles: [UploadedFile] = []
-    var configUpdateBanner = false
+final class ChatViewModel: ObservableObject {
+    @Published var messages: [ChatMessage] = []
+    @Published var inputText = ""
+    @Published var isProcessing = false
+    @Published var pendingPermission: PermissionRequest?
+    @Published var errorMessage: String?
+    @Published var currentSessionId = "default"
+    @Published var currentSessionTitle: String?
+    @Published var uploadedFiles: [UploadedFile] = []
+    @Published var configUpdateBanner = false
 
     let appState: AppState
     private var streamBuffer = ""
@@ -216,13 +216,14 @@ final class ChatViewModel {
                     url: url,
                     type: fileType
                 ))
+                objectWillChange.send()
             }
 
         case .configUpdated:
             configUpdateBanner = true
             configBannerDismissTask?.cancel()
             configBannerDismissTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(15))
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
                 self.configUpdateBanner = false
             }
 
@@ -242,7 +243,7 @@ final class ChatViewModel {
         // Throttle UI updates (100ms matching Web frontend)
         if streamThrottleTask == nil {
             streamThrottleTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(100))
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 self.flushStreamBuffer()
                 self.streamThrottleTask = nil
             }
@@ -254,6 +255,7 @@ final class ChatViewModel {
         if let last = messages.last, last.role == .assistant, last.isStreaming {
             last.content += streamBuffer
             streamBuffer = ""
+            objectWillChange.send()
         }
     }
 
@@ -265,6 +267,7 @@ final class ChatViewModel {
         if let last = messages.last, last.role == .assistant, last.isStreaming {
             last.content = text
             last.isStreaming = false
+            objectWillChange.send()
         }
     }
 
@@ -302,5 +305,6 @@ final class ChatViewModel {
                 last.toolEvents[idx].status = (payload.isError == true) ? .error : .completed
             }
         }
+        objectWillChange.send()
     }
 }
