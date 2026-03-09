@@ -41,6 +41,8 @@ type FieldSpec = {
   readonly key: string;
   readonly env?: string;
   readonly label: string;
+  /** If true, missing value is not an error. */
+  readonly optional?: boolean;
   readonly validate?: (value: unknown) => string | null;
 };
 
@@ -54,8 +56,9 @@ const WEB_FIELDS: readonly FieldSpec[] = [
     key: "port",
     env: "KLAUS_WEB_PORT",
     label: "HTTP Port",
+    optional: true,
     validate: (v) => {
-      if (v == null || v === "") return null; // optional, has default
+      if (v == null || v === "") return null; // has default 3000
       const n = Number(v);
       return Number.isInteger(n) && n >= 1 && n <= 65535
         ? null
@@ -70,8 +73,9 @@ const FEISHU_FIELDS: readonly FieldSpec[] = [
   {
     key: "mode",
     label: "Connection mode",
+    optional: true,
     validate: (v) => {
-      if (v == null || v === "") return null; // optional, defaults to websocket
+      if (v == null || v === "") return null; // defaults to websocket
       return v === "websocket" || v === "webhook"
         ? null
         : 'must be "websocket" or "webhook"';
@@ -81,8 +85,9 @@ const FEISHU_FIELDS: readonly FieldSpec[] = [
     key: "port",
     env: "FEISHU_PORT",
     label: "Webhook Port",
+    optional: true,
     validate: (v) => {
-      if (v == null || v === "") return null; // optional, has default
+      if (v == null || v === "") return null; // has default 9000
       const n = Number(v);
       return Number.isInteger(n) && n >= 1 && n <= 65535
         ? null
@@ -217,6 +222,7 @@ export function validateConfig(): ValidationResult {
         const value =
           section[spec.key] ?? (spec.env ? process.env[spec.env] : undefined);
         if (value == null || value === "") {
+          if (spec.optional) continue; // skip optional fields
           const envNote = spec.env ? ` (or env: ${spec.env})` : "";
           issues.push({
             path: `${channel}.${spec.key}`,
