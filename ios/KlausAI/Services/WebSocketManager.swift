@@ -74,6 +74,9 @@ final class WebSocketManager: ObservableObject {
         if let cookies = HTTPCookieStorage.shared.cookies(for: baseURL) {
             let cookieHeader = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
             request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+            print("[WS] Connecting to \(wsURL) with cookies: \(cookies.map(\.name).joined(separator: ", "))")
+        } else {
+            print("[WS] Connecting to \(wsURL) (no cookies!)")
         }
 
         let config = URLSessionConfiguration.default
@@ -85,9 +88,7 @@ final class WebSocketManager: ObservableObject {
         self.webSocketTask = task
         task.resume()
 
-        state = .connected
-        reconnectAttempts = 0
-
+        // Don't set .connected yet — wait for first successful receive
         startReceiveLoop()
         startPingLoop()
     }
@@ -95,14 +96,23 @@ final class WebSocketManager: ObservableObject {
     private func startReceiveLoop() {
         receiveTask = Task { [weak self] in
             guard let self else { return }
+            var firstMessage = true
             while !Task.isCancelled {
                 guard let task = self.webSocketTask else { break }
                 do {
                     let message = try await task.receive()
+                    if firstMessage {
+                        firstMessage = false
+                        await MainActor.run {
+                            self.state = .connected
+                            self.reconnectAttempts = 0
+                        }
+                        print("[WS] Connected successfully")
+                    }
                     self.handleMessage(message)
                 } catch {
                     if !self.isIntentionalDisconnect {
-                        print("[WS] Receive error: \(error.localizedDescription)")
+                        print("[WS] Receive error: \(error)")
                         await self.scheduleReconnect()
                     }
                     break
@@ -131,13 +141,18 @@ final class WebSocketManager: ObservableObject {
         case .string(let text):
             guard let d = text.data(using: .utf8) else { return }
             data = d
+            print("[WS] Received: \(text.prefix(200))")
         case .data(let d):
             data = d
+            print("[WS] Received binary: \(d.count) bytes")
         @unknown default:
             return
         }
 
-        guard let serverMessage = ServerMessage.decode(from: data) else { return }
+        guard let serverMessage = ServerMessage.decode(from: data) else {
+            print("[WS] Failed to decode message")
+            return
+        }
 
         // Auto-reply to ping with pong
         if case .ping = serverMessage {

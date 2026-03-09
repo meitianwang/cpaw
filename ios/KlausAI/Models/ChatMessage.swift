@@ -1,8 +1,7 @@
 import Foundation
 
 /// Local chat message model with streaming and tool event state.
-/// Uses a class so ViewModels can mutate in-place and trigger objectWillChange.
-final class ChatMessage: Identifiable {
+struct ChatMessage: Identifiable {
     let id: String
     let role: Role
     let timestamp: Date

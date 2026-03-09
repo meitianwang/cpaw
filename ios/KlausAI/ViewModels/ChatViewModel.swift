@@ -198,26 +198,24 @@ final class ChatViewModel: ObservableObject {
 
         case .file(let url, let name, let sessionId):
             guard matchesSession(sessionId) else { return }
-            if let last = messages.last, last.role == .assistant {
-                let ext = (name as NSString).pathExtension.lowercased()
-                let fileType: AttachedFile.FileType
-                if ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"].contains(ext) {
-                    fileType = .image
-                } else if ["mp3", "wav", "aac", "ogg", "m4a"].contains(ext) {
-                    fileType = .audio
-                } else if ["mp4", "mov", "avi", "mkv", "webm"].contains(ext) {
-                    fileType = .video
-                } else {
-                    fileType = .file
-                }
-                last.attachedFiles.append(AttachedFile(
-                    id: UUID().uuidString,
-                    name: name,
-                    url: url,
-                    type: fileType
-                ))
-                objectWillChange.send()
+            guard let idx = lastAssistantIndex() else { return }
+            let ext = (name as NSString).pathExtension.lowercased()
+            let fileType: AttachedFile.FileType
+            if ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"].contains(ext) {
+                fileType = .image
+            } else if ["mp3", "wav", "aac", "ogg", "m4a"].contains(ext) {
+                fileType = .audio
+            } else if ["mp4", "mov", "avi", "mkv", "webm"].contains(ext) {
+                fileType = .video
+            } else {
+                fileType = .file
             }
+            messages[idx].attachedFiles.append(AttachedFile(
+                id: UUID().uuidString,
+                name: name,
+                url: url,
+                type: fileType
+            ))
 
         case .configUpdated:
             configUpdateBanner = true
@@ -237,6 +235,16 @@ final class ChatViewModel: ObservableObject {
         return sessionId == currentSessionId
     }
 
+    /// Find the index of the last assistant message (streaming or not).
+    private func lastAssistantIndex() -> Int? {
+        messages.lastIndex(where: { $0.role == .assistant })
+    }
+
+    /// Find the index of the last streaming assistant message.
+    private func lastStreamingIndex() -> Int? {
+        messages.lastIndex(where: { $0.role == .assistant && $0.isStreaming })
+    }
+
     private func appendStreamChunk(_ chunk: String) {
         streamBuffer += chunk
 
@@ -252,11 +260,10 @@ final class ChatViewModel: ObservableObject {
 
     private func flushStreamBuffer() {
         guard !streamBuffer.isEmpty else { return }
-        if let last = messages.last, last.role == .assistant, last.isStreaming {
-            last.content += streamBuffer
-            streamBuffer = ""
-            objectWillChange.send()
-        }
+        guard let idx = lastStreamingIndex() else { return }
+        // Mutating via index triggers @Published change detection
+        messages[idx].content += streamBuffer
+        streamBuffer = ""
     }
 
     private func finalizeAssistantMessage(_ text: String) {
@@ -264,11 +271,9 @@ final class ChatViewModel: ObservableObject {
         streamThrottleTask = nil
         streamBuffer = ""
 
-        if let last = messages.last, last.role == .assistant, last.isStreaming {
-            last.content = text
-            last.isStreaming = false
-            objectWillChange.send()
-        }
+        guard let idx = lastStreamingIndex() else { return }
+        messages[idx].content = text
+        messages[idx].isStreaming = false
     }
 
     private func removeStreamingMessage() {
@@ -276,13 +281,13 @@ final class ChatViewModel: ObservableObject {
         streamThrottleTask = nil
         streamBuffer = ""
 
-        if let last = messages.last, last.role == .assistant, last.isStreaming {
-            messages.removeLast()
+        if let idx = lastStreamingIndex() {
+            messages.remove(at: idx)
         }
     }
 
     private func handleToolEvent(_ payload: ToolEventPayload) {
-        guard let last = messages.last, last.role == .assistant else { return }
+        guard let idx = lastAssistantIndex() else { return }
 
         if payload.type == "tool_start" {
             let event = ToolEvent(
@@ -299,12 +304,11 @@ final class ChatViewModel: ObservableObject {
                 parentToolUseId: payload.parentToolUseId,
                 timestamp: Date(timeIntervalSince1970: payload.timestamp / 1000)
             )
-            last.toolEvents.append(event)
+            messages[idx].toolEvents.append(event)
         } else if payload.type == "tool_result" {
-            if let idx = last.toolEvents.firstIndex(where: { $0.toolUseId == payload.toolUseId }) {
-                last.toolEvents[idx].status = (payload.isError == true) ? .error : .completed
+            if let eventIdx = messages[idx].toolEvents.firstIndex(where: { $0.toolUseId == payload.toolUseId }) {
+                messages[idx].toolEvents[eventIdx].status = (payload.isError == true) ? .error : .completed
             }
         }
-        objectWillChange.send()
     }
 }

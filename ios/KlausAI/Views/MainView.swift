@@ -6,23 +6,28 @@ struct MainView: View {
     @State private var chatVM: ChatViewModel?
     @State private var sessionVM: SessionListViewModel?
     @State private var showSettings = false
+    @State private var selectedSessionId: String? = "default"
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             // Sidebar: sessions
             if let sessionVM, let chatVM {
-                SessionListView(sessionVM: sessionVM, chatVM: chatVM)
-                    .navigationTitle(L10n.appName)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gear")
-                            }
+                SessionListView(
+                    sessionVM: sessionVM,
+                    chatVM: chatVM,
+                    selectedSessionId: $selectedSessionId
+                )
+                .navigationTitle(L10n.appName)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Image(systemName: "gear")
                         }
                     }
+                }
             }
         } detail: {
             // Detail: chat with session title
@@ -31,7 +36,6 @@ struct MainView: View {
                     .navigationTitle(chatTitle)
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
-                        // Connection status dot in toolbar
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Circle()
                                 .fill(connectionColor)
@@ -58,7 +62,6 @@ struct MainView: View {
         }
     }
 
-    /// Display session title from API, fallback to "Chat"
     private var chatTitle: String {
         if let title = chatVM?.currentSessionTitle, !title.isEmpty {
             return title
