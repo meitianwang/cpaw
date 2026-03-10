@@ -37,6 +37,8 @@ struct ChatView: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { dismissKeyboard() }
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -49,6 +51,7 @@ struct ChatView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                     }
+                    .onTapGesture { dismissKeyboard() }
                     .onChange(of: viewModel.messages.count) { _ in
                         withAnimation(.easeOut(duration: 0.2)) {
                             proxy.scrollTo(viewModel.messages.last?.id, anchor: .bottom)
@@ -91,5 +94,9 @@ struct ChatView: View {
         .task {
             await viewModel.loadHistory()
         }
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
