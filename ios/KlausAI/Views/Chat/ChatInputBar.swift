@@ -11,6 +11,7 @@ struct ChatInputBar: View {
     @StateObject private var speech = SpeechRecognizer()
     @FocusState private var isFocused: Bool
     @State private var isVoiceMode = false
+    @State private var showPhotoPicker = false
 
     private static let maxFileSize = 10 * 1024 * 1024  // 10 MB
 
@@ -159,7 +160,9 @@ struct ChatInputBar: View {
 
     private var attachmentMenu: some View {
         Menu {
-            PhotosPicker(selection: $selectedPhotoItems, matching: .any(of: [.images, .videos])) {
+            Button {
+                showPhotoPicker = true
+            } label: {
                 Label("照片与视频", systemImage: "photo.on.rectangle")
             }
 
@@ -175,6 +178,7 @@ struct ChatInputBar: View {
                 .frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItems, matching: .any(of: [.images, .videos]))
         .onChange(of: selectedPhotoItems) { newItems in
             guard !newItems.isEmpty else { return }
             Task {
