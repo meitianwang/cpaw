@@ -193,7 +193,8 @@ struct ChatViewWrapper: View {
                 } label: {
                     UserAvatarView(
                         name: appState.currentUser?.displayName ?? "",
-                        size: 30
+                        size: 30,
+                        avatarUrl: appState.currentUser?.avatarUrl
                     )
                 }
                 .buttonStyle(.plain)
@@ -213,21 +214,41 @@ struct ChatViewWrapper: View {
     }
 }
 
-/// User avatar with initials, similar to Gemini's style.
+/// User avatar with remote image support and initials fallback.
 struct UserAvatarView: View {
     let name: String
     let size: CGFloat
+    var avatarUrl: String? = nil
+    var baseURL: String = "https://klaus-ai.site"
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(LinearGradient(colors: [Color.blue.opacity(0.6), Color.purple.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            
-            Text(initials)
-                .font(.system(size: size * 0.45, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+
+            if let avatarUrl, let url = URL(string: baseURL + avatarUrl) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        initialsView
+                    }
+                }
+            } else {
+                initialsView
+            }
         }
         .frame(width: size, height: size)
+        .clipShape(Circle())
+    }
+
+    private var initialsView: some View {
+        Text(initials)
+            .font(.system(size: size * 0.45, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
     }
 
     private var initials: String {

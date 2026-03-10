@@ -58,6 +58,21 @@ actor APIClient {
         return response.user
     }
 
+    func uploadAvatar(data: Data, contentType: String) async throws -> User {
+        guard let url = URL(string: "/api/auth/avatar", relativeTo: baseURL) else {
+            throw APIError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+
+        let (responseData, httpResponse) = try await session.data(for: request)
+        try validateResponse(httpResponse, data: responseData)
+        let response = try decoder.decode(AuthResponse.self, from: responseData)
+        return response.user
+    }
+
     // MARK: - Sessions
 
     func listSessions() async throws -> SessionsResponse {

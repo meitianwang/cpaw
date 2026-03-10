@@ -68,6 +68,8 @@ import {
   handleAuthLogout,
   handleAuthMe,
   handleAuthProfile,
+  handleAvatarUpload,
+  handleAvatarServe,
   handleGoogleRedirect,
   handleGoogleCallback,
 } from "./web-auth.js";
@@ -1247,6 +1249,21 @@ async function handleRequest(
       }
       return handleAuthProfile(req, res, userStoreRef);
     }
+    case "/api/auth/avatar": {
+      const avatarIp =
+        (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+        req.socket.remoteAddress ||
+        "";
+      if (!checkRateLimit(avatarIp)) {
+        jsonResponse(res, 429, { error: "too_many_requests" });
+        return;
+      }
+      if (!userStoreRef) {
+        jsonResponse(res, 503, { error: "not ready" });
+        return;
+      }
+      return handleAvatarUpload(req, res, userStoreRef);
+    }
     case "/api/auth/google":
       return handleGoogleRedirect(req, res, cfg);
     case "/api/auth/google/callback":
@@ -1369,6 +1386,11 @@ async function handleRequest(
           res,
           url.pathname.slice("/api/files/".length),
         );
+      }
+      // Avatar serving: /api/avatars/<filename>
+      if (url.pathname.startsWith("/api/avatars/") && req.method === "GET") {
+        const fileName = url.pathname.slice("/api/avatars/".length);
+        return handleAvatarServe(req, res, fileName);
       }
       res.writeHead(404);
       res.end("not found");

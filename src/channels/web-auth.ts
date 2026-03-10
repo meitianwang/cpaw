@@ -12,9 +12,18 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
+import { join } from "node:path";
+import {
+  mkdirSync,
+  writeFileSync,
+  unlinkSync,
+  createReadStream,
+  existsSync,
+} from "node:fs";
 import type { UserStore } from "../user-store.js";
 import type { InviteStore } from "../invite-store.js";
 import type { WebConfig } from "../types.js";
+import { CONFIG_DIR } from "../config.js";
 
 // ---------------------------------------------------------------------------
 // Cookie helpers
@@ -126,12 +135,14 @@ function userResponse(user: {
   email: string;
   displayName: string;
   role: string;
+  avatarUrl?: string | null;
 }): Record<string, unknown> {
   return {
     id: user.id,
     email: user.email,
     displayName: user.displayName,
     role: user.role,
+    avatarUrl: user.avatarUrl ?? null,
   };
 }
 
@@ -374,6 +385,113 @@ export async function handleAuthProfile(
   }
 
   json(res, 200, { user: userResponse(updated) });
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/avatar — Upload avatar image
+// ---------------------------------------------------------------------------
+
+const AVATARS_DIR = join(CONFIG_DIR, "avatars");
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024; // 2 MB
+const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+export async function handleAvatarUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  userStore: UserStore,
+): Promise<void> {
+  if (req.method !== "POST") {
+    json(res, 405, { error: "method not allowed" });
+    return;
+  }
+
+  const token = getSessionToken(req);
+  const auth = userStore.validateSession(token);
+  if (!auth) {
+    json(res, 401, { error: "not_authenticated" });
+    return;
+  }
+
+  const contentType = req.headers["content-type"] ?? "";
+  if (!ALLOWED_AVATAR_TYPES.includes(contentType)) {
+    json(res, 400, { error: "unsupported image type, use JPEG/PNG/WebP" });
+    return;
+  }
+
+  const body = await readBody(req, MAX_AVATAR_SIZE);
+
+  const ext =
+    contentType === "image/png"
+      ? "png"
+      : contentType === "image/webp"
+        ? "webp"
+        : "jpg";
+  const fileName = `${auth.user.id}.${ext}`;
+  mkdirSync(AVATARS_DIR, { recursive: true });
+
+  // Remove old avatar files with different extensions
+  for (const oldExt of ["jpg", "png", "webp"]) {
+    if (oldExt === ext) continue;
+    const oldPath = join(AVATARS_DIR, `${auth.user.id}.${oldExt}`);
+    try {
+      unlinkSync(oldPath);
+    } catch {
+      /* not found */
+    }
+  }
+
+  writeFileSync(join(AVATARS_DIR, fileName), body);
+
+  const avatarUrl = `/api/avatars/${fileName}`;
+  userStore.setAvatarUrl(auth.user.id, avatarUrl);
+
+  const updated = userStore.getUserById(auth.user.id);
+  if (!updated) {
+    json(res, 500, { error: "update_failed" });
+    return;
+  }
+
+  json(res, 200, { user: userResponse(updated) });
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/avatars/:filename — Serve avatar image
+// ---------------------------------------------------------------------------
+
+const AVATAR_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+
+export function handleAvatarServe(
+  req: IncomingMessage,
+  res: ServerResponse,
+  fileName: string,
+): void {
+  // Sanitize: only allow alphanumeric, dash, dot
+  if (!/^[\w.-]+$/.test(fileName) || fileName.includes("..")) {
+    res.writeHead(400);
+    res.end("bad request");
+    return;
+  }
+
+  const filePath = join(AVATARS_DIR, fileName);
+  if (!existsSync(filePath)) {
+    res.writeHead(404);
+    res.end("not found");
+    return;
+  }
+
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  const mime = AVATAR_MIME[ext] ?? "application/octet-stream";
+
+  res.writeHead(200, {
+    "Content-Type": mime,
+    "Cache-Control": "public, max-age=3600",
+  });
+  createReadStream(filePath).pipe(res);
 }
 
 // ---------------------------------------------------------------------------

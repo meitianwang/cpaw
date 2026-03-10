@@ -48,6 +48,7 @@ export interface User {
   readonly email: string;
   readonly displayName: string;
   readonly role: "admin" | "user";
+  readonly avatarUrl: string | null;
   readonly googleId: string | null;
   readonly inviteCode: string;
   readonly createdAt: number;
@@ -144,6 +145,7 @@ interface UserRow {
   password_hash: string;
   display_name: string;
   role: string;
+  avatar_url: string | null;
   google_id: string | null;
   invite_code: string;
   created_at: number;
@@ -166,6 +168,7 @@ function rowToUser(row: UserRow): User {
     email: row.email,
     displayName: row.display_name,
     role: row.role as "admin" | "user",
+    avatarUrl: row.avatar_url,
     googleId: row.google_id,
     inviteCode: row.invite_code,
     createdAt: row.created_at,
@@ -207,6 +210,7 @@ export class UserStore {
   private readonly stmtSetActive: Statement;
   private readonly stmtSetRole: Statement;
   private readonly stmtSetDisplayName: Statement;
+  private readonly stmtSetAvatarUrl: Statement;
   private readonly stmtLinkGoogle: Statement;
   private readonly stmtListUsers: Statement;
   private readonly stmtCountUsers: Statement;
@@ -256,6 +260,9 @@ export class UserStore {
     );
     this.stmtSetDisplayName = this.db.prepare(
       "UPDATE users SET display_name = ? WHERE id = ?",
+    );
+    this.stmtSetAvatarUrl = this.db.prepare(
+      "UPDATE users SET avatar_url = ? WHERE id = ?",
     );
     this.stmtLinkGoogle = this.db.prepare(
       "UPDATE users SET google_id = ? WHERE id = ?",
@@ -308,6 +315,11 @@ export class UserStore {
       this.db.exec(
         "ALTER TABLE users ADD COLUMN locked_until INTEGER NOT NULL DEFAULT 0",
       );
+    } catch {
+      /* column already exists */
+    }
+    try {
+      this.db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
     } catch {
       /* column already exists */
     }
@@ -496,6 +508,11 @@ export class UserStore {
 
   setDisplayName(userId: string, displayName: string): boolean {
     const result = this.stmtSetDisplayName.run(displayName, userId);
+    return result.changes > 0;
+  }
+
+  setAvatarUrl(userId: string, avatarUrl: string | null): boolean {
+    const result = this.stmtSetAvatarUrl.run(avatarUrl, userId);
     return result.changes > 0;
   }
 

@@ -66,6 +66,11 @@ final class AppState: ObservableObject {
         currentUser = user
     }
 
+    func uploadAvatar(data: Data, contentType: String) async throws {
+        let user = try await api.uploadAvatar(data: data, contentType: contentType)
+        currentUser = user
+    }
+
     func logout() async {
         try? await api.logout()
         webSocket.disconnect()

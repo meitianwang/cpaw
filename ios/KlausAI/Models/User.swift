@@ -5,6 +5,7 @@ struct User: Codable, Identifiable, Sendable {
     let email: String
     let displayName: String
     let role: String
+    let avatarUrl: String?
 
     var isAdmin: Bool { role == "admin" }
 }
