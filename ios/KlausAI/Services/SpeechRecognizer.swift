@@ -9,7 +9,7 @@ final class SpeechRecognizer: NSObject, ObservableObject {
     @Published var isRecording = false
     @Published var error: String?
 
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-Hans"))
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
     private let audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
