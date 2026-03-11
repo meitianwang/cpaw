@@ -12,6 +12,7 @@ OPENCLAW-ANALYSIS.md
 
 # iOS / Xcode
 ios/KlausAI.xcworkspace/
+ios/**/*.xcworkspace/
 ios/build/
 ios/DerivedData/
 ios/**/*.xcuserstate
