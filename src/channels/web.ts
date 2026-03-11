@@ -140,12 +140,61 @@ const ALLOWED_MIME_PREFIXES = [
   "image/",
   "audio/",
   "video/",
-  "text/plain",
+  "text/",
   "application/pdf",
   "application/json",
   "application/zip",
   "application/gzip",
+  "application/xml",
+  // MS Office
+  "application/msword",
+  "application/vnd.ms-",
+  "application/vnd.openxmlformats-officedocument.",
+  // OpenDocument
+  "application/vnd.oasis.opendocument.",
+  // Other common docs
+  "application/rtf",
+  "application/x-yaml",
 ] as const;
+
+// Fallback: allow upload when MIME is generic but extension is known-safe
+const ALLOWED_EXTENSIONS = new Set([
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "odt",
+  "ods",
+  "odp",
+  "rtf",
+  "pdf",
+  "txt",
+  "md",
+  "csv",
+  "json",
+  "xml",
+  "yaml",
+  "yml",
+  "toml",
+  "log",
+  "html",
+  "js",
+  "ts",
+  "py",
+  "go",
+  "rs",
+  "java",
+  "c",
+  "cpp",
+  "h",
+  "sh",
+  "bat",
+  "zip",
+  "gz",
+  "tar",
+]);
 
 // ---------------------------------------------------------------------------
 // Store references (set by index.ts)
@@ -723,7 +772,9 @@ async function handleUpload(
   const mimeAllowed = ALLOWED_MIME_PREFIXES.some((prefix) =>
     contentType.startsWith(prefix),
   );
-  if (!mimeAllowed) {
+  // Fallback: if MIME is generic/unknown, check file extension
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (!mimeAllowed && !ALLOWED_EXTENSIONS.has(ext)) {
     jsonResponse(res, 415, { error: "unsupported media type" });
     return;
   }
