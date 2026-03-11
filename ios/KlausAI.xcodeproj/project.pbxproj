@@ -65,6 +65,7 @@
 			);
 			name = KlausAI;
 			packageProductDependencies = (
+				BB000001000000000000000A /* MarkdownUI */,
 			);
 			productName = KlausAI;
 			productReference = AA000001000000000000000A /* KlausAI.app */;
@@ -95,6 +96,9 @@
 			);
 			mainGroup = AA000004000000000000000A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				BB000002000000000000000A /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA000005000000000000000A /* Products */;
 			projectDirPath = "";
@@ -339,6 +343,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		BB000002000000000000000A /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BB000001000000000000000A /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BB000002000000000000000A /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = AA000009000000000000000A /* Project object */;
 }
