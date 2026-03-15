@@ -45,6 +45,13 @@ final class AppState {
         didSet { UserDefaults.standard.set(canvasEnabled, forKey: canvasEnabledKey) }
     }
 
+    var peekabooBridgeEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(peekabooBridgeEnabled, forKey: peekabooBridgeEnabledKey)
+            Task { await PeekabooBridgeHostCoordinator.shared.setEnabled(peekabooBridgeEnabled) }
+        }
+    }
+
     // MARK: - Runtime (not persisted)
 
     var isWorking = false
@@ -61,6 +68,7 @@ final class AppState {
         self.voiceWakeEnabled = defaults.bool(forKey: voiceWakeEnabledKey)
         self.talkEnabled = defaults.bool(forKey: talkEnabledKey)
         self.canvasEnabled = defaults.bool(forKey: canvasEnabledKey)
+        self.peekabooBridgeEnabled = defaults.bool(forKey: peekabooBridgeEnabledKey)
     }
 
     private func applyDockIconVisibility() {

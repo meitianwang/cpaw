@@ -14,6 +14,7 @@ let debugPaneEnabledKey = "klaus.debugPaneEnabled"
 let voiceWakeEnabledKey = "klaus.voiceWakeEnabled"
 let talkEnabledKey = "klaus.talkEnabled"
 let canvasEnabledKey = "klaus.canvasEnabled"
+let peekabooBridgeEnabledKey = "klaus.peekabooBridgeEnabled"
 
 // MARK: - Networking
 

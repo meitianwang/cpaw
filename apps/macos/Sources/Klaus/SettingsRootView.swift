@@ -96,6 +96,7 @@ struct GeneralSettingsView: View {
                 Toggle("Voice Wake", isOn: $state.voiceWakeEnabled)
                 Toggle("Talk Mode", isOn: $state.talkEnabled)
                 Toggle("Canvas", isOn: $state.canvasEnabled)
+                Toggle("Peekaboo Bridge", isOn: $state.peekabooBridgeEnabled)
             }
         }
         .formStyle(.grouped)

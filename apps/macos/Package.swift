@@ -16,6 +16,7 @@ let package = Package(
         .package(url: "https://github.com/orchetect/MenuBarExtraAccess", exact: "1.2.2"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.8.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.8.1"),
+        .package(url: "https://github.com/steipete/Peekaboo.git", branch: "main"),
     ],
     targets: [
         .target(
@@ -31,6 +32,8 @@ let package = Package(
                 .product(name: "MenuBarExtraAccess", package: "MenuBarExtraAccess"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "PeekabooBridge", package: "Peekaboo"),
+                .product(name: "PeekabooAutomationKit", package: "Peekaboo"),
             ],
             exclude: [
                 "Resources/Info.plist",

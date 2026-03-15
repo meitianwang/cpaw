@@ -74,6 +74,11 @@ final class KlausAppDelegate: NSObject, NSApplicationDelegate {
             Task { await VoiceWakeRuntime.shared.start() }
         }
 
+        // Start Peekaboo bridge if enabled
+        if AppState.shared.peekabooBridgeEnabled {
+            Task { await PeekabooBridgeHostCoordinator.shared.setEnabled(true) }
+        }
+
         // Start push-to-talk if accessibility is granted
         if PermissionManager.shared.check(.accessibility) == .granted {
             VoicePushToTalk.shared.start()
@@ -88,6 +93,7 @@ final class KlausAppDelegate: NSObject, NSApplicationDelegate {
         HeartbeatStore.shared.stop()
         ConfigFileWatcher.shared.stop()
         VoicePushToTalk.shared.stop()
+        Task { await PeekabooBridgeHostCoordinator.shared.stop() }
         Task { await VoiceWakeRuntime.shared.stop() }
         Self.logger.info("Klaus macOS app terminating")
     }
