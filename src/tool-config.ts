@@ -114,6 +114,20 @@ const TOOL_CONFIGS: Record<string, ToolDisplayConfig> = {
     style: "file",
     getValue: fileName,
   },
+  find_skills: {
+    icon: "search",
+    label: "Searching skills",
+    style: "search",
+    getValue: (input) => String(input.query ?? ""),
+  },
+  install_skill: {
+    icon: "download",
+    label: "Installing skill",
+    style: "default",
+    getValue: (input) => String(input.slug ?? ""),
+    getSecondary: (input) =>
+      input.registry ? `from ${input.registry}` : undefined,
+  },
 };
 
 const DEFAULT_CONFIG: ToolDisplayConfig = {

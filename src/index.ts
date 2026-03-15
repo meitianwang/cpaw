@@ -156,9 +156,31 @@ async function start(): Promise<void> {
     });
     const { createSendFileMcpServer } = await import("./send-file-tool.js");
     const sendFileMcp = createSendFileMcpServer();
+
+    // Skill registry tool (lazy init — first tool call creates RegistryManager)
+    const { createSkillRegistryMcpServer } =
+      await import("./skill-registry-tool.js");
+    let registryManager:
+      | import("./skills/registry/registry-manager.js").RegistryManager
+      | null = null;
+    const skillRegistryMcp = createSkillRegistryMcpServer({
+      get manager() {
+        return registryManager;
+      },
+      async ensureManager() {
+        if (registryManager) return registryManager;
+        const { RegistryManager } =
+          await import("./skills/registry/registry-manager.js");
+        const { loadRegistryConfigs } = await import("./config.js");
+        registryManager = new RegistryManager(loadRegistryConfigs());
+        return registryManager;
+      },
+    });
+
     sessions.setMcpServers({
       "klaus-cron": cronMcp,
       "klaus-send-file": sendFileMcp,
+      "klaus-skill-registry": skillRegistryMcp,
     });
   }
 
