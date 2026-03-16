@@ -210,7 +210,25 @@ export async function stopDaemon(): Promise<void> {
     await sleep(200);
   }
 
-  console.log(`Klaus (PID ${pid}) did not exit within 5s. PID file kept.`);
+  console.log(`Klaus (PID ${pid}) did not exit within 5s. Sending SIGKILL...`);
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {}
+
+  // Wait briefly for SIGKILL to take effect
+  const killDeadline = Date.now() + 2_000;
+  while (Date.now() < killDeadline) {
+    if (!isProcessRunning(pid)) {
+      removePid();
+      console.log("Klaus killed.");
+      return;
+    }
+    await sleep(200);
+  }
+
+  console.log(
+    `Klaus (PID ${pid}) could not be stopped. Manual intervention required.`,
+  );
 }
 
 /**
