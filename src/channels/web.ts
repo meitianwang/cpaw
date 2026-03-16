@@ -1534,7 +1534,8 @@ async function handleAdminSettings(
 
       const nowEnabled = opCfg.enabled === true;
       if (wasEnabled !== nowEnabled) {
-        // Mode changed — notify ChatSessionManager and clear current model
+        // Save first so loadOneProxyConfig() reads the updated value
+        saveConfig(cfg);
         const newOpConfig = loadOneProxyConfig();
         await chatManagerRef?.setOneProxyConfig(newOpConfig);
         delete cfg.model;
