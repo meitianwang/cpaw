@@ -206,8 +206,6 @@ export class ClaudeChat {
               env: {
                 ...process.env,
                 ANTHROPIC_BASE_URL: this.options.oneProxyBaseUrl,
-                ANTHROPIC_API_KEY:
-                  process.env.ANTHROPIC_API_KEY || "sk-oneproxy",
               },
             }
           : {}),
