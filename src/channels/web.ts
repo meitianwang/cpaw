@@ -2328,16 +2328,21 @@ export const webPlugin: ChannelPlugin = {
       tunnelResult?.child?.kill();
     };
     process.once("exit", cleanup);
-    process.once("SIGINT", () => {
-      cleanup();
-      process.exit(0);
-    });
-    process.once("SIGTERM", () => {
-      cleanup();
-      process.exit(0);
-    });
 
-    // Block forever (channel contract)
-    await new Promise(() => {});
+    // Block until shutdown signal fires (from daemon.ts on SIGTERM/SIGINT).
+    // This lets the caller's finally block run for async cleanup.
+    const { getShutdownSignal } = await import("../daemon.js");
+    const shutdownSignal = getShutdownSignal();
+    await new Promise<void>((resolve) => {
+      if (shutdownSignal.aborted) {
+        cleanup();
+        resolve();
+        return;
+      }
+      shutdownSignal.addEventListener("abort", () => {
+        cleanup();
+        resolve();
+      }, { once: true });
+    });
   },
 };

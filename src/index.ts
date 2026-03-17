@@ -320,14 +320,15 @@ async function start(): Promise<void> {
   };
 
   try {
-    // Start all channels in parallel (each blocks forever).
-    // If any rejects, Promise.all rejects → finally runs → process.exit(1) in main().
+    // Start all channels in parallel. Each blocks until shutdown signal fires.
     await Promise.all(plugins.map((p) => p.start(handler)));
   } finally {
+    console.log("[Klaus] Shutting down...");
     (cronScheduler as import("./cron.js").CronScheduler | null)?.stop();
     await sessions.close();
     inviteStoreInstance?.close();
     userStoreInstance?.close();
+    console.log("[Klaus] Cleanup complete.");
   }
 }
 
@@ -682,6 +683,7 @@ async function main(): Promise<void> {
       if (foreground) {
         daemon.registerForegroundPid();
         await start();
+        process.exit(0);
       } else {
         daemon.daemonize();
       }

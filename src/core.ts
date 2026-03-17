@@ -79,6 +79,10 @@ class ClaudeChat {
   private pending: PendingMessage[] = [];
   private options: ChatOptions;
   private model: string | undefined;
+  /** Currently running claude subprocess (for shutdown cleanup). */
+  private activeChild: import("node:child_process").ChildProcess | null = null;
+  /** Promise for the ongoing doChatInner call (so close() can await it). */
+  private activeOp: Promise<string> | null = null;
 
   constructor(options: ChatOptions = {}) {
     this.options = options;
@@ -106,24 +110,30 @@ class ClaudeChat {
     onPermissionRequest?: PermissionRequestCallback,
   ): Promise<string> {
     try {
-      return await this.doChatInner(
+      const p = this.doChatInner(
         prompt,
         onToolEvent,
         onStreamChunk,
         onPermissionRequest,
       );
+      this.activeOp = p;
+      return await p;
     } catch (err) {
       if (this.sessionId && isSessionExpiredError(err)) {
         console.log("[Chat] Session expired, starting fresh session");
         this.sessionId = undefined;
-        return await this.doChatInner(
+        const p = this.doChatInner(
           prompt,
           onToolEvent,
           onStreamChunk,
           onPermissionRequest,
         );
+        this.activeOp = p;
+        return await p;
       }
       throw err;
+    } finally {
+      this.activeOp = null;
     }
   }
 
@@ -172,10 +182,14 @@ class ClaudeChat {
       cwd: this.options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    this.activeChild = child;
 
     // Register close handler BEFORE starting readline to avoid race condition
     const exitPromise = new Promise<number | null>((resolve) => {
-      child.on("close", resolve);
+      child.on("close", (code) => {
+        this.activeChild = null;
+        resolve(code);
+      });
     });
 
     // Pipe prompt via stdin (avoids ARG_MAX limit)
@@ -423,6 +437,15 @@ class ClaudeChat {
   }
 
   async close(): Promise<void> {
+    // Kill any running claude subprocess
+    if (this.activeChild) {
+      this.activeChild.kill("SIGTERM");
+      this.activeChild = null;
+    }
+    // Wait for ongoing chat to settle (it will throw due to killed child)
+    if (this.activeOp) {
+      try { await this.activeOp; } catch { /* expected during shutdown */ }
+    }
     await this.reset();
   }
 }

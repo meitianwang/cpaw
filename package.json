@@ -1,34 +1,14 @@
 {
-  "name": "klaus-ai",
+  "name": "klaus",
   "version": "0.1.42",
   "description": "Use Claude Code from a browser-based Web Chat UI",
   "type": "module",
-  "bin": {
-    "klaus": "./dist/index.js"
-  },
-  "main": "./dist/index.js",
-  "files": [
-    "dist",
-    "public",
-    "install.sh",
-    "README.md"
-  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "typecheck": "tsc --noEmit"
   },
-  "engines": {
-    "node": ">=18"
-  },
-  "keywords": [
-    "claude",
-    "claude-code",
-    "chatbot",
-    "web-chat"
-  ],
-  "license": "MIT",
+  "private": true,
   "dependencies": {
     "@clack/prompts": "^0.10.0",
     "better-sqlite3": "^12.6.2",

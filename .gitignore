@@ -5,7 +5,6 @@ dist/
 .claude/
 openclaw/
 picoclaw/
-release.sh
 OPENCLAW-ANALYSIS.md
 *.md
 !skills/**/SKILL.md

@@ -140,6 +140,19 @@ export function daemonize(): void {
 }
 
 /**
+ * Global shutdown controller — lazy-initialized by registerForegroundPid().
+ * Only the foreground `klaus start -f` process needs it; other subcommands
+ * (stop, status, logs) import this module but never trigger shutdown.
+ */
+let shutdownController: AbortController | null = null;
+
+/** Signal that fires on SIGTERM / SIGINT. Channels listen to this. */
+export function getShutdownSignal(): AbortSignal {
+  shutdownController ??= new AbortController();
+  return shutdownController.signal;
+}
+
+/**
  * Write PID file for foreground mode (so `klaus stop` still works).
  * Registers cleanup on exit.
  */
@@ -164,14 +177,18 @@ export function registerForegroundPid(): void {
     removePid();
   };
   process.on("exit", cleanup);
-  process.on("SIGINT", () => {
+
+  // SIGTERM / SIGINT: trigger shutdown signal so async cleanup can run.
+  // The main loop catches the AbortError, runs finally blocks, then exits.
+  const ctrl = (shutdownController ??= new AbortController());
+  const onSignal = () => {
     cleanup();
-    process.exit(0);
-  });
-  process.on("SIGTERM", () => {
-    cleanup();
-    process.exit(0);
-  });
+    if (!ctrl.signal.aborted) {
+      ctrl.abort();
+    }
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
 }
 
 /**
@@ -379,7 +396,7 @@ export function installLaunchAgent(port = 3000): void {
   const binPath = findKlausBinary();
   if (!binPath) {
     console.error(
-      "Could not find the klaus binary. Install globally first: npm install -g klaus-ai",
+      "Could not find the klaus binary.",
     );
     process.exit(1);
   }
