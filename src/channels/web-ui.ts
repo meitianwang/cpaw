@@ -456,18 +456,18 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
   border:none;background:transparent;font-family:var(--font);width:100%;text-align:left;
   transition:background var(--transition);position:relative;
 }
-.user-menu-item:hover{background:var(--bg-hover)}
+.user-menu-item:hover,.user-menu-item.selected{background:var(--bg-hover)}
 .user-menu-item svg{width:18px;height:18px;flex-shrink:0;color:var(--fg-tertiary);stroke-width:1.5}
 .user-menu-item .menu-arrow{margin-left:auto;color:var(--fg-quaternary);width:14px;height:14px}
 .user-menu-sep{height:1px;background:var(--border);margin:4px 8px}
-.user-menu-back{
-  display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;
-  cursor:pointer;color:var(--fg-tertiary);font-size:13px;font-weight:500;
-  border:none;background:transparent;font-family:var(--font);width:100%;text-align:left;
-  transition:background var(--transition);margin-bottom:2px;
+.user-menu-sub{
+  position:absolute;left:calc(100%);bottom:56px;min-width:200px;
+  background:var(--bg-elevated);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow-lg);padding:4px;display:none;flex-direction:column;
+  animation:fade-in .1s ease-out;z-index:51;
 }
-.user-menu-back:hover{background:var(--bg-hover)}
-.user-menu-back svg{width:16px;height:16px;flex-shrink:0}
+.user-menu-sub.open{display:flex}
+.user-menu-sub .user-menu-item{font-size:14px;padding:8px 12px}
 .user-menu-item .menu-check{margin-left:auto;color:var(--fg-tertiary);width:16px;height:16px;display:none}
 .user-menu-item.active .menu-check{display:block}
 
@@ -497,6 +497,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
     <div class="session-list" id="session-list"></div>
     <div class="sidebar-footer" style="position:relative">
       <div id="user-menu" class="user-menu"></div>
+      <div id="user-menu-lang" class="user-menu-sub"></div>
       <div class="sidebar-user" id="sidebar-user">
         <div class="sidebar-avatar" id="sidebar-avatar">U</div>
         <div class="sidebar-user-info">
@@ -738,38 +739,50 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
   function closeUserMenu() {
     userMenuOpen = false;
     userMenuEl.classList.remove("open");
+    var lp = document.getElementById("user-menu-lang");
+    if (lp) lp.classList.remove("open");
   }
 
   sidebarUserEl.addEventListener("click", function(e) {
     e.stopPropagation();
     toggleUserMenu();
   });
-  function showLanguagePanel() {
+  var langPanelEl = document.getElementById("user-menu-lang");
+  var langPanelOpen = false;
+
+  function renderLangPanel() {
     var checkSvg = '<svg class="menu-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>';
-    var backSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>';
-    userMenuEl.innerHTML =
-      '<button class="user-menu-back" id="menu-lang-back">' + backSvg + '<span>' + tt("menu_language") + '</span></button>' +
+    langPanelEl.innerHTML =
       '<button class="user-menu-item' + (currentLang === "en" ? " active" : "") + '" data-lang="en"><span>English</span>' + checkSvg + '</button>' +
       '<button class="user-menu-item' + (currentLang === "zh" ? " active" : "") + '" data-lang="zh"><span>中文</span>' + checkSvg + '</button>';
   }
+  function toggleLangPanel(show) {
+    langPanelOpen = show;
+    langPanelEl.classList.toggle("open", show);
+    var langItem = document.getElementById("menu-language");
+    if (langItem) langItem.classList.toggle("selected", show);
+    if (show) renderLangPanel();
+  }
+  function closeLangPanel() { toggleLangPanel(false); }
 
-  userMenuEl.addEventListener("click", function(e) {
+  langPanelEl.addEventListener("click", function(e) {
     e.stopPropagation();
-    var back = e.target.closest("#menu-lang-back");
-    if (back) { renderUserMenu(); return; }
     var target = e.target.closest("[data-lang]");
     if (target) {
       setLang(target.getAttribute("data-lang"));
-      showLanguagePanel();
-      return;
+      renderLangPanel();
     }
+  });
+
+  userMenuEl.addEventListener("click", function(e) {
+    e.stopPropagation();
     var item = e.target.closest(".user-menu-item");
     if (!item) return;
     if (item.id === "menu-settings") {
       closeUserMenu();
       window.location.href = "/admin";
     } else if (item.id === "menu-language") {
-      showLanguagePanel();
+      toggleLangPanel(!langPanelOpen);
     } else if (item.id === "menu-help") {
       closeUserMenu();
       window.open("https://github.com/meitianwang/klaus", "_blank");
@@ -779,7 +792,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
         .finally(function() { location.href = "/login"; });
     }
   });
-  document.addEventListener("click", function() { closeUserMenu(); });
+  document.addEventListener("click", function() { closeUserMenu(); closeLangPanel(); });
 
   // --- Welcome state ---
   function getGreeting() {
