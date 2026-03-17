@@ -710,6 +710,7 @@ async function processUserMessage(
     });
   } catch (err) {
     console.error("[Web] Handler error:", err);
+    console.error("[Web] Handler error stack:", (err as Error)?.stack);
     sendWsEvent(userId, {
       type: "error",
       message: "An internal error occurred. Please try again.",

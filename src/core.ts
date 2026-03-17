@@ -252,6 +252,8 @@ class ClaudeChat {
     // Wait for process to exit (handler registered before readline loop)
     const exitCode = await exitPromise;
 
+    console.log(`[Chat] Process exited: code=${exitCode}, resultText=${resultText ? resultText.length + ' chars' : 'none'}, streamed=${streamedText.length} chars, stderr=${stderrBuf.length > 0 ? stderrBuf.slice(0, 200) : 'none'}`);
+
     if (exitCode !== 0 && !resultText) {
       // If we have partial streamed content, use it instead of throwing
       if (streamedText.trim()) {
