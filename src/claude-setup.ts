@@ -112,17 +112,39 @@ export function readClaudeAuthStatus(): Promise<ClaudeAuthStatus> {
 }
 
 /**
+ * Active login session — at most one at a time.
+ * The child process stays alive waiting for the user to paste the
+ * Authentication Code into its stdin.
+ */
+let activeLoginChild: ReturnType<typeof nodeSpawn> | null = null;
+let activeLoginTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cleanupLogin(): void {
+  if (activeLoginTimer) {
+    clearTimeout(activeLoginTimer);
+    activeLoginTimer = null;
+  }
+  if (activeLoginChild) {
+    activeLoginChild.kill();
+    activeLoginChild = null;
+  }
+}
+
+/**
  * Spawn `claude auth login` and capture the OAuth URL from output.
- * Returns a promise that resolves with the URL (or null if not found).
- * The child process keeps running so the user can complete the OAuth flow;
- * it is killed after 5 minutes if still alive.
+ * The child process stays alive so `submitLoginCode()` can later
+ * write the Authentication Code to its stdin.
  */
 export function startClaudeLogin(): Promise<{ url: string | null }> {
+  // Kill any previous login session
+  cleanupLogin();
+
   return new Promise((resolve) => {
     const child = nodeSpawn(getClaudeBin(), ["auth", "login"], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, BROWSER: "echo" },
     });
+    activeLoginChild = child;
 
     let resolved = false;
     let output = "";
@@ -134,8 +156,6 @@ export function startClaudeLogin(): Promise<{ url: string | null }> {
       const urlMatch = output.match(/https:\/\/\S+/);
       if (urlMatch && !resolved) {
         resolved = true;
-        // Don't kill — the child must stay alive so `claude auth login`
-        // can complete the OAuth callback and persist credentials.
         resolve({ url: urlMatch[0] });
       }
     };
@@ -144,21 +164,32 @@ export function startClaudeLogin(): Promise<{ url: string | null }> {
     child.stderr.on("data", (chunk: Buffer) => tryExtractUrl(chunk.toString()));
 
     child.on("close", () => {
+      activeLoginChild = null;
       if (!resolved) {
         resolved = true;
         resolve({ url: null });
       }
     });
 
-    // Timeout: kill after 5 minutes if OAuth was never completed
-    setTimeout(() => {
-      child.kill();
+    // Timeout: kill after 5 minutes
+    activeLoginTimer = setTimeout(() => {
+      cleanupLogin();
       if (!resolved) {
         resolved = true;
         resolve({ url: null });
       }
     }, 300_000);
   });
+}
+
+/**
+ * Write the Authentication Code to the active login process's stdin.
+ * Returns true if the code was submitted, false if no active login session.
+ */
+export function submitLoginCode(code: string): boolean {
+  if (!activeLoginChild || !activeLoginChild.stdin) return false;
+  activeLoginChild.stdin.write(code + "\n");
+  return true;
 }
 
 // ---------------------------------------------------------------------------
