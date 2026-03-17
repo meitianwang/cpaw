@@ -15,6 +15,8 @@ import {
   unlinkSync,
   writeFileSync,
   openSync,
+  statSync,
+  renameSync,
 } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -85,6 +87,7 @@ function isProcessRunning(pid: number): boolean {
  */
 export function daemonize(): void {
   mkdirSync(LOG_DIR, { recursive: true });
+  rotateLogs();
 
   // Try atomic PID file creation first (prevents race between concurrent starts)
   const existingPid = readPid();
@@ -169,6 +172,11 @@ export function registerForegroundPid(): void {
     );
     process.exit(1);
   }
+  mkdirSync(LOG_DIR, { recursive: true });
+  rotateLogs();
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(`Klaus starting at ${new Date().toISOString()} (PID ${process.pid})`);
+  console.log(`${"=".repeat(60)}`);
   writePid(process.pid);
   let cleaned = false;
   const cleanup = () => {
@@ -297,6 +305,42 @@ export function tailLogs(): void {
   tail.on("exit", (code) => {
     process.exit(code ?? 0);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Log rotation
+// ---------------------------------------------------------------------------
+
+const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_LOG_BACKUPS = 3;
+
+/**
+ * Rotate klaus.log if it exceeds MAX_LOG_SIZE.
+ * Keeps up to MAX_LOG_BACKUPS old files (klaus.log.1, klaus.log.2, ...).
+ */
+function rotateLogs(): void {
+  try {
+    if (!existsSync(LOG_FILE)) return;
+    const stat = statSync(LOG_FILE);
+    if (stat.size < MAX_LOG_SIZE) return;
+
+    // Shift existing backups: .2→.3, .1→.2
+    for (let i = MAX_LOG_BACKUPS - 1; i >= 1; i--) {
+      const from = `${LOG_FILE}.${i}`;
+      const to = `${LOG_FILE}.${i + 1}`;
+      if (existsSync(from)) {
+        if (i + 1 > MAX_LOG_BACKUPS) {
+          unlinkSync(from);
+        } else {
+          renameSync(from, to);
+        }
+      }
+    }
+    // Current → .1
+    renameSync(LOG_FILE, `${LOG_FILE}.1`);
+  } catch {
+    // Non-fatal: if rotation fails, just keep writing to the same file
+  }
 }
 
 // ---------------------------------------------------------------------------
