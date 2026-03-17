@@ -65,6 +65,15 @@ async function start(): Promise<void> {
   // Write Claude Code native config files (settings.json, rules)
   // before spawning any claude subprocess.
   const cfg = loadConfig();
+
+  // If oneproxy is enabled, set ANTHROPIC_BASE_URL so Claude CLI
+  // skips login and uses the custom API endpoint.
+  const oneproxy = cfg.oneproxy as Record<string, unknown> | undefined;
+  const claudeEnv: Record<string, string> = {};
+  if (oneproxy?.enabled && oneproxy.base_url) {
+    claudeEnv.ANTHROPIC_BASE_URL = String(oneproxy.base_url);
+  }
+
   initGlobalClaudeConfig({
     model: (cfg.model as string) || undefined,
     permissions: {
@@ -82,6 +91,7 @@ async function start(): Promise<void> {
         "NotebookEdit(*)",
       ],
     },
+    ...(Object.keys(claudeEnv).length > 0 ? { env: claudeEnv } : {}),
     rules: [
       {
         filename: "klaus-language.md",

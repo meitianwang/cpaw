@@ -33,6 +33,8 @@ interface KlausGlobalSettings {
     allow?: string[];
     deny?: string[];
   };
+  /** Environment variables to inject into settings.json (e.g. ANTHROPIC_BASE_URL). */
+  env?: Record<string, string>;
 }
 
 /**
@@ -56,6 +58,10 @@ export function writeGlobalSettings(opts: KlausGlobalSettings): void {
   }
   if (opts.permissions) {
     existing.permissions = opts.permissions;
+  }
+  if (opts.env) {
+    const existingEnv = (existing.env as Record<string, string>) ?? {};
+    existing.env = { ...existingEnv, ...opts.env };
   }
 
   writeFileSync(SETTINGS_FILE, JSON.stringify(existing, null, 2) + "\n");
@@ -127,6 +133,7 @@ export function writeWorkspacePersona(
 export interface ClaudeSetupOptions {
   model?: string;
   permissions?: KlausGlobalSettings["permissions"];
+  env?: Record<string, string>;
   rules?: readonly RuleFile[];
 }
 
@@ -134,6 +141,7 @@ export function initGlobalClaudeConfig(opts: ClaudeSetupOptions): void {
   writeGlobalSettings({
     model: opts.model,
     permissions: opts.permissions,
+    env: opts.env,
   });
 
   if (opts.rules && opts.rules.length > 0) {
