@@ -20,24 +20,24 @@ export function getChatHtml(): string {
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#09090b;
-  --bg-surface:#18181b;
-  --bg-elevated:#1c1c1f;
-  --bg-hover:#27272a;
-  --fg:#fafafa;
-  --fg-secondary:#a1a1aa;
-  --fg-tertiary:#71717a;
-  --fg-quaternary:#52525b;
-  --border:#27272a;
-  --border-subtle:#1e1e21;
-  --input-bg:#18181b;
-  --input-border:#3f3f46;
-  --input-focus:#52525b;
-  --accent:#fafafa;
-  --accent-text:#09090b;
-  --accent-hover:#d4d4d8;
-  --code-bg:#111113;
-  --msg-user-bg:#27272a;
+  --bg:#0f172a;
+  --bg-surface:#1e293b;
+  --bg-elevated:#1e293b;
+  --bg-hover:#334155;
+  --fg:#f8fafc;
+  --fg-secondary:#cbd5e1;
+  --fg-tertiary:#94a3b8;
+  --fg-quaternary:#64748b;
+  --border:#334155;
+  --border-subtle:#1e293b;
+  --input-bg:#1e293b;
+  --input-border:#475569;
+  --input-focus:#64748b;
+  --accent:#f8fafc;
+  --accent-text:#0f172a;
+  --accent-hover:#e2e8f0;
+  --code-bg:#0b1120;
+  --msg-user-bg:#1e293b;
   --font:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --font-mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
   --radius-sm:8px;
@@ -49,7 +49,7 @@ export function getChatHtml(): string {
   --transition:150ms cubic-bezier(0.4,0,0.2,1);
 }
 html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;overflow:hidden}
-::selection{background:rgba(250,250,250,0.15)}
+::selection{background:rgba(248,250,252,0.15)}
 #app{display:flex;height:100%;width:100%;position:fixed;inset:0}
 
 /* ─── Sidebar ─── */
@@ -57,24 +57,53 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
   width:260px;background:var(--bg);border-right:1px solid var(--border);
   display:flex;flex-direction:column;z-index:30;
   position:fixed;left:0;top:0;bottom:0;
-  transform:translateX(-100%);transition:transform .25s ease,visibility 0s .25s;
+  transform:translateX(-100%);transition:transform .25s ease,visibility 0s .25s,width .2s ease;
   visibility:hidden;pointer-events:none;
 }
-.sidebar.open{transform:translateX(0);visibility:visible;pointer-events:auto;transition:transform .25s ease,visibility 0s 0s}
-@media(min-width:769px){.sidebar{position:relative;transform:none!important;visibility:visible!important;pointer-events:auto!important;transition:none}}
-.sidebar-header{padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
-.sidebar-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:-0.02em}
-.sidebar-brand img{width:22px;height:22px;border-radius:6px}
+.sidebar.open{transform:translateX(0);visibility:visible;pointer-events:auto;transition:transform .25s ease,visibility 0s 0s,width .2s ease}
+@media(min-width:769px){
+  .sidebar{position:relative;transform:none!important;visibility:visible!important;pointer-events:auto!important;transition:width .2s ease}
+  .sidebar.collapsed{width:60px}
+}
+.sidebar-header{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sidebar.collapsed .sidebar-header{padding:14px 12px;justify-content:center}
+.sidebar-toggle{
+  width:32px;height:32px;border-radius:var(--radius-sm);
+  background:transparent;border:none;
+  color:var(--fg-tertiary);cursor:pointer;
+  display:none;align-items:center;justify-content:center;
+  transition:all var(--transition);flex-shrink:0;
+}
+.sidebar-toggle:hover{color:var(--fg);background:var(--bg-hover)}
+.sidebar-toggle svg{width:18px;height:18px;stroke-width:2}
+@media(min-width:769px){.sidebar-toggle{display:flex}}
+.sidebar-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:-0.02em;white-space:nowrap;overflow:hidden}
+.sidebar-brand img{width:22px;height:22px;border-radius:6px;flex-shrink:0}
+.sidebar.collapsed .sidebar-brand span{display:none}
+.sidebar-nav{display:flex;flex-direction:column;gap:2px;padding:8px}
+.sidebar-nav-item{
+  display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius-sm);
+  cursor:pointer;color:var(--fg-tertiary);font-size:14px;font-weight:500;
+  transition:all var(--transition);border:none;background:transparent;font-family:var(--font);width:100%;text-align:left;
+}
+.sidebar-nav-item:hover{background:var(--bg-hover);color:var(--fg)}
+.sidebar-nav-item svg{width:18px;height:18px;flex-shrink:0;stroke-width:2}
+.sidebar.collapsed .sidebar-nav-item span{display:none}
+.sidebar.collapsed .sidebar-nav-item{justify-content:center;padding:10px}
+.sidebar-section-label{font-size:11px;font-weight:600;color:var(--fg-quaternary);text-transform:uppercase;letter-spacing:0.06em;padding:12px 12px 4px}
+.sidebar.collapsed .sidebar-section-label{display:none}
 .new-chat-btn{
   width:32px;height:32px;border-radius:var(--radius-sm);
   background:transparent;border:1px solid var(--border);
   color:var(--fg-secondary);cursor:pointer;
   display:flex;align-items:center;justify-content:center;
-  transition:all var(--transition);
+  transition:all var(--transition);flex-shrink:0;
 }
 .new-chat-btn:hover{background:var(--bg-hover);color:var(--fg);border-color:var(--input-border)}
 .new-chat-btn svg{width:16px;height:16px;stroke-width:2}
+.sidebar.collapsed .new-chat-btn{display:none}
 .session-list{flex:1;overflow-y:auto;padding:4px 8px}
+.sidebar.collapsed .session-list{display:none}
 .session-item{
   padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;
   display:flex;align-items:center;gap:8px;font-size:14px;
@@ -90,17 +119,21 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 }
 .session-item:hover .s-del{opacity:0.6}
 .session-item .s-del:hover{opacity:1;color:var(--fg)}
-.sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
-.lang-switcher{display:flex;flex-direction:column;gap:6px}
-.lang-label{font-size:11px;font-weight:600;color:var(--fg-quaternary);text-transform:uppercase;letter-spacing:0.08em}
-.lang-toggle{display:flex;gap:4px}
-.lang-option{
-  flex:1;padding:6px 0;border:1px solid var(--border);border-radius:var(--radius-sm);
-  background:transparent;color:var(--fg-secondary);font-size:13px;font-weight:500;
-  cursor:pointer;font-family:var(--font);transition:all var(--transition);
+.sidebar-footer{padding:12px 16px;border-top:1px solid var(--border);margin-top:auto}
+.sidebar-user{
+  display:flex;align-items:center;gap:10px;padding:4px;cursor:pointer;
+  border-radius:var(--radius-sm);transition:all var(--transition);
 }
-.lang-option:hover{background:var(--bg-hover);color:var(--fg)}
-.lang-option.active{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.sidebar-user:hover{background:var(--bg-hover)}
+.sidebar-avatar{
+  width:32px;height:32px;border-radius:50%;background:var(--bg-hover);
+  display:flex;align-items:center;justify-content:center;font-size:13px;
+  font-weight:600;color:var(--fg);flex-shrink:0;border:1px solid var(--border);
+}
+.sidebar-username{font-size:14px;font-weight:500;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-useremail{font-size:12px;color:var(--fg-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar.collapsed .sidebar-footer{padding:12px 8px;display:flex;justify-content:center}
+.sidebar.collapsed .sidebar-user-info{display:none}
 .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);z-index:25;display:none}
 .sidebar-overlay.show{display:block}
 @media(min-width:769px){.sidebar-overlay{display:none!important}}
@@ -203,7 +236,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 .msg code{
   font-family:var(--font-mono);font-size:0.85em;
   background:var(--code-bg);padding:2px 7px;border-radius:6px;
-  border:1px solid var(--border);color:#e4e4e7;
+  border:1px solid var(--border);color:#e2e8f0;
 }
 .msg pre{
   background:var(--code-bg);padding:16px;border-radius:var(--radius-md);
@@ -414,7 +447,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 
 /* ─── Drop overlay ─── */
 .drop-overlay{
-  position:fixed;inset:0;background:rgba(9,9,11,0.85);backdrop-filter:blur(8px);
+  position:fixed;inset:0;background:rgba(15,23,42,0.85);backdrop-filter:blur(8px);
   border:2px dashed var(--fg-quaternary);z-index:100;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:16px;color:var(--fg);font-weight:600;font-size:18px;pointer-events:none;
@@ -433,18 +466,27 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 <div id="app">
   <div id="sidebar" class="sidebar">
     <div class="sidebar-header">
-      <div class="sidebar-brand"><img src="/logo.png" alt="K">Klaus</div>
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
+      <div class="sidebar-brand"><img src="/logo.png" alt="K"><span>Klaus</span></div>
       <button class="new-chat-btn" id="new-chat-btn" title="New chat">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
     </div>
+    <div class="sidebar-nav">
+      <button class="sidebar-nav-item" id="nav-new-chat">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span data-i18n="new_chat_title">New Chat</span>
+      </button>
+    </div>
+    <div class="sidebar-section-label" data-i18n="recents">Recents</div>
     <div class="session-list" id="session-list"></div>
     <div class="sidebar-footer">
-      <div class="lang-switcher">
-        <span class="lang-label" data-i18n="language">Language</span>
-        <div class="lang-toggle">
-          <button class="lang-option" data-lang="en" data-i18n="lang_en">English</button>
-          <button class="lang-option" data-lang="zh" data-i18n="lang_zh">中文</button>
+      <div class="sidebar-user" id="sidebar-user">
+        <div class="sidebar-avatar" id="sidebar-avatar">U</div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-username" id="sidebar-username"></div>
         </div>
       </div>
     </div>
@@ -525,6 +567,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
       chip_code: "Write code",
       chip_explain: "Explain a concept",
       chip_brainstorm: "Brainstorm ideas",
+      recents: "Recents",
     },
     zh: {
       chats: "对话",
@@ -561,6 +604,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
       chip_code: "帮我写代码",
       chip_explain: "解释一个概念",
       chip_brainstorm: "头脑风暴",
+      recents: "最近",
     }
   };
   var currentLang = localStorage.getItem("klaus_lang") || "en";
@@ -580,9 +624,6 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
     });
     document.querySelectorAll("[data-i18n-title]").forEach(function(el) {
       el.title = tt(el.getAttribute("data-i18n-title"));
-    });
-    document.querySelectorAll(".lang-option").forEach(function(el) {
-      el.classList.toggle("active", el.getAttribute("data-lang") === currentLang);
     });
     i18nCallbacks.forEach(function(cb) { cb(); });
   }
@@ -629,7 +670,25 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
   var newChatBtn = document.getElementById("new-chat-btn");
   var sessionListEl = document.getElementById("session-list");
   var welcomeEl = document.getElementById("welcome");
+  var sidebarToggleBtn = document.getElementById("sidebar-toggle");
+  var navNewChatBtn = document.getElementById("nav-new-chat");
   var busy = false;
+
+  // --- Sidebar collapse (desktop only) ---
+  var sidebarCollapsed = localStorage.getItem("klaus_sidebar_collapsed") === "1";
+  if (sidebarCollapsed) sidebar.classList.add("collapsed");
+  sidebarToggleBtn.addEventListener("click", function() {
+    sidebarCollapsed = !sidebarCollapsed;
+    sidebar.classList.toggle("collapsed", sidebarCollapsed);
+    localStorage.setItem("klaus_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
+  });
+
+  // --- User info in sidebar footer ---
+  var avatarEl = document.getElementById("sidebar-avatar");
+  var usernameEl = document.getElementById("sidebar-username");
+  var initial = (currentUser.name || currentUser.email || "U").charAt(0).toUpperCase();
+  avatarEl.textContent = initial;
+  usernameEl.textContent = currentUser.name || currentUser.email || "User";
 
   // --- Welcome state ---
   function getGreeting() {
@@ -685,9 +744,6 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
   }
   saveSessionMeta();
 
-  document.querySelectorAll(".lang-option").forEach(function(el) {
-    el.addEventListener("click", function() { setLang(el.getAttribute("data-lang")); });
-  });
   i18nCallbacks.push(function() { renderSessionList(); });
   applyI18n();
 
@@ -822,6 +878,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
   menuBtn.addEventListener("click", function() { sidebar.classList.contains("open") ? closeSidebar() : openSidebar(); });
   sidebarOverlay.addEventListener("click", closeSidebar);
   newChatBtn.addEventListener("click", createNewChat);
+  navNewChatBtn.addEventListener("click", createNewChat);
 
   var pendingFiles = [];
 
