@@ -2,7 +2,7 @@
 
 在浏览器中使用 Claude Code。
 
-Klaus 基于 [Claude Code SDK](https://www.npmjs.com/package/@anthropic-ai/claude-code)，提供基于浏览器的 Web Chat UI。自动处理多轮对话、会话管理、消息合并（Collect 模式）。
+Klaus 基于 [Claude Code SDK](https://www.npmjs.com/package/@anthropic-ai/claude-code)，提供基于浏览器的 Web Chat UI，同时支持 iOS 和 macOS 原生客户端。自动处理多轮对话、会话管理、消息合并（Collect 模式）。
 
 ## 安装
 
@@ -13,14 +13,6 @@ Klaus 基于 [Claude Code SDK](https://www.npmjs.com/package/@anthropic-ai/claud
 ```bash
 npm install -g klaus-ai
 ```
-
-### 一键脚本
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/meitianwang/klaus/main/install.sh | bash
-```
-
-脚本会自动安装 Node.js（如缺失）、Claude Code CLI 和 Klaus。
 
 ## 前置条件
 
@@ -63,6 +55,20 @@ Chat URL: http://localhost:3000/?token=abc123...
 # macOS 安装 cloudflared
 brew install cloudflared
 ```
+
+## 原生客户端
+
+### iOS
+
+原生 SwiftUI 客户端，支持聊天、文件/图片上传、流式响应。要求 iOS 17.0+。
+
+源码位于 `ios/` 目录。
+
+### macOS
+
+菜单栏常驻应用，管理本地 Klaus 守护进程的生命周期（启动/停止/暂停），通过 WebSocket 连接本地服务。要求 macOS 15+。
+
+源码位于 `apps/macos/` 目录。
 
 ## 定时任务 (Cron)
 
@@ -145,11 +151,10 @@ persona: "You are a helpful AI assistant."
 web:
   port: 3000                   # 默认 3000
   tunnel: false                # 是否自动启动 Cloudflare Tunnel
+  session_max_age_days: 7      # 会话过期天数（默认 7）
 
-session:                       # 可选，会话持久化
-  idle_minutes: 240            # 空闲超时（默认 4 小时）
+session:
   max_entries: 100             # 最大持久化会话数
-  max_age_days: 7              # 过期清理天数
 ```
 
 环境变量（`KLAUS_WEB_PORT` 等）可覆盖配置文件中的值。
@@ -183,7 +188,7 @@ session:                       # 可选，会话持久化
 - **结构化消息**：通道将消息解析为统一的 `InboundMessage` 结构，`formatPrompt()` 集中转换为 Claude 可理解的文本提示词。
 - **Collect 模式**：Claude 处理中时，后续消息自动排队并合并为一条 prompt，处理完毕后一并发送。
 - **LRU 会话管理**：最多维持 20 个并发会话，空闲最久的会话优先淘汰。
-- **会话持久化**：会话 ID 保存到 `~/.klaus/sessions.json`，重启后自动恢复（默认 4 小时内有效）。
+- **会话持久化**：用户和会话数据存储在 SQLite（`~/.klaus/users.db`），重启后自动恢复。
 - **自动重试**：API 调用失败时自动指数退避重试。
 - **定时任务**：Cron 调度器按计划执行 Claude 对话，每个任务使用独立会话，结果可推送到 Web 通道。
 
