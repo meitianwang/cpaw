@@ -11,8 +11,8 @@ import type {
   CronTaskStatus,
   CronSchedulerStatus,
 } from "./types.js";
-import type { ChatSessionManager } from "./core.js";
-import type { SessionStore } from "./session-store.js";
+/** Executor function: runs a prompt and returns the reply text. */
+export type CronExecutor = (sessionKey: string, prompt: string) => Promise<string | null>;
 import { classifyCronError } from "./cron-errors.js";
 import {
   CronRunLog,
@@ -43,12 +43,8 @@ const DEFAULT_FAILURE_ALERT: CronFailureAlert = {
   cooldownMs: 60 * 60 * 1000,
 };
 
-const DEFAULT_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
-const SESSION_PRUNE_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_SCHEDULE_ERRORS = 3; // Auto-disable after 3 consecutive schedule errors
-
-export type { CronRunRecord, CronTaskStatus, CronSchedulerStatus };
 
 // Per-task runtime state (immutable updates)
 
@@ -63,27 +59,24 @@ export class CronScheduler {
   private readonly lastRuns = new Map<string, CronRunRecord>();
   private readonly running = new Set<string>();
   private tasks: CronTask[];
-  private readonly sessions: ChatSessionManager;
+  private readonly executor: CronExecutor | undefined;
   private readonly deliverers: ReadonlyMap<string, DeliverFn>;
   private readonly config: CronConfig;
   private readonly retryConfig: CronRetryConfig;
   private readonly failureAlertConfig: CronFailureAlert;
   private readonly runLog: CronRunLog;
   private readonly taskState = new Map<string, TaskState>();
-  private readonly sessionStore: SessionStore | undefined;
   private readonly jobStore: CronJobStore;
-  private lastSessionPruneAt = 0;
   /** Track last channel used for delivery inference. */
   private lastActiveChannel: string | undefined;
   private started = false;
 
   constructor(
     config: CronConfig,
-    sessions: ChatSessionManager,
+    executor?: CronExecutor,
     deliverers?: ReadonlyMap<string, DeliverFn>,
-    sessionStore?: SessionStore,
   ) {
-    this.sessions = sessions;
+    this.executor = executor;
     this.deliverers = deliverers ?? new Map();
     this.config = config;
     this.retryConfig = config.retry ?? DEFAULT_RETRY;
@@ -96,7 +89,6 @@ export class CronScheduler {
           }
         : undefined,
     );
-    this.sessionStore = sessionStore;
 
     // Load persistent job store and merge with config tasks
     this.jobStore = new CronJobStore(config.storePath);
@@ -152,9 +144,6 @@ export class CronScheduler {
         );
       }
     }
-
-    // Initial session prune
-    this.pruneCronSessions();
   }
 
   stop(): void {
@@ -271,6 +260,13 @@ export class CronScheduler {
   // --- Execution
 
   private async executeTask(task: CronTask): Promise<void> {
+    // Early exit if no executor configured
+    if (!this.executor) {
+      console.warn(`[Cron] Task "${task.id}": no executor configured, skipping`);
+      this.logRun(task, 0, "skipped");
+      return;
+    }
+
     // Overlap guard
     if (this.running.has(task.id)) {
       console.log(`[Cron] Task "${task.id}" skipped (still running)`);
@@ -297,9 +293,6 @@ export class CronScheduler {
       `[Cron] Executing task "${task.id}": ${task.prompt.slice(0, 80)}`,
     );
 
-    // Light context mode
-    const useLight = task.lightContext === true;
-
     try {
       const timeoutMs =
         task.timeoutSeconds != null
@@ -308,9 +301,7 @@ export class CronScheduler {
             : task.timeoutSeconds * 1000
           : DEFAULT_TIMEOUT_MS;
 
-      const chatPromise = useLight
-        ? this.sessions.chatLight(sessionKey, task.prompt)
-        : this.sessions.chat(sessionKey, task.prompt);
+      const chatPromise = this.executor(sessionKey, task.prompt);
 
       let reply: string | null;
       if (timeoutMs > 0) {
@@ -403,8 +394,6 @@ export class CronScheduler {
       this.checkFailureAlert(task, errMsg);
     } finally {
       this.running.delete(task.id);
-      // Periodic session prune
-      this.pruneCronSessions();
     }
   }
 
@@ -693,20 +682,6 @@ export class CronScheduler {
     } catch (err) {
       console.error(`[Cron] Failed to write run log for "${task.id}":`, err);
     }
-  }
-
-  // --- Session retention
-
-  private pruneCronSessions(): void {
-    const now = Date.now();
-    if (now - this.lastSessionPruneAt < SESSION_PRUNE_MIN_INTERVAL_MS) return;
-    this.lastSessionPruneAt = now;
-
-    if (!this.sessionStore) return;
-
-    const retentionMs =
-      this.config.sessionRetentionMs ?? DEFAULT_SESSION_RETENTION_MS;
-    this.sessionStore.pruneStale(retentionMs);
   }
 
   // --- Task state helpers (immutable)

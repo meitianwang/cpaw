@@ -242,9 +242,6 @@ tr.clickable:hover { background: var(--card-bg); }
       <button class="nav-item active" data-tab="settings">
         <span data-i18n="tab_settings">Settings</span>
       </button>
-      <button class="nav-item" data-tab="claude">
-        <span data-i18n="tab_claude">Model Config</span>
-      </button>
       <button class="nav-item" data-tab="users">
         <span data-i18n="tab_users">Users</span>
       </button>
@@ -325,89 +322,6 @@ tr.clickable:hover { background: var(--card-bg); }
       </div>
     </div>
 
-    <!-- ============ Claude Model Config Tab ============ -->
-    <div id="tab-claude" class="tab-panel">
-      <h1 class="page-title" data-i18n="tab_claude">Model Config</h1>
-
-      <!-- Auth Status -->
-      <div class="section">
-        <div class="section-header" data-i18n="sec_auth">Authentication</div>
-        <div class="card">
-          <div class="card-row">
-            <span class="card-label" data-i18n="lbl_auth_status">Status</span>
-            <span class="card-control" id="claude-auth-status">—</span>
-          </div>
-          <div class="card-row" id="claude-login-row" style="display:none">
-            <span class="card-label"></span>
-            <span class="card-control"><button class="btn btn-primary btn-sm" id="claude-login-btn" data-i18n="btn_login">Login</button></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Mode -->
-      <div class="section">
-        <div class="section-header" data-i18n="sec_mode">Mode</div>
-        <div class="card">
-          <div class="card-row">
-            <span class="card-label" data-i18n="lbl_mode">Mode</span>
-            <span class="card-control">
-              <select class="f-select" id="claude-mode">
-                <option value="official">Official Subscription</option>
-                <option value="thirdparty">Third-party API</option>
-              </select>
-            </span>
-          </div>
-          <div class="card-row">
-            <span class="card-label" data-i18n="lbl_default_model">Default Model</span>
-            <span class="card-control">
-              <select class="f-select" id="claude-model">
-                <option value="opus">opus</option>
-                <option value="sonnet">sonnet</option>
-                <option value="haiku">haiku</option>
-              </select>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Third-party settings -->
-      <div class="section" id="claude-thirdparty-section" style="display:none">
-        <div class="section-header" data-i18n="sec_thirdparty">Third-party API</div>
-        <div class="card">
-          <div class="card-row">
-            <span class="card-label" data-i18n="lbl_base_url">API Base URL</span>
-            <span class="card-control"><input class="f-input" id="claude-base-url" placeholder="http://localhost:9000" /></span>
-          </div>
-          <div class="card-row">
-            <span class="card-label" data-i18n="lbl_auth_token">Auth Token</span>
-            <span class="card-control"><input class="f-input" id="claude-auth-token" type="password" placeholder="sk-..." /></span>
-          </div>
-        </div>
-        <div class="section-header" data-i18n="sec_model_map">Model Mapping</div>
-        <div class="card">
-          <div class="card-row">
-            <span class="card-label">haiku →</span>
-            <span class="card-control"><input class="f-input" id="claude-map-haiku" placeholder="claude-haiku-4-5-20251001" /></span>
-          </div>
-          <div class="card-row">
-            <span class="card-label">sonnet →</span>
-            <span class="card-control"><input class="f-input" id="claude-map-sonnet" placeholder="claude-sonnet-4-6" /></span>
-          </div>
-          <div class="card-row">
-            <span class="card-label">opus →</span>
-            <span class="card-control"><input class="f-input" id="claude-map-opus" placeholder="claude-opus-4-6" /></span>
-          </div>
-          <div class="card-row">
-            <span class="card-label" data-i18n="lbl_api_timeout">API Timeout (ms)</span>
-            <span class="card-control"><input class="f-input" id="claude-api-timeout" type="number" placeholder="3000000" /></span>
-          </div>
-        </div>
-      </div>
-
-      <button class="btn btn-primary" id="claude-save-btn" data-i18n="btn_save">Save</button>
-      <span id="claude-save-status" style="margin-left:12px;color:var(--color-success)"></span>
-    </div>
-
     <!-- ============ Users Tab ============ -->
     <div id="tab-users" class="tab-panel">
       <div id="users-list" class="sub-view active">
@@ -453,7 +367,7 @@ tr.clickable:hover { background: var(--card-bg); }
           <div><label data-i18n="lbl_task_id">Task ID</label><input id="cf-id" class="f-input" placeholder="e.g. daily-summary"></div>
           <div><label data-i18n="lbl_task_name">Name</label><input id="cf-name" class="f-input" placeholder="Optional display name"></div>
           <div><label data-i18n="lbl_task_schedule">Schedule</label><input id="cf-schedule" class="f-input" placeholder="e.g. 0 9 * * *"></div>
-          <div class="task-form-full"><label data-i18n="lbl_task_prompt">Prompt</label><textarea id="cf-prompt" class="f-textarea" rows="3" placeholder="Prompt to send to Claude"></textarea></div>
+          <div class="task-form-full"><label data-i18n="lbl_task_prompt">Prompt</label><textarea id="cf-prompt" class="f-textarea" rows="3" placeholder="Prompt text"></textarea></div>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-ghost btn-sm" id="cf-cancel" data-i18n="btn_cancel">Cancel</button>
@@ -527,7 +441,6 @@ tr.clickable:hover { background: var(--card-bg); }
       scheduler_running: "Running", scheduler_stopped: "Stopped",
       tasks_label: "tasks", active_label: "active", next_label: "Next",
       confirm_delete_task: "Delete this task?",
-      tab_claude: "Model Config",
       sec_auth: "Authentication", sec_mode: "Mode", sec_thirdparty: "Third-party API", sec_model_map: "Model Mapping",
       lbl_auth_status: "Status", lbl_mode: "Mode", lbl_default_model: "Default Model",
       lbl_base_url: "API Base URL", lbl_auth_token: "Auth Token", lbl_api_timeout: "API Timeout (ms)",
@@ -559,7 +472,6 @@ tr.clickable:hover { background: var(--card-bg); }
       scheduler_running: "运行中", scheduler_stopped: "已停止",
       tasks_label: "个任务", active_label: "活跃", next_label: "下次",
       confirm_delete_task: "确定删除此任务？",
-      tab_claude: "模型配置",
       sec_auth: "认证", sec_mode: "模式", sec_thirdparty: "第三方 API", sec_model_map: "模型映射",
       lbl_auth_status: "状态", lbl_mode: "模式", lbl_default_model: "默认模型",
       lbl_base_url: "API 地址", lbl_auth_token: "认证令牌", lbl_api_timeout: "API 超时 (ms)",
@@ -610,7 +522,6 @@ tr.clickable:hover { background: var(--card-bg); }
     tabPanels.forEach(function(p) { p.classList.toggle("active", p.id === "tab-" + id); });
     if (id === "users") showSubView("users-list");
     if (id === "cron") loadCronTasks();
-    if (id === "claude") loadClaude();
   }
   navItems.forEach(function(b) { b.addEventListener("click", function() { switchTab(b.dataset.tab); }); });
 
@@ -656,130 +567,6 @@ tr.clickable:hover { background: var(--card-bg); }
   };
 
   loadSettings();
-
-  // =====================================================
-  // CLAUDE MODEL CONFIG TAB
-  // =====================================================
-  var cMode = document.getElementById("claude-mode");
-  var cModel = document.getElementById("claude-model");
-  var cBaseUrl = document.getElementById("claude-base-url");
-  var cAuthToken = document.getElementById("claude-auth-token");
-  var cMapHaiku = document.getElementById("claude-map-haiku");
-  var cMapSonnet = document.getElementById("claude-map-sonnet");
-  var cMapOpus = document.getElementById("claude-map-opus");
-  var cApiTimeout = document.getElementById("claude-api-timeout");
-  var cThirdpartySection = document.getElementById("claude-thirdparty-section");
-  var cAuthStatus = document.getElementById("claude-auth-status");
-  var cLoginRow = document.getElementById("claude-login-row");
-  var cLoginBtn = document.getElementById("claude-login-btn");
-  var cSaveBtn = document.getElementById("claude-save-btn");
-  var cSaveStatus = document.getElementById("claude-save-status");
-  function showAuthLoggedIn(email) {
-    cAuthStatus.textContent = email ? tt("logged_in_as") + " " + email : tt("logged_in");
-    cAuthStatus.style.color = "var(--color-success)";
-    cLoginRow.style.display = "none";
-  }
-
-  function showAuthNotLoggedIn() {
-    cAuthStatus.textContent = tt("not_logged_in");
-    cAuthStatus.style.color = "var(--color-danger)";
-    if (cMode.value === "official") cLoginRow.style.display = "";
-  }
-
-  function toggleThirdparty() {
-    cThirdpartySection.style.display = cMode.value === "thirdparty" ? "" : "none";
-    cLoginRow.style.display = cMode.value === "official" ? "" : "none";
-  }
-  cMode.addEventListener("change", toggleThirdparty);
-
-  function loadClaude() {
-    api("claude", "GET").then(function(d) {
-      if (!d || !d.claude) return;
-      var c = d.claude;
-      cMode.value = c.mode || "official";
-      cModel.value = c.model || "sonnet";
-      if (c.baseUrl) cBaseUrl.value = c.baseUrl;
-      if (c.authToken) cAuthToken.value = c.authToken;
-      if (c.modelMap) {
-        if (c.modelMap.haiku) cMapHaiku.value = c.modelMap.haiku;
-        if (c.modelMap.sonnet) cMapSonnet.value = c.modelMap.sonnet;
-        if (c.modelMap.opus) cMapOpus.value = c.modelMap.opus;
-      }
-      if (c.apiTimeoutMs) cApiTimeout.value = c.apiTimeoutMs;
-      toggleThirdparty();
-
-      if (d.auth) {
-        if (d.auth.loggedIn) {
-          showAuthLoggedIn(d.auth.email);
-        } else {
-          showAuthNotLoggedIn();
-        }
-      }
-    });
-  }
-
-  // Login flow: click Login → open OAuth URL → poll until auth completes
-  var loginPollTimer = null;
-  cLoginBtn.addEventListener("click", function() {
-    cLoginBtn.disabled = true;
-    cLoginBtn.textContent = tt("login_pending");
-    api("claude/login", "POST").then(function(d) {
-      if (d && d.url) {
-        window.open(d.url, "_blank");
-        loginPollTimer = setInterval(function() {
-          api("claude/auth-status", "GET").then(function(s) {
-            if (s && s.loggedIn) {
-              clearInterval(loginPollTimer);
-              loginPollTimer = null;
-              cLoginBtn.disabled = false;
-              cLoginBtn.textContent = tt("btn_login");
-              showAuthLoggedIn(s.email);
-            }
-          });
-        }, 3000);
-        setTimeout(function() {
-          if (loginPollTimer) {
-            clearInterval(loginPollTimer);
-            loginPollTimer = null;
-            cLoginBtn.disabled = false;
-            cLoginBtn.textContent = tt("btn_login");
-          }
-        }, 300000);
-      } else {
-        cLoginBtn.disabled = false;
-        cLoginBtn.textContent = tt("btn_login");
-        showToast(tt("login_failed"));
-      }
-    });
-  });
-
-  // Save
-  cSaveBtn.addEventListener("click", function() {
-    var payload = {
-      mode: cMode.value,
-      model: cModel.value
-    };
-    if (cMode.value === "thirdparty") {
-      payload.base_url = cBaseUrl.value;
-      payload.auth_token = cAuthToken.value;
-      payload.model_map = {
-        haiku: cMapHaiku.value,
-        sonnet: cMapSonnet.value,
-        opus: cMapOpus.value
-      };
-      var t = parseInt(cApiTimeout.value, 10);
-      if (t > 0) payload.api_timeout_ms = t;
-    }
-    api("claude", "PATCH", payload).then(function(d) {
-      if (d && d.ok) {
-        cSaveStatus.textContent = tt("saved");
-        setTimeout(function() { cSaveStatus.textContent = ""; }, 2000);
-      } else {
-        showToast((d && d.error) || tt("failed"));
-      }
-    });
-  });
-
 
   // =====================================================
   // USERS TAB

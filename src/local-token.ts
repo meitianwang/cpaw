@@ -11,7 +11,6 @@ import { join } from "node:path";
 import { CONFIG_DIR } from "./config.js";
 
 const TOKEN_FILE = join(CONFIG_DIR, "local.token");
-const EXEC_TOKEN_FILE = join(CONFIG_DIR, "exec.token");
 let activeToken: string | null = null;
 
 /**
@@ -38,14 +37,4 @@ export function validateLocalToken(token: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Generate and persist an exec approval token for the macOS app's Unix socket.
- */
-export function generateExecToken(): string {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  const token = randomBytes(24).toString("base64");
-  writeFileSync(EXEC_TOKEN_FILE, token, { mode: 0o600 });
-  return token;
 }

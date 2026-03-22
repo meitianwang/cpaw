@@ -1,17 +1,8 @@
 import type { InboundMessage } from "./message.js";
-import type { ToolEvent } from "./tool-config.js";
 
-/** Callback invoked when Claude uses a tool (optional, used by Web channel). */
-export type ToolEventCallback = (event: ToolEvent) => void;
-
-/** Callback for streaming text chunks (optional, used by Web channel). */
-export type StreamChunkCallback = (chunk: string) => void;
-
-/** Handler signature: receives a structured InboundMessage, returns reply text (null = merged, skip reply). */
+/** Handler signature: receives a structured InboundMessage, returns reply text (null = skip reply). */
 export type Handler = (
   msg: InboundMessage,
-  onToolEvent?: ToolEventCallback,
-  onStreamChunk?: StreamChunkCallback,
 ) => Promise<string | null>;
 
 // ---------------------------------------------------------------------------
@@ -77,28 +68,6 @@ export interface SessionConfig {
   readonly maxEntries: number;
 }
 
-// ---------------------------------------------------------------------------
-// Claude model configuration
-// ---------------------------------------------------------------------------
-
-export interface ClaudeModelConfig {
-  readonly mode: "official" | "thirdparty";
-  /** Default model tier: "opus", "sonnet", or "haiku". */
-  readonly model: string;
-  /** Third-party API base URL (required when mode=thirdparty). */
-  readonly baseUrl?: string;
-  /** Third-party auth token (required when mode=thirdparty). */
-  readonly authToken?: string;
-  /** Model name mapping for each tier (thirdparty only). */
-  readonly modelMap?: {
-    readonly haiku?: string;
-    readonly opus?: string;
-    readonly sonnet?: string;
-  };
-  /** API timeout in ms (thirdparty only). */
-  readonly apiTimeoutMs?: number;
-}
-
 export interface TranscriptsConfig {
   readonly transcriptsDir: string;
   readonly maxFiles: number;
@@ -125,11 +94,8 @@ export interface CronDelivery {
   readonly channel: string;
   readonly to?: string;
   readonly mode?: "announce" | "webhook" | "none";
-  /** Skip delivery failures instead of failing the task. */
   readonly bestEffort?: boolean;
-  /** Multi-account: target a specific channel account. */
   readonly accountId?: string;
-  /** Separate destination for failure notifications. */
   readonly failureDestination?: CronFailureDestination;
 }
 
@@ -145,11 +111,8 @@ export interface CronFailureAlert {
   readonly cooldownMs: number;
   readonly channel?: string;
   readonly to?: string;
-  /** Delivery mode: announce to channel, POST to webhook, or both. */
   readonly mode?: "announce" | "webhook";
-  /** Webhook URL for failure alert delivery. */
   readonly webhookUrl?: string;
-  /** Bearer token for failure alert webhook. */
   readonly webhookToken?: string;
 }
 
@@ -169,16 +132,13 @@ export interface CronTask {
   readonly lightContext?: boolean;
   readonly enabled?: boolean;
   readonly deleteAfterRun?: boolean;
-  /** Task execution timeout in seconds. 0 = disable. Default: 600 (10 min). */
   readonly timeoutSeconds?: number;
   readonly staggerMs?: number;
   readonly deliver?: CronDelivery;
   readonly webhookUrl?: string;
   readonly webhookToken?: string;
   readonly failureAlert?: CronFailureAlert | false;
-  /** Timestamp when task was created (epoch ms). */
   readonly createdAt?: number;
-  /** Timestamp when task was last updated (epoch ms). */
   readonly updatedAt?: number;
 }
 
@@ -190,11 +150,8 @@ export interface CronConfig {
   readonly sessionRetentionMs?: number;
   readonly runLog?: CronRunLogConfig;
   readonly failureAlert?: CronFailureAlert;
-  /** Max concurrent cron task executions. Default: unlimited. */
   readonly maxConcurrentRuns?: number;
-  /** Separate destination for failure notifications (global default). */
   readonly failureDestination?: CronFailureDestination;
-  /** Path to persistent job store file. Default: ~/.klaus/cron/jobs.json */
   readonly storePath?: string;
 }
 
@@ -232,4 +189,3 @@ export interface CronSchedulerStatus {
   readonly maxConcurrentRuns: number | null;
   readonly nextWakeAt: string | null;
 }
-

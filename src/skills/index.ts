@@ -302,20 +302,6 @@ export function listSkillNames(): string[] {
   return loadAllSkillEntries().map((e) => e.name);
 }
 
-/** Apply env overrides from skill configs to process.env. */
-export function applySkillEnvOverrides(): void {
-  const enabled = loadEnabledSkills();
-  for (const entry of enabled) {
-    const sc = resolveSkillConfig(entry.name);
-    if (!sc?.env) continue;
-    for (const [key, value] of Object.entries(sc.env)) {
-      if (!process.env[key]) {
-        process.env[key] = value;
-      }
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Compact XML prompt (OpenClaw-compatible format)
 // ---------------------------------------------------------------------------

@@ -37,14 +37,9 @@ import {
 import { mkdirSync, rmSync, watch, type FSWatcher } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { ensureWorkspace, getWorkspacePath } from "../workspace.js";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
 import type { ChannelPlugin } from "./types.js";
-import type {
-  Handler,
-  ToolEventCallback,
-  StreamChunkCallback,
-} from "../types.js";
+import type { Handler } from "../types.js";
 import type { WebConfig } from "../types.js";
 import {
   loadWebConfig,
@@ -54,8 +49,8 @@ import {
   loadTranscriptsConfig,
   loadCronConfig,
   CONFIG_FILE,
-  loadClaudeConfig,
-  VALID_MODEL_TIERS,
+  CONFIG_DIR,
+  positiveNumber,
 } from "../config.js";
 import type {
   CronTask,
@@ -67,10 +62,8 @@ import { getChatHtml } from "./web-ui.js";
 import { getAdminHtml } from "./web-admin-ui.js";
 import { getLoginHtml } from "./web-login-ui.js";
 import { startTunnel } from "./web-tunnel.js";
-import { formatToolEvent, type ToolPayload } from "../tool-config.js";
 import type { MessageStore } from "../message-store.js";
 import type { InviteStore } from "../invite-store.js";
-import type { SessionStore } from "../session-store.js";
 import type { UserStore, User } from "../user-store.js";
 import {
   getSessionToken,
@@ -84,12 +77,6 @@ import {
   handleGoogleRedirect,
   handleGoogleCallback,
 } from "./web-auth.js";
-import { DEFAULT_PERSONA } from "../persona.js";
-import {
-  writeClaudeSettings,
-  readClaudeAuthStatus,
-  startClaudeLogin,
-} from "../claude-setup.js";
 import { validateLocalToken } from "../local-token.js";
 
 // ---------------------------------------------------------------------------
@@ -130,16 +117,16 @@ function registerDownloadToken(
 ): { token: string; name: string } {
   // Resolve to absolute path and block path traversal
   const resolved = resolve(filePath);
-  const userWorkspace = getWorkspacePath(userId);
+  const userUploadDir = join(CONFIG_DIR, "uploads", userId);
   const allowed =
     DOWNLOAD_ALLOWED_DIRS.some(
       (dir) => resolved === dir || resolved.startsWith(dir + "/"),
     ) ||
-    resolved === userWorkspace ||
-    resolved.startsWith(userWorkspace + "/");
+    resolved === userUploadDir ||
+    resolved.startsWith(userUploadDir + "/");
   if (!allowed) {
     throw new Error(
-      `Download path not allowed: ${resolved} (must be under /tmp or user workspace)`,
+      `Download path not allowed: ${resolved} (must be under /tmp or user uploads)`,
     );
   }
 
@@ -220,12 +207,7 @@ const ALLOWED_EXTENSIONS = new Set([
 
 let messageStoreRef: MessageStore | null = null;
 let inviteStoreRef: InviteStore | null = null;
-let sessionStoreRef: SessionStore | null = null;
 let userStoreRef: UserStore | null = null;
-let chatManagerRef: {
-  setPersona(persona: string): void;
-  reset(sessionKey: string): Promise<void>;
-} | null = null;
 
 export function setMessageStore(store: MessageStore): void {
   messageStoreRef = store;
@@ -235,19 +217,8 @@ export function setInviteStore(store: InviteStore): void {
   inviteStoreRef = store;
 }
 
-export function setSessionStore(store: SessionStore): void {
-  sessionStoreRef = store;
-}
-
 export function setUserStore(store: UserStore): void {
   userStoreRef = store;
-}
-
-export function setChatManager(manager: {
-  setPersona(persona: string): void;
-  reset(sessionKey: string): Promise<void>;
-}): void {
-  chatManagerRef = manager;
 }
 
 // Cron scheduler reference (optional — set from index.ts when cron is available)
@@ -288,18 +259,12 @@ type WsEvent =
       readonly chunk: string;
       readonly sessionId?: string;
     }
-  | { readonly type: "merged"; readonly sessionId?: string }
   | {
       readonly type: "error";
       readonly message: string;
       readonly sessionId?: string;
     }
   | { readonly type: "ping" }
-  | {
-      readonly type: "tool";
-      readonly data: ToolPayload;
-      readonly sessionId?: string;
-    }
   | { readonly type: "config_updated" }
   | {
       readonly type: "file";
@@ -553,120 +518,21 @@ async function processUserMessage(
     `[Web] Received (${userId.slice(0, 8)}): ${trimmedText.slice(0, 120)}${mediaLabel}`,
   );
 
-  // Track pending send_file tool calls for file delivery
-  const pendingSendFiles = new Map<
-    string,
-    { filePath: string; fileName?: string }
-  >();
-
-  // Stream tool events to the client via WebSocket
-  const onToolEvent: ToolEventCallback = (event) => {
-    try {
-      // Intercept send_file tool: capture input on start, deliver on success
-      if (event.type === "tool_start" && event.toolName === "send_file") {
-        const input = event.input ?? {};
-        const filePath = input.file_path as string | undefined;
-        if (filePath) {
-          pendingSendFiles.set(event.toolUseId, {
-            filePath: String(filePath),
-            fileName: input.file_name ? String(input.file_name) : undefined,
-          });
-        }
-      } else if (
-        event.type === "tool_result" &&
-        pendingSendFiles.has(event.toolUseId)
-      ) {
-        const pending = pendingSendFiles.get(event.toolUseId)!;
-        pendingSendFiles.delete(event.toolUseId);
-        if (!event.isError) {
-          try {
-            const { token, name } = registerDownloadToken(
-              pending.filePath,
-              userId,
-            );
-            const displayName = pending.fileName ?? name;
-            sendWsEvent(userId, {
-              type: "file",
-              url: `/api/files/${token}`,
-              name: displayName,
-              sessionId,
-            });
-            console.log(
-              `[Web] send_file: ${displayName} (${token.slice(0, 8)}...)`,
-            );
-          } catch (err) {
-            console.error(
-              `[Web] send_file delivery failed for ${pending.filePath}:`,
-              err,
-            );
-          }
-        }
-      }
-
-      sendWsEvent(userId, {
-        type: "tool",
-        data: formatToolEvent(event),
-        sessionId,
-      });
-    } catch (err) {
-      console.error("[Web] Failed to send tool event:", err);
-    }
-  };
-
-  // Stream text chunks to the client via WebSocket
-  const onStreamChunk: StreamChunkCallback = (chunk) => {
-    try {
-      sendWsEvent(userId, { type: "stream", chunk, sessionId });
-    } catch (err) {
-      console.error("[Web] Failed to send stream chunk:", err);
-    }
-  };
-
   try {
-    const reply = await handler(
-      msg,
-      onToolEvent,
-      onStreamChunk,
-    );
+    const reply = await handler(msg);
     if (reply === null) {
-      console.log("[Web] Message merged into batch, skipping reply");
-      sendWsEvent(userId, { type: "merged", sessionId });
       return;
     }
 
-    // Extract [[file:/path/to/file]] markers and register downloads
-    const fileMarkerRe = /\[\[file:(.+?)\]\]/g;
-    let displayText = reply;
-    let match: RegExpExecArray | null;
-    while ((match = fileMarkerRe.exec(reply)) !== null) {
-      const filePath = match[1].trim();
-      try {
-        const { token, name } = registerDownloadToken(filePath, userId);
-        sendWsEvent(userId, {
-          type: "file",
-          url: `/api/files/${token}`,
-          name,
-          sessionId,
-        });
-        console.log(
-          `[Web] File available for download: ${name} (${token.slice(0, 8)}...)`,
-        );
-      } catch (err) {
-        console.error(`[Web] Failed to register file ${filePath}:`, err);
-      }
-    }
-    displayText = displayText.replace(fileMarkerRe, "").trim();
-
-    console.log(`[Web] Replying: ${displayText.slice(0, 100)}...`);
+    console.log(`[Web] Replying: ${reply.slice(0, 100)}...`);
     sendWsEvent(userId, {
       type: "message",
-      text: displayText,
+      text: reply,
       id: Date.now().toString(36),
       sessionId,
     });
   } catch (err) {
     console.error("[Web] Handler error:", err);
-    console.error("[Web] Handler error stack:", (err as Error)?.stack);
     sendWsEvent(userId, {
       type: "error",
       message: "An internal error occurred. Please try again.",
@@ -810,18 +676,18 @@ async function handleRpcRequest(
     }
 
     case "sessions.list": {
-      if (!sessionStoreRef) {
-        sendError("session store not available");
+      if (!messageStoreRef) {
+        sendError("message store not available");
         return;
       }
-      const sessions = sessionStoreRef.listSessions();
+      const sessions = await messageStoreRef.listSessions("");
       sendResult({ sessions });
       break;
     }
 
     case "sessions.delete": {
-      if (!sessionStoreRef) {
-        sendError("session store not available");
+      if (!messageStoreRef) {
+        sendError("message store not available");
         return;
       }
       const key = params.key as string;
@@ -829,8 +695,7 @@ async function handleRpcRequest(
         sendError("missing key parameter");
         return;
       }
-      sessionStoreRef.delete(key);
-      await sessionStoreRef.save();
+      messageStoreRef.deleteSession(key);
       sendResult({ ok: true });
       break;
     }
@@ -988,13 +853,12 @@ async function handleRpcRequest(
     }
 
     case "usage.get": {
-      // Placeholder — usage tracking not yet implemented in core
       sendResult({
         totalTokens: 0,
         inputTokens: 0,
         outputTokens: 0,
         estimatedCostUSD: 0,
-        sessionCount: sessionStoreRef?.listSessions().length ?? 0,
+        sessionCount: 0,
       });
       break;
     }
@@ -1083,8 +947,8 @@ async function handleUpload(
   const safeBase = baseName.replace(/[^\w.\-]/g, "_");
   const diskName = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${safeBase}`;
 
-  // Store uploads in user's workspace uploads/ subdirectory
-  const userUploadDir = join(ensureWorkspace(auth.user.id), "uploads");
+  // Store uploads in user's uploads/ subdirectory
+  const userUploadDir = join(CONFIG_DIR, "uploads", auth.user.id);
   mkdirSync(userUploadDir, { recursive: true });
   const filePath = join(userUploadDir, diskName);
   const { writeFile } = await import("node:fs/promises");
@@ -1337,12 +1201,6 @@ async function handleAdminHistory(
 // Admin: settings (all config sections except tunnel)
 // ---------------------------------------------------------------------------
 
-/** Read a positive number from a raw value, fallback if invalid. */
-function posNum(raw: unknown, fallback: number): number {
-  const n = Number(raw ?? fallback);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
 /** Build the full settings response from current config. */
 function buildSettingsResponse(): Record<string, unknown> {
   const cfg = loadConfig();
@@ -1355,18 +1213,18 @@ function buildSettingsResponse(): Record<string, unknown> {
     persona: (cfg.persona as string) ?? "",
     // Web
     web: {
-      session_max_age_days: posNum(webCfg.session_max_age_days, 7),
+      session_max_age_days: positiveNumber(webCfg.session_max_age_days, 7),
     },
     // Session
     session: {
-      max_entries: Math.floor(posNum(sessionCfg.max_entries, 100)),
+      max_entries: Math.floor(positiveNumber(sessionCfg.max_entries, 100)),
     },
     // Cron (global settings only, tasks via separate endpoint)
     cron: {
       enabled: cronCfg.enabled === true,
       max_concurrent_runs:
         cronCfg.max_concurrent_runs != null
-          ? Math.floor(posNum(cronCfg.max_concurrent_runs, 0))
+          ? Math.floor(positiveNumber(cronCfg.max_concurrent_runs, 0))
           : null,
     },
   };
@@ -1401,10 +1259,8 @@ async function handleAdminSettings(
       const persona = String(parsed.persona ?? "").trim();
       if (persona) {
         cfg.persona = persona;
-        chatManagerRef?.setPersona(persona);
       } else {
         delete cfg.persona;
-        chatManagerRef?.setPersona(DEFAULT_PERSONA);
       }
     }
 
@@ -1473,127 +1329,6 @@ async function handleAdminSettings(
 // ---------------------------------------------------------------------------
 // Admin: cron tasks CRUD
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Admin: Claude model config
-// ---------------------------------------------------------------------------
-
-const VALID_MODES = new Set(["official", "thirdparty"]);
-
-async function handleAdminClaude(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  if (!adminAuth(req, res)) return;
-
-  if (req.method === "GET") {
-    const [claude, auth] = await Promise.all([
-      loadClaudeConfig(),
-      readClaudeAuthStatus(),
-    ]);
-    jsonResponse(res, 200, { claude, auth });
-    return;
-  }
-
-  if (req.method === "PATCH") {
-    const body = await readBody(req, 8192);
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(body.toString()) as Record<string, unknown>;
-    } catch {
-      jsonResponse(res, 400, { error: "invalid JSON" });
-      return;
-    }
-
-    const mode = String(parsed.mode ?? "");
-    if (!VALID_MODES.has(mode)) {
-      jsonResponse(res, 400, { error: "mode must be 'official' or 'thirdparty'" });
-      return;
-    }
-
-    const model = String(parsed.model ?? "sonnet");
-    if (!VALID_MODEL_TIERS.has(model)) {
-      jsonResponse(res, 400, { error: "model must be 'opus', 'sonnet', or 'haiku'" });
-      return;
-    }
-
-    if (mode === "thirdparty") {
-      if (!parsed.base_url || !parsed.auth_token) {
-        jsonResponse(res, 400, {
-          error: "base_url and auth_token are required for thirdparty mode",
-        });
-        return;
-      }
-    }
-
-    // Build config.yaml claude section
-    const claudeYaml: Record<string, unknown> = { mode, model };
-    if (mode === "thirdparty") {
-      claudeYaml.base_url = String(parsed.base_url);
-      claudeYaml.auth_token = String(parsed.auth_token);
-      if (parsed.model_map && typeof parsed.model_map === "object") {
-        const raw = parsed.model_map as Record<string, unknown>;
-        const map: Record<string, string> = {};
-        for (const k of ["haiku", "sonnet", "opus"]) {
-          if (raw[k]) map[k] = String(raw[k]);
-        }
-        if (Object.keys(map).length > 0) claudeYaml.model_map = map;
-      }
-      if (parsed.api_timeout_ms != null) {
-        const t = Math.floor(Number(parsed.api_timeout_ms));
-        if (Number.isFinite(t) && t > 0) claudeYaml.api_timeout_ms = t;
-      }
-    }
-
-    // Save to config.yaml
-    const cfg = loadConfig();
-    cfg.claude = claudeYaml;
-    saveConfig(cfg);
-
-    // Regenerate settings.json
-    const newCfg = loadClaudeConfig();
-    writeClaudeSettings(newCfg);
-
-    jsonResponse(res, 200, { ok: true, claude: newCfg });
-    return;
-  }
-
-  jsonResponse(res, 405, { error: "method not allowed" });
-}
-
-async function handleAdminClaudeLogin(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  if (!adminAuth(req, res)) return;
-
-  if (req.method !== "POST") {
-    jsonResponse(res, 405, { error: "method not allowed" });
-    return;
-  }
-
-  const { url } = await startClaudeLogin();
-  if (url) {
-    jsonResponse(res, 200, { url });
-  } else {
-    jsonResponse(res, 500, { error: "could not get login URL" });
-  }
-}
-
-async function handleAdminClaudeAuthStatus(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  if (!adminAuth(req, res)) return;
-
-  if (req.method !== "GET") {
-    jsonResponse(res, 405, { error: "method not allowed" });
-    return;
-  }
-
-  const status = await readClaudeAuthStatus();
-  jsonResponse(res, 200, { ...status });
-}
 
 async function handleAdminCronTasks(
   req: IncomingMessage,
@@ -1966,12 +1701,6 @@ async function handleRequest(
       return handleAdminSettings(req, res);
     case "/api/admin/cron/tasks":
       return handleAdminCronTasks(req, res);
-    case "/api/admin/claude":
-      return handleAdminClaude(req, res);
-    case "/api/admin/claude/login":
-      return handleAdminClaudeLogin(req, res);
-    case "/api/admin/claude/auth-status":
-      return handleAdminClaudeAuthStatus(req, res);
     // Upload
     case "/api/upload":
       if (req.method !== "POST") {
@@ -2053,11 +1782,6 @@ async function handleRequest(
           jsonResponse(res, 404, { error: "session not found" });
           return;
         }
-
-        // Clean up Claude SDK session (in-memory + SessionStore)
-        chatManagerRef?.reset(delKey).catch((err) => {
-          console.error("[Web] Failed to reset Claude session:", delKey, err);
-        });
 
         jsonResponse(res, 200, { deleted: true });
         return;
@@ -2243,12 +1967,6 @@ export const webPlugin: ChannelPlugin = {
         configDebounce = setTimeout(() => {
           configDebounce = null;
           console.log("[Web] Config file changed, notifying clients");
-          // Sync persona to ChatSessionManager
-          const freshCfg = loadConfig();
-          const freshPersona = (freshCfg.persona as string) || "";
-          if (freshPersona) {
-            chatManagerRef?.setPersona(freshPersona);
-          }
           const data = JSON.stringify({ type: "config_updated" });
           for (const [, clients] of wsClients) {
             for (const ws of [...clients]) {
@@ -2314,20 +2032,14 @@ export const webPlugin: ChannelPlugin = {
     };
     process.once("exit", cleanup);
 
-    // Block until shutdown signal fires (from daemon.ts on SIGTERM/SIGINT).
-    // This lets the caller's finally block run for async cleanup.
-    const { getShutdownSignal } = await import("../daemon.js");
-    const shutdownSignal = getShutdownSignal();
+    // Block forever until process is killed
     await new Promise<void>((resolve) => {
-      if (shutdownSignal.aborted) {
+      const onSignal = () => {
         cleanup();
         resolve();
-        return;
-      }
-      shutdownSignal.addEventListener("abort", () => {
-        cleanup();
-        resolve();
-      }, { once: true });
+      };
+      process.once("SIGTERM", onSignal);
+      process.once("SIGINT", onSignal);
     });
   },
 };
