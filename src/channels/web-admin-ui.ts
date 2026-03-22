@@ -242,6 +242,15 @@ tr.clickable:hover { background: var(--card-bg); }
       <button class="nav-item active" data-tab="settings">
         <span data-i18n="tab_settings">Settings</span>
       </button>
+      <button class="nav-item" data-tab="models">
+        <span data-i18n="tab_models">Models</span>
+      </button>
+      <button class="nav-item" data-tab="prompts">
+        <span data-i18n="tab_prompts">Prompts</span>
+      </button>
+      <button class="nav-item" data-tab="rules">
+        <span data-i18n="tab_rules">Rules</span>
+      </button>
       <button class="nav-item" data-tab="users">
         <span data-i18n="tab_users">Users</span>
       </button>
@@ -270,17 +279,19 @@ tr.clickable:hover { background: var(--card-bg); }
     <div id="tab-settings" class="tab-panel active">
       <h1 class="page-title" data-i18n="tab_settings">Settings</h1>
 
-      <!-- General -->
+      <!-- Agent -->
       <div class="section">
-        <div class="section-header" data-i18n="sec_general">General</div>
+        <div class="section-header" data-i18n="sec_agent">Agent</div>
         <div class="card">
           <div class="card-row">
+            <div class="card-label" data-i18n="lbl_max_sessions">Max Sessions</div>
+            <div class="card-control"><input id="s-max-sessions" type="number" class="f-input f-input-sm" min="1"></div>
+          </div>
+          <div class="card-row">
             <div class="card-label">
-              <div data-i18n="lbl_persona">System Prompt</div>
+              <div data-i18n="lbl_yolo">Auto-approve Tools</div>
             </div>
-            <div class="card-control">
-              <textarea id="s-persona" class="f-textarea" rows="3" placeholder="Optional persona / system prompt"></textarea>
-            </div>
+            <div class="card-control"><label><input type="checkbox" id="s-yolo"> <span data-i18n="on">On</span></label></div>
           </div>
         </div>
       </div>
@@ -304,13 +315,37 @@ tr.clickable:hover { background: var(--card-bg); }
         </div>
       </div>
 
-      <!-- Session -->
+      <!-- Transcripts -->
       <div class="section">
-        <div class="section-header" data-i18n="sec_session">Chat Sessions</div>
+        <div class="section-header" data-i18n="sec_transcripts">Transcripts</div>
         <div class="card">
           <div class="card-row">
-            <div class="card-label" data-i18n="lbl_max_sessions">Max Stored Sessions</div>
-            <div class="card-control"><input id="s-ses-max" type="number" class="f-input f-input-sm" min="1"></div>
+            <div class="card-label" data-i18n="lbl_tx_max_files">Max Files</div>
+            <div class="card-control"><input id="s-tx-max-files" type="number" class="f-input f-input-sm" min="1"></div>
+          </div>
+          <div class="card-row">
+            <div class="card-label" data-i18n="lbl_tx_age">Retention</div>
+            <div class="card-control">
+              <div style="display:flex;align-items:center;gap:8px">
+                <input id="s-tx-age" type="number" class="f-input f-input-sm" min="1">
+                <span class="stat-muted" data-i18n="unit_days">days</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cron -->
+      <div class="section">
+        <div class="section-header" data-i18n="sec_cron">Cron</div>
+        <div class="card">
+          <div class="card-row">
+            <div class="card-label" data-i18n="lbl_cron_enabled">Enabled</div>
+            <div class="card-control"><label><input type="checkbox" id="s-cron-enabled"> <span data-i18n="on">On</span></label></div>
+          </div>
+          <div class="card-row">
+            <div class="card-label" data-i18n="lbl_cron_max_concurrent">Max Concurrent Runs</div>
+            <div class="card-control"><input id="s-cron-max" type="number" class="f-input f-input-sm" min="0"></div>
           </div>
         </div>
       </div>
@@ -320,6 +355,79 @@ tr.clickable:hover { background: var(--card-bg); }
         <span class="save-status" id="settings-status"></span>
         <button class="btn btn-primary" id="save-settings-btn" data-i18n="btn_save">Save</button>
       </div>
+    </div>
+
+    <!-- ============ Models Tab ============ -->
+    <div id="tab-models" class="tab-panel">
+      <h1 class="page-title" data-i18n="tab_models">Models</h1>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+        <button class="btn btn-primary btn-sm" id="model-add-btn" data-i18n="btn_add_model">+ Add Model</button>
+      </div>
+      <div id="model-form" class="task-form" style="display:none">
+        <div class="task-form-grid">
+          <div><label data-i18n="lbl_model_id">ID</label><input id="mf-id" class="f-input" placeholder="e.g. sonnet-daily"></div>
+          <div><label data-i18n="lbl_model_name">Name</label><input id="mf-name" class="f-input" placeholder="Display name"></div>
+          <div><label data-i18n="lbl_model_provider">Provider</label><input id="mf-provider" class="f-input" placeholder="anthropic" value="anthropic"></div>
+          <div><label data-i18n="lbl_model_model">Model ID</label><input id="mf-model" class="f-input" placeholder="e.g. claude-sonnet-4-20250514"></div>
+          <div><label data-i18n="lbl_model_apikey">API Key</label><input id="mf-apikey" class="f-input" type="password" placeholder="sk-..."></div>
+          <div><label data-i18n="lbl_model_baseurl">Base URL</label><input id="mf-baseurl" class="f-input" placeholder="Optional"></div>
+          <div><label data-i18n="lbl_model_tokens">Max Context Tokens</label><input id="mf-tokens" class="f-input" type="number" value="200000"></div>
+          <div><label data-i18n="lbl_model_thinking">Thinking</label>
+            <select id="mf-thinking" class="f-select"><option value="off">off</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select>
+          </div>
+          <div><label><input type="checkbox" id="mf-default"> <span data-i18n="lbl_set_default">Set as default</span></label></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" id="mf-cancel" data-i18n="btn_cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="mf-save" data-i18n="btn_save">Save</button>
+        </div>
+      </div>
+      <div id="models-wrap"></div>
+      <div id="models-empty" class="empty" style="display:none" data-i18n="no_models">No models configured.</div>
+    </div>
+
+    <!-- ============ Prompts Tab ============ -->
+    <div id="tab-prompts" class="tab-panel">
+      <h1 class="page-title" data-i18n="tab_prompts">Prompts</h1>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+        <button class="btn btn-primary btn-sm" id="prompt-add-btn" data-i18n="btn_add_prompt">+ Add Prompt</button>
+      </div>
+      <div id="prompt-form" class="task-form" style="display:none">
+        <div class="task-form-grid">
+          <div><label data-i18n="lbl_prompt_id">ID</label><input id="pf-id" class="f-input" placeholder="e.g. default"></div>
+          <div><label data-i18n="lbl_prompt_name">Name</label><input id="pf-name" class="f-input" placeholder="Display name"></div>
+          <div class="task-form-full"><label data-i18n="lbl_prompt_content">Content</label><textarea id="pf-content" class="f-textarea" rows="5" placeholder="System prompt content"></textarea></div>
+          <div><label><input type="checkbox" id="pf-default"> <span data-i18n="lbl_set_default">Set as default</span></label></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" id="pf-cancel" data-i18n="btn_cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="pf-save" data-i18n="btn_save">Save</button>
+        </div>
+      </div>
+      <div id="prompts-wrap"></div>
+      <div id="prompts-empty" class="empty" style="display:none" data-i18n="no_prompts">No prompts configured.</div>
+    </div>
+
+    <!-- ============ Rules Tab ============ -->
+    <div id="tab-rules" class="tab-panel">
+      <h1 class="page-title" data-i18n="tab_rules">Rules</h1>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+        <button class="btn btn-primary btn-sm" id="rule-add-btn" data-i18n="btn_add_rule">+ Add Rule</button>
+      </div>
+      <div id="rule-form" class="task-form" style="display:none">
+        <div class="task-form-grid">
+          <div><label data-i18n="lbl_rule_id">ID</label><input id="rf-id" class="f-input" placeholder="e.g. lang-match"></div>
+          <div><label data-i18n="lbl_rule_name">Name</label><input id="rf-name" class="f-input" placeholder="Display name"></div>
+          <div class="task-form-full"><label data-i18n="lbl_rule_content">Content</label><textarea id="rf-content" class="f-textarea" rows="3" placeholder="Rule text"></textarea></div>
+          <div><label data-i18n="lbl_rule_order">Sort Order</label><input id="rf-order" class="f-input f-input-sm" type="number" value="0"></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" id="rf-cancel" data-i18n="btn_cancel">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="rf-save" data-i18n="btn_save">Save</button>
+        </div>
+      </div>
+      <div id="rules-wrap"></div>
+      <div id="rules-empty" class="empty" style="display:none" data-i18n="no_rules">No rules configured.</div>
     </div>
 
     <!-- ============ Users Tab ============ -->
@@ -418,14 +526,15 @@ tr.clickable:hover { background: var(--card-bg); }
   var I18N = {
     en: {
       admin_title: "Admin",
-      tab_settings: "Settings", tab_users: "Users", tab_invites: "Invites", tab_cron: "Scheduled Tasks",
+      tab_settings: "Settings", tab_models: "Models", tab_prompts: "Prompts", tab_rules: "Rules", tab_users: "Users", tab_invites: "Invites", tab_cron: "Scheduled Tasks",
       back_chat: "Back to Chat", back_klaus: "Back to Klaus",
-      sec_general: "General", sec_web: "Web Server", sec_session: "Chat Sessions", sec_transcripts: "Transcripts",
+      sec_general: "General", sec_agent: "Agent", sec_web: "Web Server", sec_session: "Chat Sessions", sec_transcripts: "Transcripts", sec_cron: "Cron",
       lbl_persona: "System Prompt",
+      lbl_max_sessions: "Max Sessions", lbl_yolo: "Auto-approve Tools",
       lbl_auth_expire: "Auth Session Expiry",
       hint_auth_expire: "Days before login sessions expire",
-      lbl_max_sessions: "Max Stored Sessions", lbl_ses_age: "Session Retention",
       lbl_tx_max_files: "Max Files", lbl_tx_age: "Retention",
+      lbl_cron_enabled: "Enabled", lbl_cron_max_concurrent: "Max Concurrent Runs",
       unit_days: "days", unit_minutes: "min",
       btn_save: "Save", btn_create: "Create", btn_cancel: "Cancel", btn_add_task: "+ Add Task",
       on: "On", off: "Off",
@@ -441,6 +550,14 @@ tr.clickable:hover { background: var(--card-bg); }
       scheduler_running: "Running", scheduler_stopped: "Stopped",
       tasks_label: "tasks", active_label: "active", next_label: "Next",
       confirm_delete_task: "Delete this task?",
+      btn_add_model: "+ Add Model", btn_add_prompt: "+ Add Prompt", btn_add_rule: "+ Add Rule",
+      lbl_model_id: "ID", lbl_model_name: "Name", lbl_model_provider: "Provider", lbl_model_model: "Model ID",
+      lbl_model_apikey: "API Key", lbl_model_baseurl: "Base URL", lbl_model_tokens: "Max Context Tokens", lbl_model_thinking: "Thinking",
+      lbl_set_default: "Set as default", no_models: "No models configured.",
+      lbl_prompt_id: "ID", lbl_prompt_name: "Name", lbl_prompt_content: "Content", no_prompts: "No prompts configured.",
+      lbl_rule_id: "ID", lbl_rule_name: "Name", lbl_rule_content: "Content", lbl_rule_order: "Sort Order", no_rules: "No rules configured.",
+      default_badge: "Default", enabled_badge: "Enabled", disabled_badge: "Disabled",
+      confirm_delete_model: "Delete this model?", confirm_delete_prompt: "Delete this prompt?", confirm_delete_rule: "Delete this rule?",
       sec_auth: "Authentication", sec_mode: "Mode", sec_thirdparty: "Third-party API", sec_model_map: "Model Mapping",
       lbl_auth_status: "Status", lbl_mode: "Mode", lbl_default_model: "Default Model",
       lbl_base_url: "API Base URL", lbl_auth_token: "Auth Token", lbl_api_timeout: "API Timeout (ms)",
@@ -449,14 +566,15 @@ tr.clickable:hover { background: var(--card-bg); }
     },
     zh: {
       admin_title: "管理面板",
-      tab_settings: "设置", tab_users: "用户", tab_invites: "邀请码", tab_cron: "定时任务",
+      tab_settings: "设置", tab_models: "模型", tab_prompts: "提示词", tab_rules: "规则", tab_users: "用户", tab_invites: "邀请码", tab_cron: "定时任务",
       back_chat: "返回对话", back_klaus: "返回 Klaus",
-      sec_general: "通用", sec_web: "Web 服务器", sec_session: "对话会话", sec_transcripts: "历史记录",
+      sec_general: "通用", sec_agent: "Agent", sec_web: "Web 服务器", sec_session: "对话会话", sec_transcripts: "历史记录", sec_cron: "定时任务",
       lbl_persona: "系统提示词",
+      lbl_max_sessions: "最大会话数", lbl_yolo: "自动批准工具",
       lbl_auth_expire: "登录过期时间",
       hint_auth_expire: "登录会话过期天数",
-      lbl_max_sessions: "最大存储会话数", lbl_ses_age: "会话保留时间",
       lbl_tx_max_files: "最大文件数", lbl_tx_age: "保留时间",
+      lbl_cron_enabled: "启用", lbl_cron_max_concurrent: "最大并发数",
       unit_days: "天", unit_minutes: "分钟",
       btn_save: "保存", btn_create: "创建", btn_cancel: "取消", btn_add_task: "+ 添加任务",
       on: "开启", off: "关闭",
@@ -472,6 +590,14 @@ tr.clickable:hover { background: var(--card-bg); }
       scheduler_running: "运行中", scheduler_stopped: "已停止",
       tasks_label: "个任务", active_label: "活跃", next_label: "下次",
       confirm_delete_task: "确定删除此任务？",
+      btn_add_model: "+ 添加模型", btn_add_prompt: "+ 添加提示词", btn_add_rule: "+ 添加规则",
+      lbl_model_id: "ID", lbl_model_name: "名称", lbl_model_provider: "提供商", lbl_model_model: "模型 ID",
+      lbl_model_apikey: "API Key", lbl_model_baseurl: "API 地址", lbl_model_tokens: "最大上下文 Token", lbl_model_thinking: "思考",
+      lbl_set_default: "设为默认", no_models: "暂无模型配置。",
+      lbl_prompt_id: "ID", lbl_prompt_name: "名称", lbl_prompt_content: "内容", no_prompts: "暂无提示词配置。",
+      lbl_rule_id: "ID", lbl_rule_name: "名称", lbl_rule_content: "内容", lbl_rule_order: "排序", no_rules: "暂无规则配置。",
+      default_badge: "默认", enabled_badge: "启用", disabled_badge: "禁用",
+      confirm_delete_model: "确定删除此模型？", confirm_delete_prompt: "确定删除此提示词？", confirm_delete_rule: "确定删除此规则？",
       sec_auth: "认证", sec_mode: "模式", sec_thirdparty: "第三方 API", sec_model_map: "模型映射",
       lbl_auth_status: "状态", lbl_mode: "模式", lbl_default_model: "默认模型",
       lbl_base_url: "API 地址", lbl_auth_token: "认证令牌", lbl_api_timeout: "API 超时 (ms)",
@@ -522,35 +648,50 @@ tr.clickable:hover { background: var(--card-bg); }
     tabPanels.forEach(function(p) { p.classList.toggle("active", p.id === "tab-" + id); });
     if (id === "users") showSubView("users-list");
     if (id === "cron") loadCronTasks();
+    if (id === "models") loadModels();
+    if (id === "prompts") loadPrompts();
+    if (id === "rules") loadRules();
   }
   navItems.forEach(function(b) { b.addEventListener("click", function() { switchTab(b.dataset.tab); }); });
 
   // =====================================================
   // SETTINGS TAB
   // =====================================================
-  var sPersona = document.getElementById("s-persona");
+  var sMaxSessions = document.getElementById("s-max-sessions");
+  var sYolo = document.getElementById("s-yolo");
   var sWebSesAge = document.getElementById("s-web-session-age");
-  var sSesMax = document.getElementById("s-ses-max");
+  var sTxMaxFiles = document.getElementById("s-tx-max-files");
+  var sTxAge = document.getElementById("s-tx-age");
+  var sCronEnabled = document.getElementById("s-cron-enabled");
+  var sCronMax = document.getElementById("s-cron-max");
   var saveBtn = document.getElementById("save-settings-btn");
   var saveStatus = document.getElementById("settings-status");
 
   function loadSettings() {
     api("settings", "GET").then(function(d) {
-      sPersona.value = d.persona || "";
-      sWebSesAge.value = d.web.session_max_age_days;
-      sSesMax.value = d.session.max_entries;
+      sMaxSessions.value = d.max_sessions || 20;
+      sYolo.checked = d.yolo !== false;
+      sWebSesAge.value = (d.web && d.web.session_max_age_days) || 7;
+      sTxMaxFiles.value = (d.transcripts && d.transcripts.max_files) || 200;
+      sTxAge.value = (d.transcripts && d.transcripts.max_age_days) || 30;
+      sCronEnabled.checked = d.cron && d.cron.enabled;
+      sCronMax.value = (d.cron && d.cron.max_concurrent_runs) || 0;
     });
   }
 
   saveBtn.onclick = function() {
     saveBtn.disabled = true;
     api("settings", "PATCH", {
-      persona: sPersona.value.trim(),
-      web: {
-        session_max_age_days: parseInt(sWebSesAge.value, 10),
+      max_sessions: parseInt(sMaxSessions.value, 10) || 20,
+      yolo: sYolo.checked,
+      web: { session_max_age_days: parseInt(sWebSesAge.value, 10) || 7 },
+      transcripts: {
+        max_files: parseInt(sTxMaxFiles.value, 10) || 200,
+        max_age_days: parseInt(sTxAge.value, 10) || 30,
       },
-      session: {
-        max_entries: parseInt(sSesMax.value, 10),
+      cron: {
+        enabled: sCronEnabled.checked,
+        max_concurrent_runs: parseInt(sCronMax.value, 10) || 0,
       },
     })
     .then(function() {
@@ -807,6 +948,284 @@ tr.clickable:hover { background: var(--card-bg); }
       if (!confirm(tt("confirm_delete_task"))) return;
       api("cron/tasks?id=" + encodeURIComponent(btn.dataset.deltask), "DELETE")
         .then(function() { loadCronTasks(); showToast(tt("deleted")); });
+    }
+  });
+
+  // =====================================================
+  // MODELS TAB
+  // =====================================================
+  var modelsWrap = document.getElementById("models-wrap");
+  var modelsEmpty = document.getElementById("models-empty");
+  var modelForm = document.getElementById("model-form");
+  var modelAddBtn = document.getElementById("model-add-btn");
+  var mfId = document.getElementById("mf-id");
+  var mfName = document.getElementById("mf-name");
+  var mfProvider = document.getElementById("mf-provider");
+  var mfModel = document.getElementById("mf-model");
+  var mfApikey = document.getElementById("mf-apikey");
+  var mfBaseurl = document.getElementById("mf-baseurl");
+  var mfTokens = document.getElementById("mf-tokens");
+  var mfThinking = document.getElementById("mf-thinking");
+  var mfDefault = document.getElementById("mf-default");
+  var mfSave = document.getElementById("mf-save");
+  var mfCancel = document.getElementById("mf-cancel");
+  var editingModelId = null;
+
+  function loadModels() {
+    api("models", "GET").then(function(d) {
+      var models = d.models || [];
+      if (!models.length) { modelsWrap.innerHTML = ""; modelsEmpty.style.display = "block"; return; }
+      modelsEmpty.style.display = "none";
+      var h = "<table><thead><tr><th>ID</th><th>" + tt("lbl_model_name") + "</th><th>" + tt("lbl_model_provider") + "</th><th>" + tt("lbl_model_model") + "</th><th>" + tt("lbl_model_thinking") + "</th><th>Status</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
+      models.forEach(function(m) {
+        var badge = m.isDefault ? "<span class='badge badge-green'>" + tt("default_badge") + "</span>" : "";
+        h += "<tr>"
+          + "<td><span class='code-text'>" + esc(m.id) + "</span></td>"
+          + "<td>" + esc(m.name) + "</td>"
+          + "<td>" + esc(m.provider) + "</td>"
+          + "<td>" + esc(m.model) + "</td>"
+          + "<td>" + esc(m.thinking || "off") + "</td>"
+          + "<td>" + badge + "</td>"
+          + "<td><div class='actions'>"
+          + (m.isDefault ? "" : "<button class='btn btn-sm btn-ghost' data-setdefault='" + esc(m.id) + "'>" + tt("lbl_set_default") + "</button>")
+          + "<button class='btn btn-sm btn-ghost' data-editmodel='" + esc(m.id) + "'>Edit</button>"
+          + "<button class='btn btn-sm btn-danger' data-delmodel='" + esc(m.id) + "'>" + tt("delete") + "</button>"
+          + "</div></td></tr>";
+      });
+      h += "</tbody></table>";
+      modelsWrap.innerHTML = h;
+    });
+  }
+
+  modelAddBtn.onclick = function() {
+    editingModelId = null;
+    mfId.value = ""; mfName.value = ""; mfProvider.value = "anthropic"; mfModel.value = "";
+    mfApikey.value = ""; mfBaseurl.value = ""; mfTokens.value = "200000"; mfThinking.value = "off"; mfDefault.checked = false;
+    mfId.disabled = false;
+    modelForm.style.display = "block";
+    mfId.focus();
+  };
+  mfCancel.onclick = function() { modelForm.style.display = "none"; };
+
+  mfSave.onclick = function() {
+    var id = mfId.value.trim();
+    var model = mfModel.value.trim();
+    if (!id || !model) return;
+    mfSave.disabled = true;
+    var payload = {
+      id: id, name: mfName.value.trim() || id, provider: mfProvider.value.trim() || "anthropic",
+      model: model, max_context_tokens: parseInt(mfTokens.value, 10) || 200000,
+      thinking: mfThinking.value, is_default: mfDefault.checked
+    };
+    if (mfApikey.value.trim()) payload.api_key = mfApikey.value.trim();
+    if (mfBaseurl.value.trim()) payload.base_url = mfBaseurl.value.trim();
+
+    var method = editingModelId ? "PATCH" : "POST";
+    var path = editingModelId ? "models?id=" + encodeURIComponent(editingModelId) : "models";
+    api(path, method, payload)
+      .then(function() { modelForm.style.display = "none"; showToast(tt("saved")); loadModels(); })
+      .catch(function() { showToast(tt("failed")); })
+      .finally(function() { mfSave.disabled = false; });
+  };
+
+  modelsWrap.addEventListener("click", function(e) {
+    var btn = e.target.closest("button");
+    if (!btn) return;
+    e.stopPropagation();
+    if (btn.dataset.delmodel) {
+      if (!confirm(tt("confirm_delete_model"))) return;
+      api("models?id=" + encodeURIComponent(btn.dataset.delmodel), "DELETE").then(function() { loadModels(); showToast(tt("deleted")); });
+    } else if (btn.dataset.setdefault) {
+      api("models?id=" + encodeURIComponent(btn.dataset.setdefault), "PATCH", { is_default: true }).then(function() { loadModels(); });
+    } else if (btn.dataset.editmodel) {
+      var mid = btn.dataset.editmodel;
+      api("models", "GET").then(function(d) {
+        var m = (d.models || []).find(function(x) { return x.id === mid; });
+        if (!m) return;
+        editingModelId = mid;
+        mfId.value = m.id; mfId.disabled = true;
+        mfName.value = m.name || ""; mfProvider.value = m.provider || "anthropic";
+        mfModel.value = m.model || ""; mfApikey.value = ""; mfBaseurl.value = m.baseUrl || "";
+        mfTokens.value = m.maxContextTokens || 200000; mfThinking.value = m.thinking || "off";
+        mfDefault.checked = m.isDefault;
+        modelForm.style.display = "block";
+      });
+    }
+  });
+
+  // =====================================================
+  // PROMPTS TAB
+  // =====================================================
+  var promptsWrap = document.getElementById("prompts-wrap");
+  var promptsEmpty = document.getElementById("prompts-empty");
+  var promptForm = document.getElementById("prompt-form");
+  var promptAddBtn = document.getElementById("prompt-add-btn");
+  var pfId = document.getElementById("pf-id");
+  var pfName = document.getElementById("pf-name");
+  var pfContent = document.getElementById("pf-content");
+  var pfDefault = document.getElementById("pf-default");
+  var pfSave = document.getElementById("pf-save");
+  var pfCancel = document.getElementById("pf-cancel");
+  var editingPromptId = null;
+
+  function loadPrompts() {
+    api("prompts", "GET").then(function(d) {
+      var prompts = d.prompts || [];
+      if (!prompts.length) { promptsWrap.innerHTML = ""; promptsEmpty.style.display = "block"; return; }
+      promptsEmpty.style.display = "none";
+      var h = "<table><thead><tr><th>ID</th><th>" + tt("lbl_prompt_name") + "</th><th>" + tt("lbl_prompt_content") + "</th><th>Status</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
+      prompts.forEach(function(p) {
+        var badge = p.isDefault ? "<span class='badge badge-green'>" + tt("default_badge") + "</span>" : "";
+        var preview = p.content.length > 80 ? p.content.slice(0, 80) + "..." : p.content;
+        h += "<tr>"
+          + "<td><span class='code-text'>" + esc(p.id) + "</span></td>"
+          + "<td>" + esc(p.name) + "</td>"
+          + "<td class='stat-muted'>" + esc(preview) + "</td>"
+          + "<td>" + badge + "</td>"
+          + "<td><div class='actions'>"
+          + (p.isDefault ? "" : "<button class='btn btn-sm btn-ghost' data-setdefaultprompt='" + esc(p.id) + "'>" + tt("lbl_set_default") + "</button>")
+          + "<button class='btn btn-sm btn-ghost' data-editprompt='" + esc(p.id) + "'>Edit</button>"
+          + "<button class='btn btn-sm btn-danger' data-delprompt='" + esc(p.id) + "'>" + tt("delete") + "</button>"
+          + "</div></td></tr>";
+      });
+      h += "</tbody></table>";
+      promptsWrap.innerHTML = h;
+    });
+  }
+
+  promptAddBtn.onclick = function() {
+    editingPromptId = null;
+    pfId.value = ""; pfName.value = ""; pfContent.value = ""; pfDefault.checked = false;
+    pfId.disabled = false;
+    promptForm.style.display = "block";
+    pfId.focus();
+  };
+  pfCancel.onclick = function() { promptForm.style.display = "none"; };
+
+  pfSave.onclick = function() {
+    var id = pfId.value.trim();
+    var content = pfContent.value.trim();
+    if (!id || !content) return;
+    pfSave.disabled = true;
+    var payload = { id: id, name: pfName.value.trim() || id, content: content, is_default: pfDefault.checked };
+    var method = editingPromptId ? "PATCH" : "POST";
+    var path = editingPromptId ? "prompts?id=" + encodeURIComponent(editingPromptId) : "prompts";
+    api(path, method, payload)
+      .then(function() { promptForm.style.display = "none"; showToast(tt("saved")); loadPrompts(); })
+      .catch(function() { showToast(tt("failed")); })
+      .finally(function() { pfSave.disabled = false; });
+  };
+
+  promptsWrap.addEventListener("click", function(e) {
+    var btn = e.target.closest("button");
+    if (!btn) return;
+    e.stopPropagation();
+    if (btn.dataset.delprompt) {
+      if (!confirm(tt("confirm_delete_prompt"))) return;
+      api("prompts?id=" + encodeURIComponent(btn.dataset.delprompt), "DELETE").then(function() { loadPrompts(); showToast(tt("deleted")); });
+    } else if (btn.dataset.setdefaultprompt) {
+      api("prompts?id=" + encodeURIComponent(btn.dataset.setdefaultprompt), "PATCH", { is_default: true }).then(function() { loadPrompts(); });
+    } else if (btn.dataset.editprompt) {
+      var pid = btn.dataset.editprompt;
+      api("prompts", "GET").then(function(d) {
+        var p = (d.prompts || []).find(function(x) { return x.id === pid; });
+        if (!p) return;
+        editingPromptId = pid;
+        pfId.value = p.id; pfId.disabled = true;
+        pfName.value = p.name || ""; pfContent.value = p.content || "";
+        pfDefault.checked = p.isDefault;
+        promptForm.style.display = "block";
+      });
+    }
+  });
+
+  // =====================================================
+  // RULES TAB
+  // =====================================================
+  var rulesWrap = document.getElementById("rules-wrap");
+  var rulesEmpty = document.getElementById("rules-empty");
+  var ruleForm = document.getElementById("rule-form");
+  var ruleAddBtn = document.getElementById("rule-add-btn");
+  var rfId = document.getElementById("rf-id");
+  var rfName = document.getElementById("rf-name");
+  var rfContent = document.getElementById("rf-content");
+  var rfOrder = document.getElementById("rf-order");
+  var rfSave = document.getElementById("rf-save");
+  var rfCancel = document.getElementById("rf-cancel");
+  var editingRuleId = null;
+
+  function loadRules() {
+    api("rules", "GET").then(function(d) {
+      var rules = d.rules || [];
+      if (!rules.length) { rulesWrap.innerHTML = ""; rulesEmpty.style.display = "block"; return; }
+      rulesEmpty.style.display = "none";
+      var h = "<table><thead><tr><th>ID</th><th>" + tt("lbl_rule_name") + "</th><th>" + tt("lbl_rule_content") + "</th><th>Status</th><th>" + tt("lbl_rule_order") + "</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
+      rules.forEach(function(r) {
+        var badge = r.enabled
+          ? "<span class='badge badge-green'>" + tt("enabled_badge") + "</span>"
+          : "<span class='badge badge-gray'>" + tt("disabled_badge") + "</span>";
+        var preview = r.content.length > 60 ? r.content.slice(0, 60) + "..." : r.content;
+        h += "<tr>"
+          + "<td><span class='code-text'>" + esc(r.id) + "</span></td>"
+          + "<td>" + esc(r.name) + "</td>"
+          + "<td class='stat-muted'>" + esc(preview) + "</td>"
+          + "<td>" + badge + "</td>"
+          + "<td class='stat-muted'>" + r.sortOrder + "</td>"
+          + "<td><div class='actions'>"
+          + "<button class='btn btn-sm btn-ghost' data-togglerule='" + esc(r.id) + "' data-enabled='" + (r.enabled ? "1" : "0") + "'>" + (r.enabled ? "Disable" : "Enable") + "</button>"
+          + "<button class='btn btn-sm btn-ghost' data-editrule='" + esc(r.id) + "'>Edit</button>"
+          + "<button class='btn btn-sm btn-danger' data-delrule='" + esc(r.id) + "'>" + tt("delete") + "</button>"
+          + "</div></td></tr>";
+      });
+      h += "</tbody></table>";
+      rulesWrap.innerHTML = h;
+    });
+  }
+
+  ruleAddBtn.onclick = function() {
+    editingRuleId = null;
+    rfId.value = ""; rfName.value = ""; rfContent.value = ""; rfOrder.value = "0";
+    rfId.disabled = false;
+    ruleForm.style.display = "block";
+    rfId.focus();
+  };
+  rfCancel.onclick = function() { ruleForm.style.display = "none"; };
+
+  rfSave.onclick = function() {
+    var id = rfId.value.trim();
+    var content = rfContent.value.trim();
+    if (!id || !content) return;
+    rfSave.disabled = true;
+    var payload = { id: id, name: rfName.value.trim() || id, content: content, sort_order: parseInt(rfOrder.value, 10) || 0, enabled: true };
+    var method = editingRuleId ? "PATCH" : "POST";
+    var path = editingRuleId ? "rules?id=" + encodeURIComponent(editingRuleId) : "rules";
+    api(path, method, payload)
+      .then(function() { ruleForm.style.display = "none"; showToast(tt("saved")); loadRules(); })
+      .catch(function() { showToast(tt("failed")); })
+      .finally(function() { rfSave.disabled = false; });
+  };
+
+  rulesWrap.addEventListener("click", function(e) {
+    var btn = e.target.closest("button");
+    if (!btn) return;
+    e.stopPropagation();
+    if (btn.dataset.delrule) {
+      if (!confirm(tt("confirm_delete_rule"))) return;
+      api("rules?id=" + encodeURIComponent(btn.dataset.delrule), "DELETE").then(function() { loadRules(); showToast(tt("deleted")); });
+    } else if (btn.dataset.togglerule) {
+      var enabled = btn.dataset.enabled === "1";
+      api("rules?id=" + encodeURIComponent(btn.dataset.togglerule), "PATCH", { enabled: !enabled }).then(function() { loadRules(); });
+    } else if (btn.dataset.editrule) {
+      var rid = btn.dataset.editrule;
+      api("rules", "GET").then(function(d) {
+        var r = (d.rules || []).find(function(x) { return x.id === rid; });
+        if (!r) return;
+        editingRuleId = rid;
+        rfId.value = r.id; rfId.disabled = true;
+        rfName.value = r.name || ""; rfContent.value = r.content || "";
+        rfOrder.value = r.sortOrder || 0;
+        ruleForm.style.display = "block";
+      });
     }
   });
 
