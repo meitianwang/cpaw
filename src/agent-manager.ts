@@ -17,9 +17,18 @@ import {
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { join } from "node:path";
+import { CONFIG_DIR } from "./config.js";
 import type { SettingsStore, McpTransportConfig } from "./settings-store.js";
 
 export type AgentEventCallback = (event: AgentEvent) => void;
+
+const SESSIONS_DIR = join(CONFIG_DIR, "agent-sessions");
+
+/** Sanitize session key for use as filename (replace colons with underscores). */
+function sanitizeSessionKey(key: string): string {
+  return key.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
 
 function createMcpClient(config: MCPServerConfig): MCPClient {
   const t = config.transport;
@@ -159,6 +168,12 @@ export class AgentSessionManager {
       tools: [],
       approval: { yolo },
       thinkingLevel: (modelRecord.thinking || "off") as ThinkingLevel,
+      // Session persistence: JSONL files in ~/.klaus/agent-sessions/
+      session: {
+        persist: true,
+        directory: SESSIONS_DIR,
+        sessionId: sanitizeSessionKey(sessionKey),
+      },
       // Compaction: auto-compress when context gets large
       compaction: {
         enabled: true,
