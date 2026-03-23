@@ -377,6 +377,7 @@ tr.clickable:hover { background: var(--card-bg); }
               <option value="minimax">MiniMax</option>
               <option value="kimi">Kimi (Moonshot)</option>
               <option value="volcengine">Volcengine (豆包)</option>
+              <option value="openai-codex">OpenAI Codex</option>
               <option value="openai-compatible">OpenAI Compatible</option>
               <option value="anthropic-compatible">Anthropic Compatible</option>
               <option value="gemini-compatible">Gemini Compatible</option>
@@ -1057,6 +1058,17 @@ tr.clickable:hover { background: var(--card-bg); }
       models: [
         { id: "MiniMax-M1", label: "MiniMax M1", tokens: 1000000 },
         { id: "MiniMax-T1", label: "MiniMax T1", tokens: 1000000 }
+      ]
+    },
+    "openai-codex": {
+      baseUrl: "",
+      models: [
+        { id: "codex-mini-latest", label: "Codex Mini (latest)", tokens: 192000 },
+        { id: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini", tokens: 192000 },
+        { id: "gpt-5.1", label: "GPT-5.1", tokens: 192000 },
+        { id: "gpt-5.2", label: "GPT-5.2", tokens: 192000 },
+        { id: "gpt-5.3", label: "GPT-5.3", tokens: 192000 },
+        { id: "gpt-5.4", label: "GPT-5.4", tokens: 192000 }
       ]
     }
   };
