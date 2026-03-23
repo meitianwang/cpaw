@@ -12,6 +12,15 @@ import { openaiCodexProvider } from "./openai-codex.js";
 import { googleProvider } from "./google.js";
 import { moonshotProvider } from "./moonshot-def.js";
 import { moonshotCnProvider } from "./moonshot-cn.js";
+import { kimiCodingProvider } from "./kimi-coding.js";
+import { volcengineProvider } from "./volcengine.js";
+import { minimaxProvider } from "./minimax.js";
+import { xaiProvider } from "./xai.js";
+import { githubCopilotProvider } from "./github-copilot.js";
+import { modelstudioProvider } from "./modelstudio.js";
+import { xiaomiProvider } from "./xiaomi.js";
+import { qianfanProvider } from "./qianfan.js";
+import { qwenProvider } from "./qwen.js";
 
 const providers: ProviderDefinition[] = [
   anthropicProvider,
@@ -21,6 +30,15 @@ const providers: ProviderDefinition[] = [
   googleProvider,
   moonshotProvider,
   moonshotCnProvider,
+  kimiCodingProvider,
+  volcengineProvider,
+  minimaxProvider,
+  xaiProvider,
+  githubCopilotProvider,
+  modelstudioProvider,
+  xiaomiProvider,
+  qianfanProvider,
+  qwenProvider,
 ];
 
 const byId = new Map<string, ProviderDefinition>(

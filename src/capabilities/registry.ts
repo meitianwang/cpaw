@@ -2,6 +2,10 @@ import type { AgentTool } from "klaus-agent";
 import { join } from "node:path";
 import { CONFIG_DIR } from "../config.js";
 import type {
+  ToolFactory,
+  HookName,
+  HookHandler,
+  HookRegistration,
   WebSearchProvider,
   MediaUnderstandingProvider,
   SpeechProvider,
@@ -13,6 +17,8 @@ import type {
 } from "./types.js";
 
 interface ProviderTracking {
+  tools: string[];
+  hooks: string[];
   webSearch: string[];
   mediaUnderstanding: string[];
   speech: string[];
@@ -23,6 +29,8 @@ interface ProviderTracking {
 }
 
 export class CapabilityRegistry {
+  private readonly tools = new Map<string, AgentTool | ToolFactory>();
+  private readonly hooks = new Map<string, HookRegistration>();
   private readonly webSearch = new Map<string, WebSearchProvider>();
   private readonly mediaUnderstanding = new Map<string, MediaUnderstandingProvider>();
   private readonly speech = new Map<string, SpeechProvider>();
@@ -32,15 +40,23 @@ export class CapabilityRegistry {
   private readonly services = new Map<string, ServiceDefinition>();
   private readonly providerTracking = new Map<string, ProviderTracking>();
   private httpRoutesCache: HttpRouteDefinition[] | null = null;
+  private toolIdCounter = 0;
+  private hookIdCounter = 0;
 
   createAPI(providerId: string): ProviderAPI {
     const tracking: ProviderTracking = {
+      tools: [], hooks: [],
       webSearch: [], mediaUnderstanding: [], speech: [],
       imageGeneration: [], httpRoutes: [], commands: [], services: [],
     };
     this.providerTracking.set(providerId, tracking);
 
     return {
+      registerTool: (tool) => {
+        const id = `${providerId}:tool:${this.toolIdCounter++}`;
+        this.tools.set(id, tool);
+        tracking.tools.push(id);
+      },
       registerWebSearch: (p) => { this.webSearch.set(p.id, p); tracking.webSearch.push(p.id); },
       registerMediaUnderstanding: (p) => { this.mediaUnderstanding.set(p.id, p); tracking.mediaUnderstanding.push(p.id); },
       registerSpeech: (p) => { this.speech.set(p.id, p); tracking.speech.push(p.id); },
@@ -54,6 +70,11 @@ export class CapabilityRegistry {
       },
       registerCommand: (c) => { this.commands.set(c.name, c); tracking.commands.push(c.name); },
       registerService: (s) => { this.services.set(s.id, s); tracking.services.push(s.id); },
+      on: (name, handler, opts) => {
+        const id = `${providerId}:hook:${this.hookIdCounter++}`;
+        this.hooks.set(id, { name, handler: handler as (...args: unknown[]) => unknown, priority: opts?.priority });
+        tracking.hooks.push(id);
+      },
     };
   }
 
@@ -68,6 +89,8 @@ export class CapabilityRegistry {
   removeProvider(providerId: string): void {
     const tracking = this.providerTracking.get(providerId);
     if (!tracking) return;
+    for (const id of tracking.tools) this.tools.delete(id);
+    for (const id of tracking.hooks) this.hooks.delete(id);
     for (const id of tracking.webSearch) this.webSearch.delete(id);
     for (const id of tracking.mediaUnderstanding) this.mediaUnderstanding.delete(id);
     for (const id of tracking.speech) this.speech.delete(id);
@@ -81,11 +104,29 @@ export class CapabilityRegistry {
 
   buildTools(): AgentTool[] {
     const tools: AgentTool[] = [];
+    for (const entry of this.tools.values()) {
+      if (typeof entry === "function") {
+        const result = entry({});
+        if (result) {
+          if (Array.isArray(result)) tools.push(...result);
+          else tools.push(result);
+        }
+      } else {
+        tools.push(entry);
+      }
+    }
     for (const ws of this.webSearch.values()) {
       const tool = ws.createTool({});
       if (tool) tools.push(tool);
     }
     return tools;
+  }
+
+  getHooks<T extends HookName>(name: T): HookHandler<T>[] {
+    return [...this.hooks.values()]
+      .filter((h) => h.name === name)
+      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+      .map((h) => h.handler as HookHandler<T>);
   }
 
   getWebSearchProviders(): WebSearchProvider[] {
@@ -144,6 +185,8 @@ export class CapabilityRegistry {
 
   getSummary(): Record<string, number> {
     return {
+      tools: this.tools.size,
+      hooks: this.hooks.size,
       webSearch: this.webSearch.size,
       mediaUnderstanding: this.mediaUnderstanding.size,
       speech: this.speech.size,
