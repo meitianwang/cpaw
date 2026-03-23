@@ -5,6 +5,7 @@
 
 import {
   createAgent,
+  registerProvider,
   type Agent,
   type AgentEvent,
   type AgentMessage,
@@ -14,12 +15,23 @@ import {
   type MCPServerConfig,
   type MCPClient,
 } from "klaus-agent";
+import { MoonshotProvider } from "./providers/moonshot.js";
+import { createKimiWebSearchTool } from "./tools/kimi-web-search.js";
+import { createMoonshotVideoTool } from "./tools/moonshot-video.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { join } from "node:path";
 import { CONFIG_DIR } from "./config.js";
-import type { SettingsStore, McpTransportConfig } from "./settings-store.js";
+import type { SettingsStore } from "./settings-store.js";
+
+const MOONSHOT_PROVIDERS = ["moonshot", "moonshot-cn"] as const;
+const MOONSHOT_DEFAULT_BASE_URL = "https://api.moonshot.ai/v1";
+
+// Moonshot: OpenAI-compatible with native thinking payload normalization
+for (const name of MOONSHOT_PROVIDERS) {
+  registerProvider(name, (c) => new MoonshotProvider(c.apiKey, c.baseUrl));
+}
 
 type AgentEventCallback = (event: AgentEvent) => void;
 
@@ -141,6 +153,7 @@ export class AgentSessionManager {
       ...(modelRecord.apiKey ? { apiKey: modelRecord.apiKey } : {}),
       ...(modelRecord.baseUrl ? { baseUrl: modelRecord.baseUrl } : {}),
       maxContextTokens: modelRecord.maxContextTokens,
+      ...(modelRecord.cost ? { cost: modelRecord.cost } : {}),
     };
 
     // Build system prompt: default prompt + enabled rules
@@ -162,10 +175,19 @@ export class AgentSessionManager {
       transport: s.transport as MCPServerConfig["transport"],
     }));
 
+    // Build tools for moonshot providers (web search + video description)
+    const tools: import("klaus-agent").AgentTool[] = [];
+    const isMoonshot = (MOONSHOT_PROVIDERS as readonly string[]).includes(modelRecord.provider);
+    if (isMoonshot && modelRecord.apiKey) {
+      const baseUrl = modelRecord.baseUrl || MOONSHOT_DEFAULT_BASE_URL;
+      tools.push(createKimiWebSearchTool(modelRecord.apiKey, baseUrl, modelRecord.model));
+      tools.push(createMoonshotVideoTool(modelRecord.apiKey, baseUrl, modelRecord.model));
+    }
+
     const agent = createAgent({
       model,
       systemPrompt,
-      tools: [],
+      tools,
       approval: { yolo },
       thinkingLevel: (modelRecord.thinking || "off") as ThinkingLevel,
       // Session persistence: JSONL files in ~/.klaus/agent-sessions/

@@ -383,6 +383,20 @@ function jsonResponse(
   res.end(JSON.stringify(body));
 }
 
+function parseCost(parsed: Record<string, unknown>): { input: number; output: number; cacheRead?: number; cacheWrite?: number } | undefined {
+  const ci = Number(parsed.cost_input);
+  const co = Number(parsed.cost_output);
+  if (!Number.isFinite(ci) || !Number.isFinite(co) || ci < 0 || co < 0) return undefined;
+  const cr = Number(parsed.cost_cache_read);
+  const cw = Number(parsed.cost_cache_write);
+  return {
+    input: ci,
+    output: co,
+    ...(Number.isFinite(cr) && cr >= 0 ? { cacheRead: cr } : {}),
+    ...(Number.isFinite(cw) && cw >= 0 ? { cacheWrite: cw } : {}),
+  };
+}
+
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "SAMEORIGIN",
   "X-Content-Type-Options": "nosniff",
@@ -1462,6 +1476,7 @@ async function handleAdminModels(
     }
 
     const now = Date.now();
+    const cost = parseCost(parsed);
     settingsStoreRef.upsertModel({
       id,
       name: String(parsed.name ?? id),
@@ -1472,6 +1487,7 @@ async function handleAdminModels(
       maxContextTokens: maxTokens,
       thinking: String(parsed.thinking ?? "off"),
       isDefault: Boolean(parsed.is_default),
+      ...(cost ? { cost } : {}),
       createdAt: now,
       updatedAt: now,
     });
@@ -1502,6 +1518,7 @@ async function handleAdminModels(
       ...("base_url" in parsed ? { baseUrl: parsed.base_url ? String(parsed.base_url) : undefined } : {}),
       ...(parsed.max_context_tokens != null ? { maxContextTokens: Number(parsed.max_context_tokens) } : {}),
       ...(parsed.thinking != null ? { thinking: String(parsed.thinking) } : {}),
+      ...("cost_input" in parsed ? { cost: parseCost(parsed) } : {}),
       updatedAt: Date.now(),
     };
     if (!updated.provider || !updated.model) {

@@ -4,7 +4,7 @@ dist/
 .DS_Store
 .claude/
 openclaw/
-picoclaw/
+pi-mono/
 OPENCLAW-ANALYSIS.md
 *.md
 !skills/**/SKILL.md

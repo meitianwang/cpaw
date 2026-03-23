@@ -15,6 +15,13 @@ const DEFAULT_DB_PATH = join(CONFIG_DIR, "settings.db");
 // Types
 // ---------------------------------------------------------------------------
 
+export interface ModelCostRecord {
+  readonly input: number;
+  readonly output: number;
+  readonly cacheRead?: number;
+  readonly cacheWrite?: number;
+}
+
 export interface ModelRecord {
   readonly id: string;
   readonly name: string;
@@ -25,6 +32,7 @@ export interface ModelRecord {
   readonly maxContextTokens: number;
   readonly thinking: string;
   readonly isDefault: boolean;
+  readonly cost?: ModelCostRecord;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -75,6 +83,7 @@ export class SettingsStore {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.createTables();
+    this.migrate();
   }
 
   private createTables(): void {
@@ -89,6 +98,10 @@ export class SettingsStore {
         max_context_tokens  INTEGER NOT NULL DEFAULT 200000,
         thinking            TEXT NOT NULL DEFAULT 'off',
         is_default          INTEGER NOT NULL DEFAULT 0,
+        cost_input          REAL,
+        cost_output         REAL,
+        cost_cache_read     REAL,
+        cost_cache_write    REAL,
         created_at          INTEGER NOT NULL,
         updated_at          INTEGER NOT NULL
       );
@@ -145,6 +158,20 @@ export class SettingsStore {
         updated_at  INTEGER NOT NULL
       );
     `);
+  }
+
+  private migrate(): void {
+    // Add cost columns to models table (v0.2.2)
+    const cols = this.db.pragma("table_info(models)") as { name: string }[];
+    const colNames = new Set(cols.map((c) => c.name));
+    if (!colNames.has("cost_input")) {
+      this.db.exec(`
+        ALTER TABLE models ADD COLUMN cost_input REAL;
+        ALTER TABLE models ADD COLUMN cost_output REAL;
+        ALTER TABLE models ADD COLUMN cost_cache_read REAL;
+        ALTER TABLE models ADD COLUMN cost_cache_write REAL;
+      `);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -213,19 +240,24 @@ export class SettingsStore {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO models (id, name, provider, model, api_key, base_url, max_context_tokens, thinking, is_default, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO models (id, name, provider, model, api_key, base_url, max_context_tokens, thinking, is_default, cost_input, cost_output, cost_cache_read, cost_cache_write, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name, provider = excluded.provider, model = excluded.model,
            api_key = excluded.api_key, base_url = excluded.base_url,
            max_context_tokens = excluded.max_context_tokens, thinking = excluded.thinking,
-           is_default = excluded.is_default, updated_at = excluded.updated_at`,
+           is_default = excluded.is_default,
+           cost_input = excluded.cost_input, cost_output = excluded.cost_output,
+           cost_cache_read = excluded.cost_cache_read, cost_cache_write = excluded.cost_cache_write,
+           updated_at = excluded.updated_at`,
       )
       .run(
         m.id, m.name, m.provider, m.model,
         m.apiKey ?? null, m.baseUrl ?? null,
         m.maxContextTokens, m.thinking,
         m.isDefault ? 1 : 0,
+        m.cost?.input ?? null, m.cost?.output ?? null,
+        m.cost?.cacheRead ?? null, m.cost?.cacheWrite ?? null,
         m.createdAt ?? now, now,
       );
   }
@@ -479,11 +511,24 @@ interface RawModelRow {
   max_context_tokens: number;
   thinking: string;
   is_default: number;
+  cost_input: number | null;
+  cost_output: number | null;
+  cost_cache_read: number | null;
+  cost_cache_write: number | null;
   created_at: number;
   updated_at: number;
 }
 
 function toModelRecord(r: RawModelRow): ModelRecord {
+  const cost: ModelCostRecord | undefined =
+    r.cost_input != null && r.cost_output != null
+      ? {
+          input: r.cost_input,
+          output: r.cost_output,
+          ...(r.cost_cache_read != null ? { cacheRead: r.cost_cache_read } : {}),
+          ...(r.cost_cache_write != null ? { cacheWrite: r.cost_cache_write } : {}),
+        }
+      : undefined;
   return {
     id: r.id,
     name: r.name,
@@ -494,6 +539,7 @@ function toModelRecord(r: RawModelRow): ModelRecord {
     maxContextTokens: r.max_context_tokens,
     thinking: r.thinking,
     isDefault: r.is_default === 1,
+    ...(cost ? { cost } : {}),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

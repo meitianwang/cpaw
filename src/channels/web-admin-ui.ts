@@ -373,14 +373,11 @@ tr.clickable:hover { background: var(--card-bg); }
             <select id="mf-provider" class="f-select">
               <option value="anthropic">Anthropic</option>
               <option value="openai">OpenAI</option>
-              <option value="google">Google (Gemini)</option>
-              <option value="minimax">MiniMax</option>
-              <option value="kimi">Kimi (Moonshot)</option>
-              <option value="volcengine">Volcengine (豆包)</option>
+              <option value="openai-responses">OpenAI Responses</option>
               <option value="openai-codex">OpenAI Codex</option>
-              <option value="openai-compatible">OpenAI Compatible</option>
-              <option value="anthropic-compatible">Anthropic Compatible</option>
-              <option value="gemini-compatible">Gemini Compatible</option>
+              <option value="google">Google (Gemini)</option>
+              <option value="moonshot">Moonshot (.ai)</option>
+              <option value="moonshot-cn">Moonshot (.cn)</option>
             </select>
           </div>
           <div><label data-i18n="lbl_model_model">Model ID</label>
@@ -394,6 +391,15 @@ tr.clickable:hover { background: var(--card-bg); }
             <select id="mf-thinking" class="f-select"><option value="off">off</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option></select>
           </div>
           <div><label><input type="checkbox" id="mf-default"> <span data-i18n="lbl_set_default">Set as default</span></label></div>
+          <div class="task-form-full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+            <label style="margin-bottom:8px;display:block" data-i18n="lbl_model_cost">Cost ($/M tokens)</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
+              <div><label style="font-size:12px;color:var(--muted)" data-i18n="lbl_cost_input">Input</label><input id="mf-cost-input" class="f-input" type="number" step="0.01" min="0" placeholder="e.g. 3.00"></div>
+              <div><label style="font-size:12px;color:var(--muted)" data-i18n="lbl_cost_output">Output</label><input id="mf-cost-output" class="f-input" type="number" step="0.01" min="0" placeholder="e.g. 15.00"></div>
+              <div><label style="font-size:12px;color:var(--muted)" data-i18n="lbl_cost_cache_read">Cache Read</label><input id="mf-cost-cache-read" class="f-input" type="number" step="0.01" min="0" placeholder="Optional"></div>
+              <div><label style="font-size:12px;color:var(--muted)" data-i18n="lbl_cost_cache_write">Cache Write</label><input id="mf-cost-cache-write" class="f-input" type="number" step="0.01" min="0" placeholder="Optional"></div>
+            </div>
+          </div>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-ghost btn-sm" id="mf-cancel" data-i18n="btn_cancel">Cancel</button>
@@ -601,6 +607,7 @@ tr.clickable:hover { background: var(--card-bg); }
       btn_add_model: "+ Add Model", btn_add_prompt: "+ Add Prompt", btn_add_rule: "+ Add Rule",
       lbl_model_id: "ID", lbl_model_name: "Name", lbl_model_provider: "Provider", lbl_model_model: "Model ID",
       lbl_model_apikey: "API Key", lbl_model_baseurl: "Base URL", lbl_model_tokens: "Max Context Tokens", lbl_model_thinking: "Thinking",
+      lbl_model_cost: "Cost ($/M tokens)", lbl_cost_input: "Input", lbl_cost_output: "Output", lbl_cost_cache_read: "Cache Read", lbl_cost_cache_write: "Cache Write",
       lbl_set_default: "Set as default", no_models: "No models configured.",
       lbl_prompt_id: "ID", lbl_prompt_name: "Name", lbl_prompt_content: "Content", no_prompts: "No prompts configured.",
       lbl_rule_id: "ID", lbl_rule_name: "Name", lbl_rule_content: "Content", lbl_rule_order: "Sort Order", no_rules: "No rules configured.",
@@ -644,6 +651,7 @@ tr.clickable:hover { background: var(--card-bg); }
       btn_add_model: "+ 添加模型", btn_add_prompt: "+ 添加提示词", btn_add_rule: "+ 添加规则",
       lbl_model_id: "ID", lbl_model_name: "名称", lbl_model_provider: "提供商", lbl_model_model: "模型 ID",
       lbl_model_apikey: "API Key", lbl_model_baseurl: "API 地址", lbl_model_tokens: "最大上下文 Token", lbl_model_thinking: "思考",
+      lbl_model_cost: "成本 ($/百万 Token)", lbl_cost_input: "输入", lbl_cost_output: "输出", lbl_cost_cache_read: "缓存读取", lbl_cost_cache_write: "缓存写入",
       lbl_set_default: "设为默认", no_models: "暂无模型配置。",
       lbl_prompt_id: "ID", lbl_prompt_name: "名称", lbl_prompt_content: "内容", no_prompts: "暂无提示词配置。",
       lbl_rule_id: "ID", lbl_rule_name: "名称", lbl_rule_content: "内容", lbl_rule_order: "排序", no_rules: "暂无规则配置。",
@@ -1009,6 +1017,12 @@ tr.clickable:hover { background: var(--card-bg); }
   // =====================================================
   // MODELS TAB
   // =====================================================
+  var MOONSHOT_MODELS = [
+    { id: "kimi-k2.5", label: "Kimi K2.5", tokens: 262144 },
+    { id: "kimi-k2-thinking", label: "Kimi K2 Thinking", tokens: 262144 },
+    { id: "kimi-k2-thinking-turbo", label: "Kimi K2 Thinking Turbo", tokens: 262144 },
+    { id: "kimi-k2-turbo", label: "Kimi K2 Turbo", tokens: 256000 }
+  ];
   var PROVIDER_PRESETS = {
     anthropic: {
       baseUrl: "",
@@ -1028,6 +1042,15 @@ tr.clickable:hover { background: var(--card-bg); }
         { id: "o4-mini", label: "o4-mini", tokens: 200000 }
       ]
     },
+    "openai-responses": {
+      baseUrl: "",
+      models: [
+        { id: "gpt-4.1", label: "GPT-4.1", tokens: 1047576 },
+        { id: "gpt-4.1-mini", label: "GPT-4.1 Mini", tokens: 1047576 },
+        { id: "o3", label: "o3", tokens: 200000 },
+        { id: "o4-mini", label: "o4-mini", tokens: 200000 }
+      ]
+    },
     google: {
       baseUrl: "",
       models: [
@@ -1036,29 +1059,13 @@ tr.clickable:hover { background: var(--card-bg); }
         { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", tokens: 1048576 }
       ]
     },
-    kimi: {
-      baseUrl: "https://api.moonshot.cn",
-      models: [
-        { id: "moonshot-v1-auto", label: "Moonshot v1 Auto", tokens: 128000 },
-        { id: "moonshot-v1-8k", label: "Moonshot v1 8K", tokens: 8000 },
-        { id: "moonshot-v1-32k", label: "Moonshot v1 32K", tokens: 32000 },
-        { id: "moonshot-v1-128k", label: "Moonshot v1 128K", tokens: 128000 }
-      ]
+    moonshot: {
+      baseUrl: "https://api.moonshot.ai/v1",
+      models: MOONSHOT_MODELS
     },
-    volcengine: {
-      baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-      models: [
-        { id: "doubao-1.5-pro-256k", label: "Doubao 1.5 Pro 256K", tokens: 256000 },
-        { id: "doubao-1.5-pro-32k", label: "Doubao 1.5 Pro 32K", tokens: 32000 },
-        { id: "doubao-1.5-lite-32k", label: "Doubao 1.5 Lite 32K", tokens: 32000 }
-      ]
-    },
-    minimax: {
-      baseUrl: "https://api.minimax.chat",
-      models: [
-        { id: "MiniMax-M1", label: "MiniMax M1", tokens: 1000000 },
-        { id: "MiniMax-T1", label: "MiniMax T1", tokens: 1000000 }
-      ]
+    "moonshot-cn": {
+      baseUrl: "https://api.moonshot.cn/v1",
+      models: MOONSHOT_MODELS
     },
     "openai-codex": {
       baseUrl: "",
@@ -1086,6 +1093,10 @@ tr.clickable:hover { background: var(--card-bg); }
   var mfTokens = document.getElementById("mf-tokens");
   var mfThinking = document.getElementById("mf-thinking");
   var mfDefault = document.getElementById("mf-default");
+  var mfCostInput = document.getElementById("mf-cost-input");
+  var mfCostOutput = document.getElementById("mf-cost-output");
+  var mfCostCacheRead = document.getElementById("mf-cost-cache-read");
+  var mfCostCacheWrite = document.getElementById("mf-cost-cache-write");
   var mfSave = document.getElementById("mf-save");
   var mfCancel = document.getElementById("mf-cancel");
   var editingModelId = null;
@@ -1182,6 +1193,7 @@ tr.clickable:hover { background: var(--card-bg); }
     editingModelId = null;
     mfName.value = ""; mfProvider.value = "anthropic"; mfModel.value = "";
     mfApikey.value = ""; mfBaseurl.value = ""; mfTokens.value = "200000"; mfThinking.value = "off"; mfDefault.checked = false;
+    mfCostInput.value = ""; mfCostOutput.value = ""; mfCostCacheRead.value = ""; mfCostCacheWrite.value = "";
     syncProviderUI("anthropic", "");
     modelForm.style.display = "block";
     mfName.focus();
@@ -1201,6 +1213,14 @@ tr.clickable:hover { background: var(--card-bg); }
     };
     if (mfApikey.value.trim()) payload.api_key = mfApikey.value.trim();
     if (mfBaseurl.value.trim()) payload.base_url = mfBaseurl.value.trim();
+    var ci = parseFloat(mfCostInput.value), co = parseFloat(mfCostOutput.value);
+    if (isFinite(ci) && isFinite(co)) {
+      payload.cost_input = ci;
+      payload.cost_output = co;
+      var cr = parseFloat(mfCostCacheRead.value), cw = parseFloat(mfCostCacheWrite.value);
+      if (isFinite(cr)) payload.cost_cache_read = cr;
+      if (isFinite(cw)) payload.cost_cache_write = cw;
+    }
 
     var method = editingModelId ? "PATCH" : "POST";
     var path = editingModelId ? "models?id=" + encodeURIComponent(editingModelId) : "models";
@@ -1243,6 +1263,10 @@ tr.clickable:hover { background: var(--card-bg); }
         }
         mfTokens.value = m.maxContextTokens || 200000; mfThinking.value = m.thinking || "off";
         mfDefault.checked = m.isDefault;
+        mfCostInput.value = m.cost && m.cost.input != null ? m.cost.input : "";
+        mfCostOutput.value = m.cost && m.cost.output != null ? m.cost.output : "";
+        mfCostCacheRead.value = m.cost && m.cost.cacheRead != null ? m.cost.cacheRead : "";
+        mfCostCacheWrite.value = m.cost && m.cost.cacheWrite != null ? m.cost.cacheWrite : "";
         modelForm.style.display = "block";
       });
     }
