@@ -29,7 +29,7 @@ Include `[[cron:action {json}]]` markers in your reply. The system extracts and 
 ### Create a task
 
 ```
-[[cron:add {"id":"unique-id","schedule":"cron-or-time-expr","prompt":"what Claude should do when triggered","name":"human-readable name"}]]
+[[cron:add {"id":"unique-id","schedule":"cron-or-time-expr","prompt":"what the AI should do when triggered","name":"human-readable name"}]]
 ```
 
 ### Edit a task
@@ -68,7 +68,7 @@ Include `[[cron:action {json}]]` markers in your reply. The system extracts and 
 
 1. **Always generate a descriptive `id`** — use lowercase, dashes, no spaces. E.g., `daily-news`, `weekly-report`, `meeting-reminder-3pm`
 2. **Always include a `name`** — a human-readable label in the user's language
-3. **The `prompt` is what Claude receives when the task fires** — write a clear, complete prompt. Include context the AI will need since it runs in a separate session
+3. **The `prompt` is what the AI receives when the task fires** — write a clear, complete prompt. Include context the AI will need since it runs in a separate session
 4. **Include `deliver` for tasks that should send results to the user**:
    ```json
    {"channel": "web", "to": "*"}

@@ -368,10 +368,10 @@ tr.clickable:hover { background: var(--card-bg); }
       </div>
       <div id="model-form" class="task-form" style="display:none">
         <div class="task-form-grid">
-          <div><label data-i18n="lbl_model_id">ID</label><input id="mf-id" class="f-input" placeholder="e.g. sonnet-daily"></div>
+          <div><label data-i18n="lbl_model_id">ID</label><input id="mf-id" class="f-input" placeholder="e.g. my-model"></div>
           <div><label data-i18n="lbl_model_name">Name</label><input id="mf-name" class="f-input" placeholder="Display name"></div>
-          <div><label data-i18n="lbl_model_provider">Provider</label><input id="mf-provider" class="f-input" placeholder="anthropic" value="anthropic"></div>
-          <div><label data-i18n="lbl_model_model">Model ID</label><input id="mf-model" class="f-input" placeholder="e.g. claude-sonnet-4-20250514"></div>
+          <div><label data-i18n="lbl_model_provider">Provider</label><input id="mf-provider" class="f-input" placeholder="e.g. openai, openrouter"></div>
+          <div><label data-i18n="lbl_model_model">Model ID</label><input id="mf-model" class="f-input" placeholder="e.g. gpt-4o, deepseek-chat"></div>
           <div><label data-i18n="lbl_model_apikey">API Key</label><input id="mf-apikey" class="f-input" type="password" placeholder="sk-..."></div>
           <div><label data-i18n="lbl_model_baseurl">Base URL</label><input id="mf-baseurl" class="f-input" placeholder="Optional"></div>
           <div><label data-i18n="lbl_model_tokens">Max Context Tokens</label><input id="mf-tokens" class="f-input" type="number" value="200000"></div>
@@ -1039,7 +1039,7 @@ tr.clickable:hover { background: var(--card-bg); }
 
   modelAddBtn.onclick = function() {
     editingModelId = null;
-    mfId.value = ""; mfName.value = ""; mfProvider.value = "anthropic"; mfModel.value = "";
+    mfId.value = ""; mfName.value = ""; mfProvider.value = ""; mfModel.value = "";
     mfApikey.value = ""; mfBaseurl.value = ""; mfTokens.value = "200000"; mfThinking.value = "off"; mfDefault.checked = false;
     mfId.disabled = false;
     modelForm.style.display = "block";
@@ -1050,10 +1050,11 @@ tr.clickable:hover { background: var(--card-bg); }
   mfSave.onclick = function() {
     var id = mfId.value.trim();
     var model = mfModel.value.trim();
-    if (!id || !model) return;
+    var provider = mfProvider.value.trim();
+    if (!id || !model || !provider) return;
     mfSave.disabled = true;
     var payload = {
-      id: id, name: mfName.value.trim() || id, provider: mfProvider.value.trim() || "anthropic",
+      id: id, name: mfName.value.trim() || id, provider: provider,
       model: model, max_context_tokens: parseInt(mfTokens.value, 10) || 200000,
       thinking: mfThinking.value, is_default: mfDefault.checked
     };
@@ -1084,7 +1085,7 @@ tr.clickable:hover { background: var(--card-bg); }
         if (!m) return;
         editingModelId = mid;
         mfId.value = m.id; mfId.disabled = true;
-        mfName.value = m.name || ""; mfProvider.value = m.provider || "anthropic";
+        mfName.value = m.name || ""; mfProvider.value = m.provider || "";
         mfModel.value = m.model || ""; mfApikey.value = ""; mfBaseurl.value = m.baseUrl || "";
         mfTokens.value = m.maxContextTokens || 200000; mfThinking.value = m.thinking || "off";
         mfDefault.checked = m.isDefault;

@@ -1,7 +1,7 @@
 {
   "name": "klaus",
   "version": "0.1.42",
-  "description": "Use Claude Code from a browser-based Web Chat UI",
+  "description": "Multi-channel AI agent platform",
   "type": "module",
   "scripts": {
     "build": "tsup",

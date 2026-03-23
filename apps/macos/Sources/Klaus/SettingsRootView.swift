@@ -331,7 +331,7 @@ struct AboutSettingsView: View {
             Text("Klaus")
                 .font(.title)
 
-            Text("Use Claude Code from a browser-based Web Chat UI")
+            Text("Multi-channel AI agent platform")
                 .foregroundStyle(.secondary)
 
             if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {

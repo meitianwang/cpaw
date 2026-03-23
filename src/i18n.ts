@@ -51,12 +51,12 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     zh: "需要 Node.js >= 18",
   },
   cli_ok: {
-    en: "Claude Code CLI found",
-    zh: "Claude Code CLI 已安装",
+    en: "Klaus Agent CLI found",
+    zh: "Klaus Agent CLI 已安装",
   },
   cli_not_found: {
-    en: "Claude Code CLI not found. Install: npm i -g @anthropic-ai/claude-code",
-    zh: "未找到 Claude Code CLI。安装: npm i -g @anthropic-ai/claude-code",
+    en: "Klaus Agent CLI not found. Install: npm i -g klaus-agent",
+    zh: "未找到 Klaus Agent CLI。安装: npm i -g klaus-agent",
   },
   checks_passed: {
     en: "All checks passed",
@@ -432,8 +432,8 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     zh: "直接输入 (仅支持单行)",
   },
   persona_skip_option: {
-    en: "Skip (use default Claude behavior)",
-    zh: "跳过 (使用默认 Claude 行为)",
+    en: "Skip (use default behavior)",
+    zh: "跳过 (使用默认行为)",
   },
   persona_keep: {
     en: "Keep current persona (no change)",
@@ -464,8 +464,8 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     zh: "人设已配置",
   },
   persona_skipped: {
-    en: "Using default Claude behavior",
-    zh: "使用默认 Claude 行为",
+    en: "Using default behavior",
+    zh: "使用默认行为",
   },
   // ── Chat Commands ──
   cmd_reset: {
@@ -601,10 +601,6 @@ const TEXTS: Record<string, Record<Lang, string>> = {
 };
 
 let currentLang: Lang = "en";
-
-export function setLang(lang: Lang): void {
-  currentLang = lang;
-}
 
 export function t(key: string, vars?: Record<string, string>): string {
   let text = TEXTS[key]?.[currentLang] ?? key;

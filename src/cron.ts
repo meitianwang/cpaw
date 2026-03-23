@@ -1,4 +1,4 @@
-/** Cron scheduler for Klaus — aligned with OpenClaw. See CLAUDE.md for feature list. */
+/** Cron scheduler for Klaus. */
 
 import { Cron, type CronOptions } from "croner";
 import type {

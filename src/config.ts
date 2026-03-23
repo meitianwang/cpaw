@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import yaml from "js-yaml";
@@ -18,54 +18,11 @@ export function loadConfig(): Record<string, unknown> {
   return (yaml.load(content) as Record<string, unknown>) ?? {};
 }
 
-export function saveConfig(data: Record<string, unknown>): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, yaml.dump(data, { flowLevel: -1 }), "utf-8");
-}
-
 export function getChannelNames(): string[] {
   const cfg = loadConfig();
   const raw = cfg.channel;
   if (Array.isArray(raw)) return raw.map(String);
   return [(raw as string) ?? "web"];
-}
-
-export function addChannelToConfig(
-  channelId: string,
-  channelCfg: Record<string, unknown>,
-): void {
-  const cfg = loadConfig();
-  const raw = cfg.channel;
-  const existing: string[] = Array.isArray(raw)
-    ? raw.map(String)
-    : raw
-      ? [String(raw)]
-      : [];
-
-  if (!existing.includes(channelId)) {
-    existing.push(channelId);
-  }
-  cfg.channel = existing.length === 1 ? existing[0] : existing;
-  cfg[channelId] = channelCfg;
-  saveConfig(cfg);
-}
-
-export function removeChannelFromConfig(channelId: string): boolean {
-  const cfg = loadConfig();
-  const raw = cfg.channel;
-  const existing: string[] = Array.isArray(raw)
-    ? raw.map(String)
-    : raw
-      ? [String(raw)]
-      : [];
-
-  const filtered = existing.filter((c) => c !== channelId);
-  if (filtered.length === 0) return false;
-
-  cfg.channel = filtered.length === 1 ? filtered[0] : filtered;
-  delete cfg[channelId];
-  saveConfig(cfg);
-  return true;
 }
 
 // ---------------------------------------------------------------------------

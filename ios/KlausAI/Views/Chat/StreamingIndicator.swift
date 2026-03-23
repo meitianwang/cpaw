@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Animated typing indicator shown while Claude is processing.
+/// Animated typing indicator shown while the agent is processing.
 struct StreamingIndicator: View {
     @State private var animating = false
 

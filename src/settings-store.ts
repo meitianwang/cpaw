@@ -82,7 +82,7 @@ export class SettingsStore {
       CREATE TABLE IF NOT EXISTS models (
         id                  TEXT PRIMARY KEY,
         name                TEXT NOT NULL,
-        provider            TEXT NOT NULL DEFAULT 'anthropic',
+        provider            TEXT NOT NULL DEFAULT '',
         model               TEXT NOT NULL,
         api_key             TEXT,
         base_url            TEXT,

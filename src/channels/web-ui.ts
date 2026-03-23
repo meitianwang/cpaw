@@ -2,7 +2,7 @@
  * Chat UI HTML template for the web channel.
  * Returns a complete HTML document with embedded CSS and JS.
  *
- * Design: Inspired by claude.ai — centered layout, welcome state,
+ * Design: centered layout, welcome state,
  * refined dark theme with Plus Jakarta Sans typography.
  */
 

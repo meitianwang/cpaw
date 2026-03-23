@@ -1,6 +1,6 @@
 import Foundation
 
-/// Tool invocation event from Claude, displayed inline in assistant messages.
+/// Tool invocation event from the agent, displayed inline in assistant messages.
 struct ToolEvent: Identifiable, Sendable {
     let toolUseId: String
     let toolName: String

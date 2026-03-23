@@ -111,7 +111,7 @@ struct OnboardingView: View {
             Text("Welcome to Klaus")
                 .font(.largeTitle.bold())
 
-            Text("Klaus bridges Claude Code to a browser-based Web Chat UI, running as a menu bar app on your Mac.")
+            Text("Klaus is a multi-channel AI agent platform, running as a menu bar app on your Mac.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 380)

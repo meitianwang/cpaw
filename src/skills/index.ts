@@ -6,7 +6,7 @@
  * 2. Parse YAML frontmatter for metadata (name, description, gating)
  * 3. Filter by eligibility (binary presence, OS, env vars, config enabled/disabled)
  * 4. Inject compact XML summary into system prompt (not full content)
- * 5. Claude reads the full SKILL.md via Read tool on demand
+ * 5. The agent reads the full SKILL.md via Read tool on demand
  *
  * Sources (precedence high → low):
  *   ~/.klaus/skills/<name>/SKILL.md  (user overrides)

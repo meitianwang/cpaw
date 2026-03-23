@@ -1,6 +1,6 @@
 import Foundation
 
-/// Permission request from Claude when it wants to use a tool that requires approval.
+/// Permission request from the agent when it wants to use a tool that requires approval.
 struct PermissionRequest: Identifiable, Sendable {
     let requestId: String
     let toolName: String

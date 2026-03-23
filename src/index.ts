@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { webPlugin } from "./channels/web.js";
 import {
   registerChannel,
@@ -7,8 +6,6 @@ import {
 } from "./channels/types.js";
 import {
   getChannelNames,
-  CONFIG_FILE,
-  loadConfig,
   loadWebConfig,
 } from "./config.js";
 import { t } from "./i18n.js";
@@ -31,102 +28,15 @@ import type { AgentEvent } from "klaus-agent";
 registerChannel(webPlugin);
 
 // ---------------------------------------------------------------------------
-// Migration: seed DB from config.yaml on first run
-// ---------------------------------------------------------------------------
-
-function seedFromConfig(store: SettingsStore): void {
-  // Only seed if no models exist (first run)
-  if (store.listModels().length > 0) return;
-
-  const cfg = loadConfig();
-  const now = Date.now();
-
-  // Seed model from agent section (if present)
-  const agent = (cfg.agent as Record<string, unknown>) ?? {};
-  const model = String(agent.model ?? "claude-sonnet-4-20250514");
-  const provider = String(agent.provider ?? "anthropic");
-  const apiKey = (agent.api_key as string) ?? process.env.ANTHROPIC_API_KEY ?? "";
-
-  store.upsertModel({
-    id: "default",
-    name: "Default",
-    provider,
-    model,
-    ...(apiKey ? { apiKey } : {}),
-    ...(agent.base_url ? { baseUrl: String(agent.base_url) } : {}),
-    maxContextTokens: Number(agent.max_context_tokens ?? 200_000),
-    thinking: String(agent.thinking ?? "off"),
-    isDefault: true,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // Seed prompt from persona (if present)
-  const persona = (cfg.persona as string) ?? "";
-  if (persona) {
-    store.upsertPrompt({
-      id: "default",
-      name: "Default",
-      content: persona,
-      isDefault: true,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  // Seed settings
-  const session = (cfg.session as Record<string, unknown>) ?? {};
-  const transcripts = (cfg.transcripts as Record<string, unknown>) ?? {};
-  const cron = (cfg.cron as Record<string, unknown>) ?? {};
-
-  if (agent.max_sessions != null) store.set("max_sessions", String(agent.max_sessions));
-  if (agent.yolo != null) store.set("yolo", String(agent.yolo));
-
-  const webCfg = (cfg.web as Record<string, unknown>) ?? {};
-  if (webCfg.session_max_age_days != null) store.set("web.session_max_age_days", String(webCfg.session_max_age_days));
-  if (session.max_entries != null) store.set("session.max_entries", String(session.max_entries));
-  if (transcripts.max_files != null) store.set("transcripts.max_files", String(transcripts.max_files));
-  if (transcripts.max_age_days != null) store.set("transcripts.max_age_days", String(transcripts.max_age_days));
-  if (cron.enabled != null) store.set("cron.enabled", String(cron.enabled));
-  if (cron.max_concurrent_runs != null) store.set("cron.max_concurrent_runs", String(cron.max_concurrent_runs));
-
-  // Seed cron tasks
-  const tasks = Array.isArray(cron.tasks) ? cron.tasks : [];
-  for (const raw of tasks) {
-    if (typeof raw !== "object" || !raw) continue;
-    const t = raw as Record<string, unknown>;
-    if (!t.id || !t.schedule || !t.prompt) continue;
-    store.upsertTask({
-      id: String(t.id),
-      name: t.name != null ? String(t.name) : undefined,
-      description: t.description != null ? String(t.description) : undefined,
-      schedule: String(t.schedule),
-      prompt: String(t.prompt),
-      enabled: t.enabled !== false,
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  console.log("[Settings] Seeded from config.yaml");
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function start(): Promise<void> {
-  if (!existsSync(CONFIG_FILE)) {
-    console.error("No config found. Create ~/.klaus/config.yaml first.");
-    process.exit(1);
-  }
-
   // Generate local token for macOS app authentication
   generateLocalToken();
 
   // Initialize settings store (SQLite)
   const settingsStore = new SettingsStore();
-  seedFromConfig(settingsStore);
 
   // Initialize agent session manager
   const agentManager = new AgentSessionManager(settingsStore);

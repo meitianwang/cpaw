@@ -1446,8 +1446,9 @@ async function handleAdminModels(
 
     const id = String(parsed.id ?? "").trim();
     const model = String(parsed.model ?? "").trim();
-    if (!id || !model) {
-      jsonResponse(res, 400, { error: "id and model are required" });
+    const provider = String(parsed.provider ?? "").trim();
+    if (!id || !model || !provider) {
+      jsonResponse(res, 400, { error: "id, model, and provider are required" });
       return;
     }
     if (!/^[\w\-]{1,64}$/.test(id)) {
@@ -1464,7 +1465,7 @@ async function handleAdminModels(
     settingsStoreRef.upsertModel({
       id,
       name: String(parsed.name ?? id),
-      provider: String(parsed.provider ?? "anthropic"),
+      provider,
       model,
       apiKey: parsed.api_key ? String(parsed.api_key) : undefined,
       baseUrl: parsed.base_url ? String(parsed.base_url) : undefined,
@@ -1495,14 +1496,18 @@ async function handleAdminModels(
     const updated = {
       ...existing,
       ...(parsed.name != null ? { name: String(parsed.name) } : {}),
-      ...(parsed.provider != null ? { provider: String(parsed.provider) } : {}),
-      ...(parsed.model != null ? { model: String(parsed.model) } : {}),
+      ...(parsed.provider != null ? { provider: String(parsed.provider).trim() } : {}),
+      ...(parsed.model != null ? { model: String(parsed.model).trim() } : {}),
       ...("api_key" in parsed ? { apiKey: parsed.api_key ? String(parsed.api_key) : undefined } : {}),
       ...("base_url" in parsed ? { baseUrl: parsed.base_url ? String(parsed.base_url) : undefined } : {}),
       ...(parsed.max_context_tokens != null ? { maxContextTokens: Number(parsed.max_context_tokens) } : {}),
       ...(parsed.thinking != null ? { thinking: String(parsed.thinking) } : {}),
       updatedAt: Date.now(),
     };
+    if (!updated.provider || !updated.model) {
+      jsonResponse(res, 400, { error: "provider and model cannot be empty" });
+      return;
+    }
     settingsStoreRef.upsertModel(updated);
     if (parsed.is_default) settingsStoreRef.setDefaultModel(id);
     jsonResponse(res, 200, { ok: true });
