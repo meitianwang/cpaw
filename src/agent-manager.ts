@@ -23,10 +23,13 @@ import { join } from "node:path";
 import { CONFIG_DIR } from "./config.js";
 import type { SettingsStore } from "./settings-store.js";
 import { getProvider, capabilities } from "./providers/registry.js";
+import { refreshAccessToken } from "./auth/oauth.js";
+import type { OAuthProviderAuth } from "./auth/oauth.js";
 
 type AgentEventCallback = (event: AgentEvent) => void;
 
 const SESSIONS_DIR = join(CONFIG_DIR, "agent-sessions");
+const refreshLocks = new Map<string, Promise<string | undefined>>();
 
 /** Sanitize session key for use as filename (replace colons with underscores). */
 function sanitizeSessionKey(key: string): string {
@@ -93,7 +96,7 @@ export class AgentSessionManager {
     text: string,
     onEvent?: AgentEventCallback,
   ): Promise<string | null> {
-    const agent = this.getOrCreate(sessionKey);
+    const agent = await this.getOrCreate(sessionKey);
 
     let unsubscribe: (() => void) | undefined;
     if (onEvent) {
@@ -122,7 +125,7 @@ export class AgentSessionManager {
     await Promise.allSettled(agents.map((a) => a.dispose()));
   }
 
-  private getOrCreate(sessionKey: string): Agent {
+  private async getOrCreate(sessionKey: string): Promise<Agent> {
     const existing = this.agents.get(sessionKey);
     if (existing) {
       this.agents.delete(sessionKey);
@@ -140,9 +143,30 @@ export class AgentSessionManager {
 
     const providerDef = getProvider(modelRecord.provider);
 
-    // Resolve API key: explicit > env var
-    const apiKey = modelRecord.apiKey
-      || (providerDef?.auth?.envVar ? process.env[providerDef.auth.envVar] : undefined);
+    // Resolve API key, refresh OAuth token if expired
+    let apiKey = modelRecord.apiKey;
+    if (modelRecord.authType === "oauth" && modelRecord.refreshToken && modelRecord.tokenExpiresAt) {
+      const providerAuth = providerDef?.auth?.method;
+      const bufferMs = 5 * 60 * 1000;
+      if (providerAuth?.type === "oauth" && Date.now() > modelRecord.tokenExpiresAt - bufferMs) {
+        const modelId = modelRecord.id;
+        let pending = refreshLocks.get(modelId);
+        if (!pending) {
+          pending = (async () => {
+            const result = await refreshAccessToken(providerAuth, modelRecord.refreshToken!);
+            this.store.upsertModel({
+              ...modelRecord,
+              apiKey: result.accessToken,
+              refreshToken: result.refreshToken ?? modelRecord.refreshToken,
+              tokenExpiresAt: Date.now() + result.expiresIn * 1000,
+            });
+            return result.accessToken;
+          })().finally(() => refreshLocks.delete(modelId));
+          refreshLocks.set(modelId, pending);
+        }
+        apiKey = await pending;
+      }
+    }
 
     const model: ModelConfig = {
       provider: modelRecord.provider,

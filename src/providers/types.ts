@@ -14,9 +14,20 @@ export interface ModelPreset {
   readonly tokens: number;
 }
 
+export interface OAuthAuthConfig {
+  readonly clientId: string;
+  readonly authorizeUrl: string;
+  readonly tokenUrl: string;
+  readonly scopes: string;
+  readonly extraParams?: Readonly<Record<string, string>>;
+}
+
+export type ProviderAuthMethod =
+  | { readonly type: "api_key"; readonly label: string }
+  | { readonly type: "oauth"; readonly label: string } & OAuthAuthConfig;
+
 export interface ProviderAuth {
-  readonly envVar?: string;
-  readonly label?: string;
+  readonly method: ProviderAuthMethod;
 }
 
 export interface ProviderHooks {

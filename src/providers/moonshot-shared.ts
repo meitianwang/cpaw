@@ -11,7 +11,7 @@ export const MOONSHOT_MODELS: readonly ModelPreset[] = [
   { id: "kimi-k2-turbo", label: "Kimi K2 Turbo", tokens: 256000 },
 ];
 
-export const moonshotAuth: ProviderAuth = { envVar: "MOONSHOT_API_KEY", label: "API Key" };
+export const moonshotAuth: ProviderAuth = { method: { type: "api_key", label: "API Key" } };
 
 export const moonshotFactory: LLMProviderFactory = (c) =>
   new MoonshotProvider(c.apiKey, c.baseUrl);

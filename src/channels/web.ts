@@ -57,7 +57,9 @@ import { getChatHtml } from "./web-ui.js";
 import { getAdminHtml } from "./web-admin-ui.js";
 import { getLoginHtml } from "./web-login-ui.js";
 import { startTunnel } from "./web-tunnel.js";
-import { getAllProviders, reloadExternalProviders, capabilities } from "../providers/registry.js";
+import { getAllProviders, reloadExternalProviders, capabilities, getProvider } from "../providers/registry.js";
+import { generatePKCE, generateState, buildAuthorizeUrl, exchangeCode } from "../auth/oauth.js";
+import type { OAuthProviderAuth } from "../auth/oauth.js";
 import type { MessageStore } from "../message-store.js";
 import type { InviteStore } from "../invite-store.js";
 import type { UserStore, User } from "../user-store.js";
@@ -1504,6 +1506,123 @@ function handleAdminCapabilities(
 }
 
 // ---------------------------------------------------------------------------
+// OAuth: provider authorization flow
+// ---------------------------------------------------------------------------
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+interface PendingOAuth {
+  verifier: string;
+  modelId: string;
+  providerId: string;
+  redirectUri: string;
+  createdAt: number;
+}
+
+const pendingOAuth = new Map<string, PendingOAuth>();
+
+// Clean up expired entries (10 min TTL)
+setInterval(() => {
+  const now = Date.now();
+  for (const [state, entry] of pendingOAuth) {
+    if (now - entry.createdAt > 10 * 60 * 1000) pendingOAuth.delete(state);
+  }
+}, 60 * 1000);
+
+async function handleOAuthStart(
+  req: IncomingMessage,
+  res: ServerResponse,
+  cfg: WebConfig,
+): Promise<void> {
+  if (!adminAuth(req, res)) return;
+  const url = new URL(req.url ?? "", "http://localhost");
+  const providerId = url.searchParams.get("provider") ?? "";
+  const modelId = url.searchParams.get("modelId") ?? "";
+  if (!providerId || !modelId) {
+    jsonResponse(res, 400, { error: "provider and modelId required" });
+    return;
+  }
+
+  const providerDef = getProvider(providerId);
+  if (!providerDef?.auth?.method || providerDef.auth.method.type !== "oauth") {
+    jsonResponse(res, 400, { error: "provider does not support OAuth" });
+    return;
+  }
+
+  const oauthAuth = providerDef.auth.method as OAuthProviderAuth;
+  const { verifier, challenge } = generatePKCE();
+  const state = generateState();
+
+  const host = req.headers.host ?? `localhost:${cfg.port}`;
+  const protocol = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+  const redirectUri = `${protocol}://${host}/auth/provider/callback`;
+
+  pendingOAuth.set(state, { verifier, modelId, providerId, redirectUri, createdAt: Date.now() });
+
+  const authorizeUrl = buildAuthorizeUrl(oauthAuth, redirectUri, state, challenge);
+  res.writeHead(302, { Location: authorizeUrl });
+  res.end();
+}
+
+async function handleOAuthCallback(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const url = new URL(req.url ?? "", "http://localhost");
+  const code = url.searchParams.get("code") ?? "";
+  const state = url.searchParams.get("state") ?? "";
+  const error = url.searchParams.get("error");
+
+  if (error) {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(`<html><body><h2>Authorization failed</h2><p>${escHtml(error)}</p><script>window.close()</script></body></html>`);
+    return;
+  }
+
+  const pending = pendingOAuth.get(state);
+  if (!pending) {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(`<html><body><h2>Invalid or expired state</h2><script>window.close()</script></body></html>`);
+    return;
+  }
+  pendingOAuth.delete(state);
+
+  const providerDef = getProvider(pending.providerId);
+  if (!providerDef?.auth?.method || providerDef.auth.method.type !== "oauth") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(`<html><body><h2>Provider not found</h2><script>window.close()</script></body></html>`);
+    return;
+  }
+
+  try {
+    const oauthAuth = providerDef.auth.method as OAuthProviderAuth;
+    const result = await exchangeCode(oauthAuth, code, pending.redirectUri, pending.verifier);
+
+    if (settingsStoreRef) {
+      const existing = settingsStoreRef.getModel(pending.modelId);
+      if (existing) {
+        settingsStoreRef.upsertModel({
+          ...existing,
+          apiKey: result.accessToken,
+          authType: "oauth",
+          refreshToken: result.refreshToken,
+          tokenExpiresAt: Date.now() + result.expiresIn * 1000,
+        });
+      }
+    }
+
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(`<html><body><h2>Authorization successful</h2><p>You can close this window.</p><script>localStorage.setItem("klaus_oauth_done","1");window.close()</script></body></html>`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(`<html><body><h2>Token exchange failed</h2><p>${escHtml(msg)}</p><script>window.close()</script></body></html>`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Admin: models CRUD
 // ---------------------------------------------------------------------------
 
@@ -1519,7 +1638,10 @@ async function handleAdminModels(
 
   if (req.method === "GET") {
     jsonResponse(res, 200, {
-      models: settingsStoreRef.listModels().map(({ apiKey, ...safe }) => safe),
+      models: settingsStoreRef.listModels().map(({ apiKey, refreshToken, ...safe }) => ({
+        ...safe,
+        isAuthorized: !!apiKey,
+      })),
     });
     return;
   }
@@ -2098,6 +2220,10 @@ async function handleRequest(
       return handleAdminProvidersReload(req, res);
     case "/api/admin/capabilities":
       return handleAdminCapabilities(req, res);
+    case "/auth/provider/start":
+      return handleOAuthStart(req, res, cfg);
+    case "/auth/provider/callback":
+      return handleOAuthCallback(req, res);
     case "/api/admin/prompts":
       return handleAdminPrompts(req, res);
     case "/api/admin/rules":

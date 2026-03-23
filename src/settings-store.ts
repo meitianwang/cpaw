@@ -33,6 +33,9 @@ export interface ModelRecord {
   readonly thinking: string;
   readonly isDefault: boolean;
   readonly cost?: ModelCostRecord;
+  readonly authType?: "api_key" | "oauth";
+  readonly refreshToken?: string;
+  readonly tokenExpiresAt?: number;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
@@ -172,6 +175,14 @@ export class SettingsStore {
         ALTER TABLE models ADD COLUMN cost_cache_write REAL;
       `);
     }
+    // Add OAuth columns to models table
+    if (!colNames.has("auth_type")) {
+      this.db.exec(`
+        ALTER TABLE models ADD COLUMN auth_type TEXT DEFAULT 'api_key';
+        ALTER TABLE models ADD COLUMN refresh_token TEXT;
+        ALTER TABLE models ADD COLUMN token_expires_at INTEGER;
+      `);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -240,8 +251,8 @@ export class SettingsStore {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO models (id, name, provider, model, api_key, base_url, max_context_tokens, thinking, is_default, cost_input, cost_output, cost_cache_read, cost_cache_write, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO models (id, name, provider, model, api_key, base_url, max_context_tokens, thinking, is_default, cost_input, cost_output, cost_cache_read, cost_cache_write, auth_type, refresh_token, token_expires_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name, provider = excluded.provider, model = excluded.model,
            api_key = excluded.api_key, base_url = excluded.base_url,
@@ -249,6 +260,8 @@ export class SettingsStore {
            is_default = excluded.is_default,
            cost_input = excluded.cost_input, cost_output = excluded.cost_output,
            cost_cache_read = excluded.cost_cache_read, cost_cache_write = excluded.cost_cache_write,
+           auth_type = excluded.auth_type, refresh_token = excluded.refresh_token,
+           token_expires_at = excluded.token_expires_at,
            updated_at = excluded.updated_at`,
       )
       .run(
@@ -258,6 +271,7 @@ export class SettingsStore {
         m.isDefault ? 1 : 0,
         m.cost?.input ?? null, m.cost?.output ?? null,
         m.cost?.cacheRead ?? null, m.cost?.cacheWrite ?? null,
+        m.authType ?? "api_key", m.refreshToken ?? null, m.tokenExpiresAt ?? null,
         m.createdAt ?? now, now,
       );
   }
@@ -515,6 +529,9 @@ interface RawModelRow {
   cost_output: number | null;
   cost_cache_read: number | null;
   cost_cache_write: number | null;
+  auth_type: string | null;
+  refresh_token: string | null;
+  token_expires_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -540,6 +557,9 @@ function toModelRecord(r: RawModelRow): ModelRecord {
     thinking: r.thinking,
     isDefault: r.is_default === 1,
     ...(cost ? { cost } : {}),
+    authType: (r.auth_type as "api_key" | "oauth") ?? "api_key",
+    ...(r.refresh_token ? { refreshToken: r.refresh_token } : {}),
+    ...(r.token_expires_at != null ? { tokenExpiresAt: r.token_expires_at } : {}),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

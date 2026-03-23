@@ -5,7 +5,17 @@ export const openaiCodexProvider: ProviderDefinition = {
   label: "OpenAI Codex",
   protocol: "openai-codex",
   defaultBaseUrl: "",
-  auth: { envVar: "OPENAI_CODEX_TOKEN", label: "JWT Token" },
+  auth: {
+    method: {
+      type: "oauth",
+      label: "OpenAI Account",
+      clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
+      authorizeUrl: "https://auth.openai.com/oauth/authorize",
+      tokenUrl: "https://auth.openai.com/oauth/token",
+      scopes: "openid profile email offline_access",
+      extraParams: { id_token_add_organizations: "true", codex_cli_simplified_flow: "true" },
+    },
+  },
   models: [
     { id: "codex-mini-latest", label: "Codex Mini (latest)", tokens: 192000 },
     { id: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini", tokens: 192000 },

@@ -377,7 +377,8 @@ tr.clickable:hover { background: var(--card-bg); }
             <select id="mf-model-select" class="f-select"></select>
             <input id="mf-model" class="f-input" placeholder="e.g. gpt-4o, deepseek-chat" style="display:none">
           </div>
-          <div><label data-i18n="lbl_model_apikey">API Key</label><input id="mf-apikey" class="f-input" type="password" placeholder="sk-..."><div id="mf-apikey-hint" style="font-size:12px;color:var(--muted);margin-top:4px;display:none"></div></div>
+          <div id="mf-auth-apikey"><label data-i18n="lbl_model_apikey">API Key</label><input id="mf-apikey" class="f-input" type="password" placeholder="sk-..."></div>
+          <div id="mf-auth-oauth" style="display:none"><label data-i18n="lbl_model_oauth">Authorization</label><div style="display:flex;align-items:center;gap:10px;padding-top:4px"><button class="btn btn-primary btn-sm" id="mf-oauth-btn" type="button" data-i18n="btn_authorize">Authorize</button><span id="mf-oauth-status" class="badge badge-gray" data-i18n="auth_not_authorized">Not authorized</span></div></div>
           <div><label data-i18n="lbl_model_baseurl">Base URL</label><input id="mf-baseurl" class="f-input" placeholder="Optional"></div>
           <div><label data-i18n="lbl_model_tokens">Max Context Tokens</label><input id="mf-tokens" class="f-input" type="number" value="200000"></div>
           <div><label data-i18n="lbl_model_thinking">Thinking</label>
@@ -606,7 +607,7 @@ tr.clickable:hover { background: var(--card-bg); }
       lbl_rule_id: "ID", lbl_rule_name: "Name", lbl_rule_content: "Content", lbl_rule_order: "Sort Order", no_rules: "No rules configured.",
       default_badge: "Default", enabled_badge: "Enabled", disabled_badge: "Disabled",
       confirm_delete_model: "Delete this model?", confirm_delete_prompt: "Delete this prompt?", confirm_delete_rule: "Delete this rule?",
-      models_refreshed: "Models refreshed", hint_env_fallback: "Falls back to",
+      models_refreshed: "Models refreshed", btn_authorize: "Authorize", auth_authorized: "Authorized", auth_not_authorized: "Not authorized", auth_save_first: "Save model first", lbl_model_oauth: "Authorization",
       tab_mcp: "MCP Servers", btn_add_mcp: "+ Add Server",
       lbl_mcp_id: "ID", lbl_mcp_name: "Name", lbl_mcp_type: "Transport", lbl_mcp_command: "Command", lbl_mcp_args: "Args", lbl_mcp_url: "URL",
       no_mcp: "No MCP servers configured.", confirm_delete_mcp: "Delete this server?",
@@ -651,7 +652,7 @@ tr.clickable:hover { background: var(--card-bg); }
       lbl_rule_id: "ID", lbl_rule_name: "名称", lbl_rule_content: "内容", lbl_rule_order: "排序", no_rules: "暂无规则配置。",
       default_badge: "默认", enabled_badge: "启用", disabled_badge: "禁用",
       confirm_delete_model: "确定删除此模型？", confirm_delete_prompt: "确定删除此提示词？", confirm_delete_rule: "确定删除此规则？",
-      models_refreshed: "模型已刷新", hint_env_fallback: "未填写时回退到",
+      models_refreshed: "模型已刷新", btn_authorize: "授权", auth_authorized: "已授权", auth_not_authorized: "未授权", auth_save_first: "请先保存模型", lbl_model_oauth: "授权",
       tab_mcp: "MCP 服务器", btn_add_mcp: "+ 添加服务器",
       lbl_mcp_id: "ID", lbl_mcp_name: "名称", lbl_mcp_type: "传输方式", lbl_mcp_command: "命令", lbl_mcp_args: "参数", lbl_mcp_url: "URL",
       no_mcp: "暂无 MCP 服务器配置。", confirm_delete_mcp: "确定删除此服务器？",
@@ -1051,7 +1052,10 @@ tr.clickable:hover { background: var(--card-bg); }
   var mfCostOutput = document.getElementById("mf-cost-output");
   var mfCostCacheRead = document.getElementById("mf-cost-cache-read");
   var mfCostCacheWrite = document.getElementById("mf-cost-cache-write");
-  var mfApikeyHint = document.getElementById("mf-apikey-hint");
+  var mfAuthApikey = document.getElementById("mf-auth-apikey");
+  var mfAuthOauth = document.getElementById("mf-auth-oauth");
+  var mfOauthBtn = document.getElementById("mf-oauth-btn");
+  var mfOauthStatus = document.getElementById("mf-oauth-status");
   var mfSave = document.getElementById("mf-save");
   var mfCancel = document.getElementById("mf-cancel");
   var editingModelId = null;
@@ -1065,12 +1069,13 @@ tr.clickable:hover { background: var(--card-bg); }
 
   function syncProviderUI(provider, currentModel) {
     var preset = PROVIDER_PRESETS[provider];
-    // Show/hide env var hint
-    if (preset && preset.auth && preset.auth.envVar) {
-      mfApikeyHint.textContent = tt("hint_env_fallback") + " $" + preset.auth.envVar;
-      mfApikeyHint.style.display = "";
-    } else {
-      mfApikeyHint.style.display = "none";
+    // Switch auth UI based on method type
+    var isOAuth = preset && preset.auth && preset.auth.method && preset.auth.method.type === "oauth";
+    mfAuthApikey.style.display = isOAuth ? "none" : "";
+    mfAuthOauth.style.display = isOAuth ? "" : "none";
+    if (isOAuth) {
+      mfOauthBtn.disabled = !editingModelId;
+      mfOauthBtn.title = editingModelId ? "" : tt("auth_save_first");
     }
     if (preset) {
       // Preset provider: show select, hide input
@@ -1150,6 +1155,23 @@ tr.clickable:hover { background: var(--card-bg); }
       modelsWrap.innerHTML = h;
     });
   }
+
+  mfOauthBtn.onclick = function() {
+    var model = getSelectedModel();
+    var provider = mfProvider.value;
+    var id = editingModelId || (provider + "-" + model).replace(/[^a-zA-Z0-9._-]/g, "-");
+    window.open("/auth/provider/start?provider=" + encodeURIComponent(provider) + "&modelId=" + encodeURIComponent(id), "_blank", "width=600,height=700");
+  };
+
+  // Listen for OAuth completion from popup
+  window.addEventListener("storage", function(e) {
+    if (e.key === "klaus_oauth_done") {
+      localStorage.removeItem("klaus_oauth_done");
+      mfOauthStatus.textContent = tt("auth_authorized");
+      mfOauthStatus.className = "badge badge-green";
+      loadModels();
+    }
+  });
 
   modelRefreshBtn.onclick = function() {
     modelRefreshBtn.disabled = true;
@@ -1239,6 +1261,13 @@ tr.clickable:hover { background: var(--card-bg); }
         mfCostOutput.value = m.cost && m.cost.output != null ? m.cost.output : "";
         mfCostCacheRead.value = m.cost && m.cost.cacheRead != null ? m.cost.cacheRead : "";
         mfCostCacheWrite.value = m.cost && m.cost.cacheWrite != null ? m.cost.cacheWrite : "";
+        if (m.isAuthorized && m.authType === "oauth") {
+          mfOauthStatus.textContent = tt("auth_authorized");
+          mfOauthStatus.className = "badge badge-green";
+        } else {
+          mfOauthStatus.textContent = tt("auth_not_authorized");
+          mfOauthStatus.className = "badge badge-gray";
+        }
         modelForm.style.display = "block";
       });
     }
