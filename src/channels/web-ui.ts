@@ -2309,7 +2309,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
               }
               if (node.tagName === "A") {
                 var href = (node.getAttribute("href") || "").trim().toLowerCase();
-                if (href && !/^(https?:|mailto:|\/|#)/.test(href)) {
+                if (href && !/^(https?:|mailto:|\\/|#)/.test(href)) {
                   node.removeAttribute("href");
                 }
               }

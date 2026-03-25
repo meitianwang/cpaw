@@ -56,7 +56,6 @@ import type { InboundMessage, MediaFile } from "../message.js";
 import { getChatHtml } from "./web-ui.js";
 import { getAdminHtml } from "./web-admin-ui.js";
 import { getLoginHtml } from "./web-login-ui.js";
-import { startTunnel } from "./web-tunnel.js";
 import type { MessageStore } from "../message-store.js";
 import type { InviteStore } from "../invite-store.js";
 import type { UserStore, User } from "../user-store.js";
@@ -377,7 +376,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self' cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-src 'self';",
+    "default-src 'self'; script-src 'self' cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' fonts.googleapis.com cdn.jsdelivr.net 'unsafe-inline'; font-src fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-src 'self';",
 };
 
 function serveHtmlPage(res: ServerResponse, html: string): void {
@@ -1900,12 +1899,6 @@ export const webPlugin: ChannelPlugin = {
       }
     }, 30_000);
 
-    // Tunnel (Cloudflare / ngrok / custom)
-    let tunnelResult: import("./web-tunnel.js").TunnelResult | null = null;
-    if (cfg.tunnel !== false) {
-      tunnelResult = startTunnel(cfg.tunnel, cfg.port);
-    }
-
     // Cleanup on process exit
     const cleanup = (): void => {
       clearInterval(keepalive);
@@ -1913,7 +1906,6 @@ export const webPlugin: ChannelPlugin = {
       if (configDebounce) clearTimeout(configDebounce);
       configWatcher?.close();
       wss.close();
-      tunnelResult?.child?.kill();
     };
     process.once("exit", cleanup);
 

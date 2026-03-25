@@ -5,53 +5,6 @@ export type Handler = (
   msg: InboundMessage,
 ) => Promise<string | null>;
 
-// ---------------------------------------------------------------------------
-// Tunnel provider configs (discriminated union)
-// ---------------------------------------------------------------------------
-
-export interface QuickTunnelConfig {
-  readonly provider: "cloudflare-quick";
-}
-
-export interface NamedTunnelConfig {
-  readonly provider: "cloudflare";
-  readonly token: string;
-  readonly hostname?: string;
-}
-
-export interface NgrokTunnelConfig {
-  readonly provider: "ngrok";
-  readonly authtoken: string;
-  readonly domain?: string;
-}
-
-export interface CustomTunnelConfig {
-  readonly provider: "custom";
-  readonly url: string;
-  readonly command?: string;
-}
-
-export interface FrpTunnelConfig {
-  readonly provider: "frp";
-  readonly server_addr: string;
-  readonly server_port: number;
-  readonly token: string;
-  readonly proxy_type?: "http" | "tcp";
-  readonly custom_domains?: readonly string[];
-  readonly remote_port?: number;
-  readonly proxy_name?: string;
-  readonly tls_enable?: boolean;
-  /** Transport protocol: "tcp" (default) or "websocket" (for CF CDN relay). */
-  readonly transport_protocol?: "tcp" | "websocket";
-}
-
-export type TunnelConfig =
-  | QuickTunnelConfig
-  | NamedTunnelConfig
-  | NgrokTunnelConfig
-  | CustomTunnelConfig
-  | FrpTunnelConfig;
-
 export interface GoogleOAuthConfig {
   readonly clientId: string;
   readonly clientSecret: string;
@@ -59,7 +12,6 @@ export interface GoogleOAuthConfig {
 
 export interface WebConfig {
   readonly port: number;
-  readonly tunnel: TunnelConfig | false;
   readonly sessionMaxAgeDays: number;
   readonly google?: GoogleOAuthConfig;
 }

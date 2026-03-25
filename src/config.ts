@@ -4,7 +4,6 @@ import { homedir } from "node:os";
 import yaml from "js-yaml";
 import type {
   WebConfig,
-  TunnelConfig,
   GoogleOAuthConfig,
   TranscriptsConfig,
 } from "./types.js";
@@ -29,74 +28,6 @@ export function getChannelNames(): string[] {
 // Web config (startup-only, from YAML)
 // ---------------------------------------------------------------------------
 
-function parseTunnelConfig(
-  raw: unknown,
-  envTunnel: string | undefined,
-): TunnelConfig | false {
-  if (raw === true || (raw == null && envTunnel === "true")) {
-    return { provider: "cloudflare-quick" };
-  }
-  if (raw === false || raw == null) {
-    return false;
-  }
-  if (typeof raw === "object") {
-    const obj = raw as Record<string, unknown>;
-    const provider = obj.provider as string;
-    switch (provider) {
-      case "cloudflare-quick":
-        return { provider: "cloudflare-quick" };
-      case "cloudflare":
-        return {
-          provider: "cloudflare",
-          token: String(obj.token ?? ""),
-          ...(obj.hostname ? { hostname: String(obj.hostname) } : {}),
-        };
-      case "ngrok":
-        return {
-          provider: "ngrok",
-          authtoken: String(obj.authtoken ?? ""),
-          ...(obj.domain ? { domain: String(obj.domain) } : {}),
-        };
-      case "custom":
-        return {
-          provider: "custom",
-          url: String(obj.url ?? ""),
-          ...(obj.command ? { command: String(obj.command) } : {}),
-        };
-      case "frp":
-        return {
-          provider: "frp",
-          server_addr: String(obj.server_addr ?? ""),
-          server_port: Math.floor(positiveNumber(obj.server_port, 7000)),
-          token: String(obj.token ?? ""),
-          ...(obj.proxy_type === "tcp"
-            ? { proxy_type: "tcp" as const }
-            : { proxy_type: "http" as const }),
-          ...(Array.isArray(obj.custom_domains)
-            ? { custom_domains: obj.custom_domains.map(String) }
-            : {}),
-          ...(obj.remote_port != null
-            ? { remote_port: Math.floor(Number(obj.remote_port)) }
-            : {}),
-          ...(obj.proxy_name ? { proxy_name: String(obj.proxy_name) } : {}),
-          ...(obj.tls_enable === true ? { tls_enable: true } : {}),
-          ...(obj.transport_protocol === "websocket"
-            ? { transport_protocol: "websocket" as const }
-            : {}),
-        };
-      default:
-        console.warn(
-          `[Web] Unknown tunnel provider "${provider}", using quick tunnel`,
-        );
-        return { provider: "cloudflare-quick" };
-    }
-  }
-  if (raw) {
-    return { provider: "cloudflare-quick" };
-  }
-  return false;
-}
-
 export function loadWebConfig(): WebConfig {
   const cfg = (loadConfig().web as Record<string, unknown>) ?? {};
 
@@ -118,7 +49,6 @@ export function loadWebConfig(): WebConfig {
 
   return {
     port: Number(cfg.port ?? process.env.KLAUS_WEB_PORT ?? 3000),
-    tunnel: parseTunnelConfig(cfg.tunnel, process.env.KLAUS_WEB_TUNNEL),
     sessionMaxAgeDays: positiveNumber(cfg.session_max_age_days, 7),
     ...(google ? { google } : {}),
   };
