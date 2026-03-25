@@ -19,38 +19,8 @@ import { generateLocalToken } from "./local-token.js";
 import { AgentSessionManager } from "./agent-manager.js";
 import { SettingsStore } from "./settings-store.js";
 import { loadExternalProviders, registerAllFactories, registerAllCapabilities, capabilities } from "./providers/registry.js";
-import { sendWsEvent } from "./channels/web.js";
-import type { AgentEvent } from "klaus-agent";
-
-function toolDisplay(toolName: string, args: unknown): Record<string, string> {
-  const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
-  const cmd = typeof a.command === "string" ? a.command : "";
-  const path = typeof a.path === "string" ? a.path : typeof a.file_path === "string" ? a.file_path : "";
-  const query = typeof a.query === "string" ? a.query : typeof a.pattern === "string" ? a.pattern : "";
-  const name = toolName.toLowerCase();
-  if (name === "bash" || name === "shell" || name === "execute" || name === "run_command") {
-    return { style: "terminal", icon: "terminal", label: toolName, value: cmd || path };
-  }
-  if (name === "read" || name === "read_file" || name === "readfile") {
-    return { style: "file", icon: "file", label: toolName, value: path };
-  }
-  if (name === "write" || name === "write_file" || name === "writefile" || name === "create") {
-    return { style: "file", icon: "file-plus", label: toolName, value: path };
-  }
-  if (name === "edit" || name === "patch" || name === "replace") {
-    return { style: "file", icon: "edit", label: toolName, value: path };
-  }
-  if (name === "search" || name === "grep" || name === "glob" || name === "find") {
-    return { style: "search", icon: "search", label: toolName, value: query || path };
-  }
-  if (name === "web_search" || name === "fetch" || name === "http") {
-    return { style: "default", icon: "globe", label: toolName, value: query };
-  }
-  if (name === "agent") {
-    return { style: "default", icon: "agent", label: toolName, value: "" };
-  }
-  return { style: "default", icon: "tool", label: toolName, value: "" };
-}
+import { getGatewayService } from "./gateway/service.js";
+import { parseWebSessionKey } from "./gateway/protocol.js";
 
 // ---------------------------------------------------------------------------
 // Channel registration
@@ -63,6 +33,7 @@ registerChannel(webPlugin);
 // ---------------------------------------------------------------------------
 
 async function start(): Promise<void> {
+  const gateway = getGatewayService();
   // Generate local token for macOS app authentication
   generateLocalToken();
 
@@ -212,77 +183,12 @@ async function start(): Promise<void> {
       return t("cmd_skills_list", { list, count: String(enabled.length) });
     }
 
-    // Store user message in transcripts
-    const display = formatDisplayText(msg);
-    if (display) {
-      messageStore
-        .append(msg.sessionKey, "user", display)
-        .catch((err) => console.error("[MessageStore] Append failed:", err));
-    }
+    const webSession = parseWebSessionKey(msg.sessionKey);
+    const onEvent = webSession
+      ? gateway.createAgentEventForwarder(webSession)
+      : undefined;
 
-    // Extract userId and sessionId for streaming
-    const parts = msg.sessionKey.split(":");
-    const userId = parts[1];
-    const sessionId = parts.slice(2).join(":");
-
-    // Stream agent events to WebSocket
-    const onEvent = (event: AgentEvent) => {
-      if (
-        event.type === "message_update" &&
-        event.event.type === "text"
-      ) {
-        sendWsEvent(userId, {
-          type: "stream",
-          chunk: event.event.text,
-          sessionId,
-        });
-      }
-      if (
-        event.type === "message_update" &&
-        event.event.type === "thinking"
-      ) {
-        sendWsEvent(userId, {
-          type: "thinking",
-          chunk: event.event.thinking,
-          sessionId,
-        });
-      }
-      if (event.type === "tool_execution_start") {
-        const display = toolDisplay(event.toolName, event.args);
-        sendWsEvent(userId, {
-          type: "tool",
-          data: {
-            type: "tool_start",
-            toolUseId: event.toolCallId,
-            toolName: event.toolName,
-            display,
-          },
-          sessionId,
-        });
-      }
-      if (event.type === "tool_execution_end") {
-        sendWsEvent(userId, {
-          type: "tool",
-          data: {
-            type: "tool_result",
-            toolUseId: event.toolCallId,
-            isError: event.isError,
-          },
-          sessionId,
-        });
-      }
-    };
-
-    const reply = await agentManager.chat(msg.sessionKey, msg.text, onEvent);
-
-    // Store assistant reply in transcripts
-    if (reply) {
-      messageStore
-        .append(msg.sessionKey, "assistant", reply)
-        .catch((err) => console.error("[MessageStore] Append failed:", err));
-    }
-
-    return reply;
+    return await agentManager.chat(msg.sessionKey, msg.text, onEvent);
   };
 
   try {

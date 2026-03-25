@@ -57,9 +57,6 @@ import { getChatHtml } from "./web-ui.js";
 import { getAdminHtml } from "./web-admin-ui.js";
 import { getLoginHtml } from "./web-login-ui.js";
 import { startTunnel } from "./web-tunnel.js";
-import { getAllProviders, reloadExternalProviders, capabilities, getProvider } from "../providers/registry.js";
-import { generatePKCE, generateState, buildAuthorizeUrl, exchangeCode } from "../auth/oauth.js";
-import type { OAuthProviderAuth } from "../auth/oauth.js";
 import type { MessageStore } from "../message-store.js";
 import type { InviteStore } from "../invite-store.js";
 import type { UserStore, User } from "../user-store.js";
@@ -76,6 +73,16 @@ import {
   handleGoogleCallback,
 } from "./web-auth.js";
 import { validateLocalToken } from "../local-token.js";
+import {
+  getGatewayService,
+} from "../gateway/service.js";
+import {
+  isValidGatewaySessionId,
+  isValidGatewayUserId,
+  type GatewayRpcResponseEnvelope,
+  type WsEvent,
+} from "../gateway/protocol.js";
+import { gatewayErrorStatusCode } from "../gateway/errors.js";
 
 // ---------------------------------------------------------------------------
 // File upload storage
@@ -207,9 +214,11 @@ let messageStoreRef: MessageStore | null = null;
 let inviteStoreRef: InviteStore | null = null;
 let userStoreRef: UserStore | null = null;
 let settingsStoreRef: import("../settings-store.js").SettingsStore | null = null;
+const gateway = getGatewayService();
 
 export function setMessageStore(store: MessageStore): void {
   messageStoreRef = store;
+  gateway.setMessageStore(store);
 }
 
 export function setInviteStore(store: InviteStore): void {
@@ -218,10 +227,12 @@ export function setInviteStore(store: InviteStore): void {
 
 export function setUserStore(store: UserStore): void {
   userStoreRef = store;
+  gateway.setUserStore(store);
 }
 
 export function setSettingsStore(store: import("../settings-store.js").SettingsStore): void {
   settingsStoreRef = store;
+  gateway.setSettingsStore(store);
 }
 
 // Cron scheduler reference (optional — set from index.ts when cron is available)
@@ -236,6 +247,7 @@ let cronSchedulerRef: {
 
 export function setCronScheduler(scheduler: typeof cronSchedulerRef): void {
   cronSchedulerRef = scheduler;
+  gateway.setCronScheduler(scheduler);
 }
 
 // ---------------------------------------------------------------------------
@@ -248,73 +260,8 @@ interface KlausWebSocket extends WebSocket {
   klausIp: string;
 }
 
-const wsClients = new Map<string, Set<KlausWebSocket>>();
-
-export type WsEvent =
-  | {
-      readonly type: "message";
-      readonly text: string;
-      readonly id: string;
-      readonly sessionId?: string;
-    }
-  | {
-      readonly type: "stream";
-      readonly chunk: string;
-      readonly sessionId?: string;
-    }
-  | {
-      readonly type: "error";
-      readonly message: string;
-      readonly sessionId?: string;
-    }
-  | {
-      readonly type: "thinking";
-      readonly chunk: string;
-      readonly sessionId?: string;
-    }
-  | { readonly type: "ping" }
-  | { readonly type: "config_updated" }
-  | {
-      readonly type: "tool";
-      readonly data: Record<string, unknown>;
-      readonly sessionId?: string;
-    }
-  | {
-      readonly type: "file";
-      readonly url: string;
-      readonly name: string;
-      readonly sessionId?: string;
-    };
-
-function addWsClient(userId: string, ws: KlausWebSocket): void {
-  let clients = wsClients.get(userId);
-  if (!clients) {
-    clients = new Set();
-    wsClients.set(userId, clients);
-  }
-  clients.add(ws);
-}
-
-function removeWsClient(userId: string, ws: KlausWebSocket): void {
-  const clients = wsClients.get(userId);
-  if (!clients) return;
-  clients.delete(ws);
-  if (clients.size === 0) wsClients.delete(userId);
-}
-
 export function sendWsEvent(userId: string, event: WsEvent): void {
-  const clients = wsClients.get(userId);
-  if (!clients) return;
-  const data = JSON.stringify(event);
-  for (const ws of [...clients]) {
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(data);
-      } catch {
-        removeWsClient(userId, ws);
-      }
-    }
-  }
+  gateway.sendEvent(userId, event);
 }
 
 // ---------------------------------------------------------------------------
@@ -404,18 +351,25 @@ function jsonResponse(
   res.end(JSON.stringify(body));
 }
 
-function parseCost(parsed: Record<string, unknown>): { input: number; output: number; cacheRead?: number; cacheWrite?: number } | undefined {
-  const ci = Number(parsed.cost_input);
-  const co = Number(parsed.cost_output);
-  if (!Number.isFinite(ci) || !Number.isFinite(co) || ci < 0 || co < 0) return undefined;
-  const cr = Number(parsed.cost_cache_read);
-  const cw = Number(parsed.cost_cache_write);
-  return {
-    input: ci,
-    output: co,
-    ...(Number.isFinite(cr) && cr >= 0 ? { cacheRead: cr } : {}),
-    ...(Number.isFinite(cw) && cw >= 0 ? { cacheWrite: cw } : {}),
-  };
+async function readJsonBody(
+  req: IncomingMessage,
+  maxSize: number,
+): Promise<Record<string, unknown>> {
+  const body = await readBody(req, maxSize);
+  try {
+    return JSON.parse(body.toString()) as Record<string, unknown>;
+  } catch {
+    throw new Error("invalid JSON");
+  }
+}
+
+function gatewayErrorResponse(
+  res: ServerResponse,
+  err: unknown,
+): void {
+  jsonResponse(res, gatewayErrorStatusCode(err), {
+    error: err instanceof Error ? err.message : String(err),
+  });
 }
 
 const SECURITY_HEADERS: Record<string, string> = {
@@ -513,9 +467,6 @@ async function processUserMessage(
   handler: Handler,
   cfg: WebConfig,
 ): Promise<void> {
-  const trimmedText = text.trim();
-  if (!trimmedText && fileIds.length === 0) return;
-
   // Build media list from uploaded file IDs
   const media: MediaFile[] = [];
   for (const fileId of fileIds) {
@@ -528,43 +479,13 @@ async function processUserMessage(
     });
     uploadedFiles.delete(fileId);
   }
-
-  const sessionKey = `web:${userId}:${sessionId}`;
-  const hasMedia = media.length > 0;
-  const messageType =
-    hasMedia && trimmedText
-      ? "mixed"
-      : hasMedia
-        ? media[0].type === "image"
-          ? "image"
-          : "file"
-        : "text";
-  const msg: InboundMessage = {
-    sessionKey,
-    text: trimmedText,
-    messageType,
-    chatType: "private",
-    senderId: userId,
-    ...(hasMedia ? { media } : {}),
-  };
-
-  const mediaLabel = hasMedia ? ` +${media.length} file(s)` : "";
-  console.log(
-    `[Web] Received (${userId.slice(0, 8)}): ${trimmedText.slice(0, 120)}${mediaLabel}`,
-  );
-
   try {
-    const reply = await handler(msg);
-    if (reply === null) {
-      return;
-    }
-
-    console.log(`[Web] Replying: ${reply.slice(0, 100)}...`);
-    sendWsEvent(userId, {
-      type: "message",
-      text: reply,
-      id: Date.now().toString(36),
+    await gateway.processInboundMessage({
+      userId,
+      text,
       sessionId,
+      media,
+      handler,
     });
   } catch (err) {
     console.error("[Web] Handler error:", err);
@@ -630,6 +551,19 @@ function handleWsMessage(
     case "pong":
       break;
     case "rpc": {
+      if (
+        (parsed.method === "chat.send" || parsed.method === "voice.send") &&
+        !checkRateLimit(ip)
+      ) {
+        ws.send(
+          JSON.stringify({
+            type: "rpc-response",
+            id: parsed.id,
+            error: "too many requests",
+          }),
+        );
+        break;
+      }
       handleRpcRequest(
         ws,
         parsed.id,
@@ -664,238 +598,18 @@ async function handleRpcRequest(
   params: Record<string, unknown>,
   handler: Handler,
 ): Promise<void> {
-  const sendResult = (result: unknown) => {
-    ws.send(JSON.stringify({ type: "rpc-response", id, result }));
-  };
-  const sendError = (error: string) => {
-    ws.send(JSON.stringify({ type: "rpc-response", id, error }));
-  };
-
-  // Write operations require admin role
-  const writeMethods = new Set([
-    "config.set",
-    "sessions.delete",
-    "cron.add",
-    "cron.update",
-    "cron.remove",
-    "cron.run",
-  ]);
-  if (writeMethods.has(method)) {
-    const isLocal = ws.klausUserId === "__local__";
-    const isAdmin =
-      isLocal || userStoreRef?.getUserById(ws.klausUserId)?.role === "admin";
-    if (!isAdmin) {
-      sendError("admin role required");
-      return;
-    }
-  }
-
-  switch (method) {
-    case "health": {
-      sendResult({
-        ok: true,
-        uptime: process.uptime(),
-        timestamp: Date.now(),
-      });
-      break;
-    }
-
-    case "status": {
-      sendResult({
-        ok: true,
-        uptime: process.uptime(),
-        pid: process.pid,
-        nodeVersion: process.version,
-      });
-      break;
-    }
-
-    case "sessions.list": {
-      if (!messageStoreRef) {
-        sendError("message store not available");
-        return;
-      }
-      const sessions = await messageStoreRef.listSessions("");
-      sendResult({ sessions });
-      break;
-    }
-
-    case "sessions.delete": {
-      if (!messageStoreRef) {
-        sendError("message store not available");
-        return;
-      }
-      const key = params.key as string;
-      if (!key) {
-        sendError("missing key parameter");
-        return;
-      }
-      messageStoreRef.deleteSession(key);
-      sendResult({ ok: true });
-      break;
-    }
-
-    case "config.get": {
-      const cfg = loadConfig();
-      sendResult({ config: cfg });
-      break;
-    }
-
-    case "config.set": {
-      // Deprecated: config is now managed via settings store
-      sendError("config.set is deprecated, use admin API endpoints");
-      break;
-    }
-
-    case "cron.list": {
-      if (!cronSchedulerRef) {
-        sendResult({ tasks: [] });
-        return;
-      }
-      const status = cronSchedulerRef.getStatus();
-      sendResult({ tasks: status });
-      break;
-    }
-
-    case "cron.add": {
-      if (!cronSchedulerRef) {
-        sendError("cron scheduler not available");
-        return;
-      }
-      const task = params.task as CronTask;
-      if (!task || !task.id || !task.schedule || !task.prompt) {
-        sendError("missing task fields (id, schedule, prompt)");
-        return;
-      }
-      cronSchedulerRef.addTask(task);
-      sendResult({ ok: true });
-      break;
-    }
-
-    case "cron.update": {
-      if (!cronSchedulerRef) {
-        sendError("cron scheduler not available");
-        return;
-      }
-      const taskId = params.id as string;
-      const patch = params.patch as Partial<CronTask>;
-      if (!taskId) {
-        sendError("missing id parameter");
-        return;
-      }
-      const ok = cronSchedulerRef.editTask(taskId, patch);
-      sendResult({ ok });
-      break;
-    }
-
-    case "cron.remove": {
-      if (!cronSchedulerRef) {
-        sendError("cron scheduler not available");
-        return;
-      }
-      const removeId = params.id as string;
-      if (!removeId) {
-        sendError("missing id parameter");
-        return;
-      }
-      const removed = cronSchedulerRef.removeTask(removeId);
-      sendResult({ ok: removed });
-      break;
-    }
-
-    case "cron.run": {
-      if (!cronSchedulerRef) {
-        sendError("cron scheduler not available");
-        return;
-      }
-      const runId = params.id as string;
-      if (!runId) {
-        sendError("missing id parameter");
-        return;
-      }
-      const result = await cronSchedulerRef.runTask(runId);
-      sendResult({ ok: !!result, result });
-      break;
-    }
-
-    case "cron.status": {
-      if (!cronSchedulerRef) {
-        sendResult({ running: false, taskCount: 0 });
-        return;
-      }
-      sendResult(cronSchedulerRef.getSchedulerStatus());
-      break;
-    }
-
-    case "chat.send": {
-      const text = params.text as string;
-      const sessionKey = (params.sessionKey as string) ?? "default";
-      if (!text) {
-        sendError("missing text parameter");
-        return;
-      }
-      // Process through the normal message handler
-      const userId = ws.klausUserId;
-      const cfg = loadWebConfig();
-      try {
-        await processUserMessage(userId, text, [], sessionKey, handler, cfg);
-        sendResult({ ok: true });
-      } catch (err) {
-        sendError(String(err));
-      }
-      break;
-    }
-
-    case "voice.send": {
-      const text = params.text as string;
-      const sessionKey = (params.sessionKey as string) ?? "main";
-      if (!text) {
-        sendError("missing text parameter");
-        return;
-      }
-      const userId = ws.klausUserId;
-      const cfg = loadWebConfig();
-      try {
-        await processUserMessage(userId, text, [], sessionKey, handler, cfg);
-        sendResult({ ok: true });
-      } catch (err) {
-        sendError(String(err));
-      }
-      break;
-    }
-
-    case "skills.list": {
-      try {
-        const { loadEnabledSkills } = await import("../skills/index.js");
-        const skills = loadEnabledSkills();
-        sendResult({
-          skills: skills.map((s) => ({
-            name: s.name,
-            description: s.description,
-            source: s.source,
-            emoji: s.metadata?.emoji,
-          })),
-        });
-      } catch {
-        sendResult({ skills: [] });
-      }
-      break;
-    }
-
-    case "usage.get": {
-      sendResult({
-        totalTokens: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        estimatedCostUSD: 0,
-        sessionCount: 0,
-      });
-      break;
-    }
-
-    default:
-      sendError(`unknown method: ${method}`);
-  }
+  const isLocal = ws.klausUserId === "__local__";
+  const isAdmin =
+    isLocal || userStoreRef?.getUserById(ws.klausUserId)?.role === "admin";
+  const response: GatewayRpcResponseEnvelope = await gateway.handleRpcRequest({
+    id,
+    method,
+    params,
+    userId: ws.klausUserId,
+    isAdmin,
+    handler,
+  });
+  ws.send(JSON.stringify(response));
 }
 
 // ---------------------------------------------------------------------------
@@ -1087,71 +801,35 @@ async function handleAdminUsers(
   res: ServerResponse,
 ): Promise<void> {
   if (!adminAuth(req, res)) return;
-  if (!userStoreRef) {
-    jsonResponse(res, 503, { error: "unavailable" });
-    return;
-  }
 
   if (req.method === "GET") {
-    const users = userStoreRef.listUsers();
-    // Enrich with session/message stats
-    const enriched = await Promise.all(
-      users.map(async (u) => {
-        let sessionCount = 0;
-        let totalMessages = 0;
-        if (messageStoreRef) {
-          const prefix = `web:${u.id}:`;
-          const sessions = await messageStoreRef.listSessions(prefix);
-          sessionCount = sessions.length;
-          totalMessages = sessions.reduce((sum, s) => sum + s.messageCount, 0);
-        }
-        return {
-          id: u.id,
-          email: u.email,
-          displayName: u.displayName,
-          role: u.role,
-          isActive: u.isActive,
-          createdAt: u.createdAt,
-          lastLoginAt: u.lastLoginAt,
-          inviteCode: u.inviteCode,
-          sessionCount,
-          totalMessages,
-        };
-      }),
-    );
-    jsonResponse(res, 200, { users: enriched });
+    try {
+      jsonResponse(res, 200, await gateway.listAdminUsers());
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
   if (req.method === "PATCH") {
-    const body = await readBody(req, 1024);
-    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(body.toString()) as Record<string, unknown>;
-    } catch {
-      jsonResponse(res, 400, { error: "invalid JSON" });
-      return;
+      const parsed = await readJsonBody(req, 1024);
+      jsonResponse(
+        res,
+        200,
+        gateway.updateAdminUser({
+          userId: String(parsed.userId ?? ""),
+          isActive:
+            typeof parsed.isActive === "boolean" ? parsed.isActive : undefined,
+          role:
+            parsed.role === "admin" || parsed.role === "user"
+              ? parsed.role
+              : undefined,
+        }),
+      );
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-
-    const userId = String(parsed.userId ?? "");
-    if (!userId) {
-      jsonResponse(res, 400, { error: "missing userId" });
-      return;
-    }
-
-    if (typeof parsed.isActive === "boolean") {
-      userStoreRef.setActive(userId, parsed.isActive);
-    }
-    if (parsed.role === "admin" || parsed.role === "user") {
-      userStoreRef.setRole(userId, parsed.role);
-    }
-
-    const updated = userStoreRef.getUserById(userId);
-    if (!updated) {
-      jsonResponse(res, 404, { error: "user not found" });
-      return;
-    }
-    jsonResponse(res, 200, { user: updated });
     return;
   }
 
@@ -1162,8 +840,6 @@ async function handleAdminUsers(
 // Admin: browse sessions for any user
 // ---------------------------------------------------------------------------
 
-const VALID_USER_ID_RE = /^[0-9a-f]{32}$/;
-
 async function handleAdminSessions(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1173,22 +849,18 @@ async function handleAdminSessions(
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
   }
-  if (!messageStoreRef) {
-    jsonResponse(res, 503, { error: "unavailable" });
-    return;
-  }
-
   const url = new URL(req.url ?? "/", "http://localhost");
   const userId = url.searchParams.get("userId") ?? "";
-  if (!userId || !VALID_USER_ID_RE.test(userId)) {
+  if (!userId || !isValidGatewayUserId(userId)) {
     jsonResponse(res, 400, { error: "missing or invalid userId" });
     return;
   }
 
-  const prefix = `web:${userId}:`;
-  const sessions = await messageStoreRef.listSessions(prefix);
-
-  jsonResponse(res, 200, { sessions });
+  try {
+    jsonResponse(res, 200, await gateway.listAdminSessions({ userId }));
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1204,112 +876,51 @@ async function handleAdminHistory(
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
   }
-  if (!messageStoreRef) {
-    jsonResponse(res, 503, { error: "unavailable" });
-    return;
-  }
-
   const url = new URL(req.url ?? "/", "http://localhost");
   const userId = url.searchParams.get("userId") ?? "";
   const sessionId = url.searchParams.get("sessionId") ?? "";
-  if (!userId || !VALID_USER_ID_RE.test(userId)) {
+  if (!userId || !isValidGatewayUserId(userId)) {
     jsonResponse(res, 400, { error: "missing or invalid userId" });
     return;
   }
-  if (!sessionId || !/^[\w\-]{1,64}$/.test(sessionId)) {
+  if (!sessionId || !isValidGatewaySessionId(sessionId)) {
     jsonResponse(res, 400, { error: "missing or invalid sessionId" });
     return;
   }
 
-  const sessionKey = `web:${userId}:${sessionId}`;
-  const messages = await messageStoreRef.readHistory(sessionKey);
-
-  jsonResponse(res, 200, { messages });
+  try {
+    jsonResponse(res, 200, await gateway.readAdminHistory({ userId, sessionId }));
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Admin: settings (KV store)
 // ---------------------------------------------------------------------------
 
-function buildSettingsResponse(): Record<string, unknown> {
-  if (!settingsStoreRef) return {};
-  return {
-    max_sessions: settingsStoreRef.getNumber("max_sessions", 20),
-    yolo: settingsStoreRef.getBool("yolo", true),
-    web: {
-      session_max_age_days: settingsStoreRef.getNumber("web.session_max_age_days", 7),
-    },
-    transcripts: {
-      max_files: settingsStoreRef.getNumber("transcripts.max_files", 200),
-      max_age_days: settingsStoreRef.getNumber("transcripts.max_age_days", 30),
-    },
-    cron: {
-      enabled: settingsStoreRef.getBool("cron.enabled", false),
-      max_concurrent_runs: settingsStoreRef.getNumber("cron.max_concurrent_runs", 0) || null,
-    },
-  };
-}
-
 async function handleAdminSettings(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   if (!adminAuth(req, res)) return;
-  if (!settingsStoreRef) {
-    jsonResponse(res, 503, { error: "settings store unavailable" });
-    return;
-  }
 
   if (req.method === "GET") {
-    jsonResponse(res, 200, buildSettingsResponse());
+    try {
+      jsonResponse(res, 200, gateway.getAdminSettings());
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
   if (req.method === "PATCH") {
-    const body = await readBody(req, 8192);
-    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(body.toString()) as Record<string, unknown>;
-    } catch {
-      jsonResponse(res, 400, { error: "invalid JSON" });
-      return;
+      const parsed = await readJsonBody(req, 8192);
+      jsonResponse(res, 200, gateway.updateAdminSettings(parsed));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-
-    if ("max_sessions" in parsed) {
-      const v = Math.floor(Number(parsed.max_sessions));
-      if (v > 0) settingsStoreRef.set("max_sessions", String(v));
-    }
-    if ("yolo" in parsed) {
-      settingsStoreRef.set("yolo", String(Boolean(parsed.yolo)));
-    }
-    if ("web" in parsed && typeof parsed.web === "object" && parsed.web) {
-      const w = parsed.web as Record<string, unknown>;
-      if ("session_max_age_days" in w) {
-        const v = Number(w.session_max_age_days);
-        if (Number.isFinite(v) && v > 0) settingsStoreRef.set("web.session_max_age_days", String(v));
-      }
-    }
-    if ("transcripts" in parsed && typeof parsed.transcripts === "object" && parsed.transcripts) {
-      const t = parsed.transcripts as Record<string, unknown>;
-      if ("max_files" in t) {
-        const v = Math.floor(Number(t.max_files));
-        if (v > 0) settingsStoreRef.set("transcripts.max_files", String(v));
-      }
-      if ("max_age_days" in t) {
-        const v = Number(t.max_age_days);
-        if (Number.isFinite(v) && v > 0) settingsStoreRef.set("transcripts.max_age_days", String(v));
-      }
-    }
-    if ("cron" in parsed && typeof parsed.cron === "object" && parsed.cron) {
-      const c = parsed.cron as Record<string, unknown>;
-      if ("enabled" in c) settingsStoreRef.set("cron.enabled", String(Boolean(c.enabled)));
-      if ("max_concurrent_runs" in c) {
-        const v = c.max_concurrent_runs;
-        settingsStoreRef.set("cron.max_concurrent_runs", v ? String(Math.floor(Number(v))) : "0");
-      }
-    }
-
-    jsonResponse(res, 200, buildSettingsResponse());
     return;
   }
 
@@ -1325,74 +936,25 @@ async function handleAdminCronTasks(
   res: ServerResponse,
 ): Promise<void> {
   if (!adminAuth(req, res)) return;
-  if (!settingsStoreRef) {
-    jsonResponse(res, 503, { error: "settings store unavailable" });
-    return;
-  }
-
-  // GET — list all tasks with status
   if (req.method === "GET") {
-    if (cronSchedulerRef) {
-      const tasks = cronSchedulerRef.getStatus();
-      const scheduler = cronSchedulerRef.getSchedulerStatus();
-      jsonResponse(res, 200, { tasks, scheduler });
-    } else {
-      const tasks = settingsStoreRef.listTasks().map((t) => ({
-        id: t.id,
-        name: t.name,
-        description: t.description,
-        schedule: t.schedule,
-        prompt: t.prompt,
-        enabled: t.enabled !== false,
-        nextRun: null,
-        lastRun: null,
-        consecutiveErrors: 0,
-        createdAt: t.createdAt,
-        updatedAt: t.updatedAt,
-      }));
-      jsonResponse(res, 200, {
-        tasks,
-        scheduler: { running: false, taskCount: tasks.length, activeJobs: 0, runningTasks: 0, maxConcurrentRuns: null, nextWakeAt: null },
-      });
-    }
-    return;
-  }
-
-  // POST — create task
-  if (req.method === "POST") {
-    const body = await readBody(req, 4096);
-    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(body.toString()) as Record<string, unknown>;
-    } catch {
-      jsonResponse(res, 400, { error: "invalid JSON" });
-      return;
+      jsonResponse(res, 200, gateway.listCronTasks());
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-
-    const id = String(parsed.id ?? "").trim();
-    const schedule = String(parsed.schedule ?? "").trim();
-    const prompt = String(parsed.prompt ?? "").trim();
-    if (!id || !schedule || !prompt) {
-      jsonResponse(res, 400, { error: "id, schedule, and prompt are required" });
-      return;
-    }
-
-    const task: CronTask = {
-      id, schedule, prompt,
-      name: parsed.name ? String(parsed.name) : undefined,
-      description: parsed.description ? String(parsed.description) : undefined,
-      enabled: parsed.enabled !== false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    settingsStoreRef.upsertTask(task);
-    cronSchedulerRef?.addTask(task);
-    jsonResponse(res, 201, { ok: true, task });
     return;
   }
 
-  // PATCH — update task
+  if (req.method === "POST") {
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      jsonResponse(res, 201, gateway.createCronTask(parsed));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
   if (req.method === "PATCH") {
     const url = new URL(req.url ?? "", "http://localhost");
     const id = url.searchParams.get("id") ?? "";
@@ -1401,36 +963,15 @@ async function handleAdminCronTasks(
       return;
     }
 
-    const existing = settingsStoreRef.getTask(id);
-    if (!existing) {
-      jsonResponse(res, 404, { error: "task not found" });
-      return;
-    }
-
-    const body = await readBody(req, 4096);
-    let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(body.toString()) as Record<string, unknown>;
-    } catch {
-      jsonResponse(res, 400, { error: "invalid JSON" });
-      return;
+      const parsed = await readJsonBody(req, 4096);
+      jsonResponse(res, 200, gateway.updateCronTask({ id, patch: parsed }));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-
-    const patch: Record<string, unknown> = {};
-    if ("schedule" in parsed) patch.schedule = String(parsed.schedule);
-    if ("prompt" in parsed) patch.prompt = String(parsed.prompt);
-    if ("name" in parsed) patch.name = parsed.name ? String(parsed.name) : undefined;
-    if ("description" in parsed) patch.description = parsed.description ? String(parsed.description) : undefined;
-    if ("enabled" in parsed) patch.enabled = Boolean(parsed.enabled);
-
-    const updated = { ...existing, ...patch, updatedAt: Date.now() };
-    settingsStoreRef.upsertTask(updated);
-    cronSchedulerRef?.editTask(id, patch as Partial<CronTask>);
-    jsonResponse(res, 200, { ok: true });
     return;
   }
 
-  // DELETE — remove task
   if (req.method === "DELETE") {
     const url = new URL(req.url ?? "", "http://localhost");
     const id = url.searchParams.get("id") ?? "";
@@ -1439,13 +980,16 @@ async function handleAdminCronTasks(
       return;
     }
 
-    const deleted = settingsStoreRef.deleteTask(id);
-    if (!deleted) {
-      jsonResponse(res, 404, { error: "task not found" });
-      return;
+    try {
+      const deleted = gateway.deleteCronTask(id);
+      if (!deleted) {
+        jsonResponse(res, 404, { error: "task not found" });
+        return;
+      }
+      jsonResponse(res, 200, { ok: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-    cronSchedulerRef?.removeTask(id);
-    jsonResponse(res, 200, { ok: true });
     return;
   }
 
@@ -1467,36 +1011,11 @@ async function handleAdminProviders(
   }
   const url = new URL(req.url ?? "", "http://localhost");
   const refresh = url.searchParams.get("refresh") === "1";
-  const all = getAllProviders();
-
-  const providers = await Promise.all(all.map(async (p) => {
-    let models = p.models as readonly { id: string; label: string; tokens: number }[];
-    if (refresh && p.catalog) {
-      try {
-        // Find a stored model for this provider to get the API key
-        const stored = settingsStoreRef?.listModels().find((m) => m.provider === p.id);
-        const apiKey = stored?.apiKey;
-        const baseUrl = stored?.baseUrl || p.defaultBaseUrl;
-        if (apiKey) {
-          const catalogModels = await Promise.race([
-            p.catalog(apiKey, baseUrl),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
-          ]);
-          if (catalogModels.length > 0) {
-            models = catalogModels;
-          }
-        }
-      } catch { /* fall back to static models */ }
-    }
-    return {
-      id: p.id,
-      label: p.label,
-      defaultBaseUrl: p.defaultBaseUrl,
-      models,
-      auth: p.auth,
-    };
-  }));
-  jsonResponse(res, 200, { providers });
+  try {
+    jsonResponse(res, 200, await gateway.listAdminProviders({ refresh }));
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1512,8 +1031,11 @@ async function handleAdminProvidersReload(
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
   }
-  const result = await reloadExternalProviders();
-  jsonResponse(res, 200, { ok: true, ...result });
+  try {
+    jsonResponse(res, 200, await gateway.reloadAdminProviders());
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1529,7 +1051,11 @@ function handleAdminCapabilities(
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
   }
-  jsonResponse(res, 200, { capabilities: capabilities.getSummary() });
+  try {
+    jsonResponse(res, 200, gateway.getAdminCapabilities());
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1540,23 +1066,23 @@ function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-interface PendingOAuth {
-  verifier: string;
-  modelId: string;
-  providerId: string;
-  redirectUri: string;
-  createdAt: number;
+function serveOAuthResultPage(
+  res: ServerResponse,
+  params: {
+    title: string;
+    message?: string;
+    markCompleted?: boolean;
+  },
+): void {
+  const script = params.markCompleted
+    ? `<script>localStorage.setItem("klaus_oauth_done","1");window.close()</script>`
+    : "<script>window.close()</script>";
+  const message = params.message ? `<p>${escHtml(params.message)}</p>` : "";
+  res.writeHead(200, { "Content-Type": "text/html" });
+  res.end(
+    `<html><body><h2>${escHtml(params.title)}</h2>${message}${script}</body></html>`,
+  );
 }
-
-const pendingOAuth = new Map<string, PendingOAuth>();
-
-// Clean up expired entries (10 min TTL)
-setInterval(() => {
-  const now = Date.now();
-  for (const [state, entry] of pendingOAuth) {
-    if (now - entry.createdAt > 10 * 60 * 1000) pendingOAuth.delete(state);
-  }
-}, 60 * 1000);
 
 async function handleOAuthStart(
   req: IncomingMessage,
@@ -1567,30 +1093,19 @@ async function handleOAuthStart(
   const url = new URL(req.url ?? "", "http://localhost");
   const providerId = url.searchParams.get("provider") ?? "";
   const modelId = url.searchParams.get("modelId") ?? "";
-  if (!providerId || !modelId) {
-    jsonResponse(res, 400, { error: "provider and modelId required" });
-    return;
+  try {
+    const result = gateway.beginProviderOAuth({
+      providerId,
+      modelId,
+      host: req.headers.host,
+      protocol: String(req.headers["x-forwarded-proto"] ?? "http"),
+      defaultPort: cfg.port,
+    });
+    res.writeHead(302, { Location: result.redirectTo });
+    res.end();
+  } catch (err) {
+    gatewayErrorResponse(res, err);
   }
-
-  const providerDef = getProvider(providerId);
-  if (!providerDef?.auth?.method || providerDef.auth.method.type !== "oauth") {
-    jsonResponse(res, 400, { error: "provider does not support OAuth" });
-    return;
-  }
-
-  const oauthAuth = providerDef.auth.method as OAuthProviderAuth;
-  const { verifier, challenge } = generatePKCE();
-  const state = generateState();
-
-  const host = req.headers.host ?? `localhost:${cfg.port}`;
-  const protocol = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
-  const redirectUri = `${protocol}://${host}/auth/provider/callback`;
-
-  pendingOAuth.set(state, { verifier, modelId, providerId, redirectUri, createdAt: Date.now() });
-
-  const authorizeUrl = buildAuthorizeUrl(oauthAuth, redirectUri, state, challenge);
-  res.writeHead(302, { Location: authorizeUrl });
-  res.end();
 }
 
 async function handleOAuthCallback(
@@ -1601,52 +1116,8 @@ async function handleOAuthCallback(
   const code = url.searchParams.get("code") ?? "";
   const state = url.searchParams.get("state") ?? "";
   const error = url.searchParams.get("error");
-
-  if (error) {
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(`<html><body><h2>Authorization failed</h2><p>${escHtml(error)}</p><script>window.close()</script></body></html>`);
-    return;
-  }
-
-  const pending = pendingOAuth.get(state);
-  if (!pending) {
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(`<html><body><h2>Invalid or expired state</h2><script>window.close()</script></body></html>`);
-    return;
-  }
-  pendingOAuth.delete(state);
-
-  const providerDef = getProvider(pending.providerId);
-  if (!providerDef?.auth?.method || providerDef.auth.method.type !== "oauth") {
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(`<html><body><h2>Provider not found</h2><script>window.close()</script></body></html>`);
-    return;
-  }
-
-  try {
-    const oauthAuth = providerDef.auth.method as OAuthProviderAuth;
-    const result = await exchangeCode(oauthAuth, code, pending.redirectUri, pending.verifier);
-
-    if (settingsStoreRef) {
-      const existing = settingsStoreRef.getModel(pending.modelId);
-      if (existing) {
-        settingsStoreRef.upsertModel({
-          ...existing,
-          apiKey: result.accessToken,
-          authType: "oauth",
-          refreshToken: result.refreshToken,
-          tokenExpiresAt: Date.now() + result.expiresIn * 1000,
-        });
-      }
-    }
-
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(`<html><body><h2>Authorization successful</h2><p>You can close this window.</p><script>localStorage.setItem("klaus_oauth_done","1");window.close()</script></body></html>`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(`<html><body><h2>Token exchange failed</h2><p>${escHtml(msg)}</p><script>window.close()</script></body></html>`);
-  }
+  const result = await gateway.completeProviderOAuth({ code, state, error });
+  serveOAuthResultPage(res, result);
 }
 
 // ---------------------------------------------------------------------------
@@ -1658,62 +1129,22 @@ async function handleAdminModels(
   res: ServerResponse,
 ): Promise<void> {
   if (!adminAuth(req, res)) return;
-  if (!settingsStoreRef) {
-    jsonResponse(res, 503, { error: "settings store unavailable" });
-    return;
-  }
-
   if (req.method === "GET") {
-    jsonResponse(res, 200, {
-      models: settingsStoreRef.listModels().map(({ apiKey, refreshToken, ...safe }) => ({
-        ...safe,
-        isAuthorized: !!apiKey,
-      })),
-    });
+    try {
+      jsonResponse(res, 200, gateway.listAdminModels());
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
   if (req.method === "POST") {
-    const body = await readBody(req, 4096);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const id = String(parsed.id ?? "").trim();
-    const model = String(parsed.model ?? "").trim();
-    const provider = String(parsed.provider ?? "").trim();
-    if (!id || !model || !provider) {
-      jsonResponse(res, 400, { error: "id, model, and provider are required" });
-      return;
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      jsonResponse(res, 201, gateway.createAdminModel(parsed));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-    if (!/^[\w\-]{1,64}$/.test(id)) {
-      jsonResponse(res, 400, { error: "id must be 1-64 alphanumeric/dash chars" });
-      return;
-    }
-    const maxTokens = Number(parsed.max_context_tokens ?? 200_000);
-    if (!Number.isFinite(maxTokens) || maxTokens < 1000 || maxTokens > 2_000_000) {
-      jsonResponse(res, 400, { error: "max_context_tokens must be 1000-2000000" });
-      return;
-    }
-
-    const now = Date.now();
-    const cost = parseCost(parsed);
-    settingsStoreRef.upsertModel({
-      id,
-      name: String(parsed.name ?? id),
-      provider,
-      model,
-      apiKey: parsed.api_key ? String(parsed.api_key) : undefined,
-      baseUrl: parsed.base_url ? String(parsed.base_url) : undefined,
-      maxContextTokens: maxTokens,
-      thinking: String(parsed.thinking ?? "off"),
-      isDefault: Boolean(parsed.is_default),
-      ...(cost ? { cost } : {}),
-      createdAt: now,
-      updatedAt: now,
-    });
-    if (parsed.is_default) settingsStoreRef.setDefaultModel(id);
-    jsonResponse(res, 201, { ok: true });
     return;
   }
 
@@ -1722,33 +1153,12 @@ async function handleAdminModels(
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
 
-    const existing = settingsStoreRef.getModel(id);
-    if (!existing) { jsonResponse(res, 404, { error: "model not found" }); return; }
-
-    const body = await readBody(req, 4096);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const updated = {
-      ...existing,
-      ...(parsed.name != null ? { name: String(parsed.name) } : {}),
-      ...(parsed.provider != null ? { provider: String(parsed.provider).trim() } : {}),
-      ...(parsed.model != null ? { model: String(parsed.model).trim() } : {}),
-      ...("api_key" in parsed ? { apiKey: parsed.api_key ? String(parsed.api_key) : undefined } : {}),
-      ...("base_url" in parsed ? { baseUrl: parsed.base_url ? String(parsed.base_url) : undefined } : {}),
-      ...(parsed.max_context_tokens != null ? { maxContextTokens: Number(parsed.max_context_tokens) } : {}),
-      ...(parsed.thinking != null ? { thinking: String(parsed.thinking) } : {}),
-      ...("cost_input" in parsed ? { cost: parseCost(parsed) } : {}),
-      updatedAt: Date.now(),
-    };
-    if (!updated.provider || !updated.model) {
-      jsonResponse(res, 400, { error: "provider and model cannot be empty" });
-      return;
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      jsonResponse(res, 200, gateway.updateAdminModel({ id, patch: parsed }));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-    settingsStoreRef.upsertModel(updated);
-    if (parsed.is_default) settingsStoreRef.setDefaultModel(id);
-    jsonResponse(res, 200, { ok: true });
     return;
   }
 
@@ -1756,9 +1166,13 @@ async function handleAdminModels(
     const url = new URL(req.url ?? "", "http://localhost");
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
-    const deleted = settingsStoreRef.deleteModel(id);
-    if (!deleted) { jsonResponse(res, 404, { error: "model not found" }); return; }
-    jsonResponse(res, 200, { ok: true });
+    try {
+      const deleted = gateway.deleteAdminModel(id);
+      if (!deleted) { jsonResponse(res, 404, { error: "model not found" }); return; }
+      jsonResponse(res, 200, { ok: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
@@ -1774,44 +1188,22 @@ async function handleAdminPrompts(
   res: ServerResponse,
 ): Promise<void> {
   if (!adminAuth(req, res)) return;
-  if (!settingsStoreRef) {
-    jsonResponse(res, 503, { error: "settings store unavailable" });
-    return;
-  }
-
   if (req.method === "GET") {
-    jsonResponse(res, 200, { prompts: settingsStoreRef.listPrompts() });
+    try {
+      jsonResponse(res, 200, gateway.listAdminPrompts());
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
   if (req.method === "POST") {
-    const body = await readBody(req, 16384);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const id = String(parsed.id ?? "").trim();
-    const content = String(parsed.content ?? "").trim();
-    if (!id || !content) {
-      jsonResponse(res, 400, { error: "id and content are required" });
-      return;
+    try {
+      const parsed = await readJsonBody(req, 16384);
+      jsonResponse(res, 201, gateway.createAdminPrompt(parsed));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-    if (!/^[\w\-]{1,64}$/.test(id)) {
-      jsonResponse(res, 400, { error: "id must be 1-64 alphanumeric/dash chars" });
-      return;
-    }
-
-    const now = Date.now();
-    settingsStoreRef.upsertPrompt({
-      id,
-      name: String(parsed.name ?? id),
-      content,
-      isDefault: Boolean(parsed.is_default),
-      createdAt: now,
-      updatedAt: now,
-    });
-    if (parsed.is_default) settingsStoreRef.setDefaultPrompt(id);
-    jsonResponse(res, 201, { ok: true });
     return;
   }
 
@@ -1820,23 +1212,12 @@ async function handleAdminPrompts(
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
 
-    const existing = settingsStoreRef.getPrompt(id);
-    if (!existing) { jsonResponse(res, 404, { error: "prompt not found" }); return; }
-
-    const body = await readBody(req, 16384);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const updated = {
-      ...existing,
-      ...(parsed.name != null ? { name: String(parsed.name) } : {}),
-      ...(parsed.content != null ? { content: String(parsed.content) } : {}),
-      updatedAt: Date.now(),
-    };
-    settingsStoreRef.upsertPrompt(updated);
-    if (parsed.is_default) settingsStoreRef.setDefaultPrompt(id);
-    jsonResponse(res, 200, { ok: true });
+    try {
+      const parsed = await readJsonBody(req, 16384);
+      jsonResponse(res, 200, gateway.updateAdminPrompt({ id, patch: parsed }));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
@@ -1844,9 +1225,13 @@ async function handleAdminPrompts(
     const url = new URL(req.url ?? "", "http://localhost");
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
-    const deleted = settingsStoreRef.deletePrompt(id);
-    if (!deleted) { jsonResponse(res, 404, { error: "prompt not found" }); return; }
-    jsonResponse(res, 200, { ok: true });
+    try {
+      const deleted = gateway.deleteAdminPrompt(id);
+      if (!deleted) { jsonResponse(res, 404, { error: "prompt not found" }); return; }
+      jsonResponse(res, 200, { ok: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
@@ -1862,44 +1247,22 @@ async function handleAdminRules(
   res: ServerResponse,
 ): Promise<void> {
   if (!adminAuth(req, res)) return;
-  if (!settingsStoreRef) {
-    jsonResponse(res, 503, { error: "settings store unavailable" });
-    return;
-  }
-
   if (req.method === "GET") {
-    jsonResponse(res, 200, { rules: settingsStoreRef.listRules() });
+    try {
+      jsonResponse(res, 200, gateway.listAdminRules());
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
   if (req.method === "POST") {
-    const body = await readBody(req, 16384);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const id = String(parsed.id ?? "").trim();
-    const content = String(parsed.content ?? "").trim();
-    if (!id || !content) {
-      jsonResponse(res, 400, { error: "id and content are required" });
-      return;
+    try {
+      const parsed = await readJsonBody(req, 16384);
+      jsonResponse(res, 201, gateway.createAdminRule(parsed));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-    if (!/^[\w\-]{1,64}$/.test(id)) {
-      jsonResponse(res, 400, { error: "id must be 1-64 alphanumeric/dash chars" });
-      return;
-    }
-
-    const now = Date.now();
-    settingsStoreRef.upsertRule({
-      id,
-      name: String(parsed.name ?? id),
-      content,
-      enabled: parsed.enabled !== false,
-      sortOrder: Number(parsed.sort_order ?? 0),
-      createdAt: now,
-      updatedAt: now,
-    });
-    jsonResponse(res, 201, { ok: true });
     return;
   }
 
@@ -1908,24 +1271,12 @@ async function handleAdminRules(
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
 
-    const existing = settingsStoreRef.listRules().find((r) => r.id === id);
-    if (!existing) { jsonResponse(res, 404, { error: "rule not found" }); return; }
-
-    const body = await readBody(req, 16384);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const updated = {
-      ...existing,
-      ...(parsed.name != null ? { name: String(parsed.name) } : {}),
-      ...(parsed.content != null ? { content: String(parsed.content) } : {}),
-      ...("enabled" in parsed ? { enabled: Boolean(parsed.enabled) } : {}),
-      ...(parsed.sort_order != null ? { sortOrder: Number(parsed.sort_order) } : {}),
-      updatedAt: Date.now(),
-    };
-    settingsStoreRef.upsertRule(updated);
-    jsonResponse(res, 200, { ok: true });
+    try {
+      const parsed = await readJsonBody(req, 16384);
+      jsonResponse(res, 200, gateway.updateAdminRule({ id, patch: parsed }));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
@@ -1933,9 +1284,13 @@ async function handleAdminRules(
     const url = new URL(req.url ?? "", "http://localhost");
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
-    const deleted = settingsStoreRef.deleteRule(id);
-    if (!deleted) { jsonResponse(res, 404, { error: "rule not found" }); return; }
-    jsonResponse(res, 200, { ok: true });
+    try {
+      const deleted = gateway.deleteAdminRule(id);
+      if (!deleted) { jsonResponse(res, 404, { error: "rule not found" }); return; }
+      jsonResponse(res, 200, { ok: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
@@ -1951,45 +1306,22 @@ async function handleAdminMcp(
   res: ServerResponse,
 ): Promise<void> {
   if (!adminAuth(req, res)) return;
-  if (!settingsStoreRef) {
-    jsonResponse(res, 503, { error: "settings store unavailable" });
-    return;
-  }
-
   if (req.method === "GET") {
-    jsonResponse(res, 200, { servers: settingsStoreRef.listMcpServers() });
+    try {
+      jsonResponse(res, 200, gateway.listAdminMcpServers());
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
   if (req.method === "POST") {
-    const body = await readBody(req, 4096);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const id = String(parsed.id ?? "").trim();
-    if (!id) { jsonResponse(res, 400, { error: "id is required" }); return; }
-    if (!/^[\w\-]{1,64}$/.test(id)) {
-      jsonResponse(res, 400, { error: "id must be 1-64 alphanumeric/dash chars" });
-      return;
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      jsonResponse(res, 201, gateway.createAdminMcpServer(parsed));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
     }
-
-    const transport = parsed.transport as Record<string, unknown> | undefined;
-    if (!transport || !transport.type) {
-      jsonResponse(res, 400, { error: "transport with type is required" });
-      return;
-    }
-
-    const now = Date.now();
-    settingsStoreRef.upsertMcpServer({
-      id,
-      name: String(parsed.name ?? id),
-      transport: transport as import("../settings-store.js").McpTransportConfig,
-      enabled: parsed.enabled !== false,
-      createdAt: now,
-      updatedAt: now,
-    });
-    jsonResponse(res, 201, { ok: true });
     return;
   }
 
@@ -1998,23 +1330,12 @@ async function handleAdminMcp(
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
 
-    const existing = settingsStoreRef.getMcpServer(id);
-    if (!existing) { jsonResponse(res, 404, { error: "server not found" }); return; }
-
-    const body = await readBody(req, 4096);
-    let parsed: Record<string, unknown>;
-    try { parsed = JSON.parse(body.toString()) as Record<string, unknown>; }
-    catch { jsonResponse(res, 400, { error: "invalid JSON" }); return; }
-
-    const updated = {
-      ...existing,
-      ...(parsed.name != null ? { name: String(parsed.name) } : {}),
-      ...(parsed.transport ? { transport: parsed.transport as import("../settings-store.js").McpTransportConfig } : {}),
-      ...("enabled" in parsed ? { enabled: Boolean(parsed.enabled) } : {}),
-      updatedAt: Date.now(),
-    };
-    settingsStoreRef.upsertMcpServer(updated);
-    jsonResponse(res, 200, { ok: true });
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      jsonResponse(res, 200, gateway.updateAdminMcpServer({ id, patch: parsed }));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
@@ -2022,9 +1343,13 @@ async function handleAdminMcp(
     const url = new URL(req.url ?? "", "http://localhost");
     const id = url.searchParams.get("id") ?? "";
     if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
-    const deleted = settingsStoreRef.deleteMcpServer(id);
-    if (!deleted) { jsonResponse(res, 404, { error: "server not found" }); return; }
-    jsonResponse(res, 200, { ok: true });
+    try {
+      const deleted = gateway.deleteAdminMcpServer(id);
+      if (!deleted) { jsonResponse(res, 404, { error: "server not found" }); return; }
+      jsonResponse(res, 200, { ok: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
     return;
   }
 
@@ -2282,20 +1607,22 @@ async function handleRequest(
         return;
       }
       const histSessionId = url.searchParams.get("sessionId") ?? "default";
-      if (!/^[\w\-]{1,64}$/.test(histSessionId)) {
+      if (!isValidGatewaySessionId(histSessionId)) {
         jsonResponse(res, 400, { error: "invalid sessionId" });
         return;
       }
-      if (!messageStoreRef) {
-        jsonResponse(res, 503, { error: "history unavailable" });
-        return;
-      }
-      const histKey = `web:${histAuth.user.id}:${histSessionId}`;
       const limitStr = url.searchParams.get("limit") ?? "200";
       const limit = Math.min(Math.max(parseInt(limitStr, 10) || 200, 1), 500);
-      const all = await messageStoreRef.readHistory(histKey);
-      const messages = all.length > limit ? all.slice(-limit) : all;
-      jsonResponse(res, 200, { messages, total: all.length });
+      try {
+        const result = await gateway.readHistory({
+          userId: histAuth.user.id,
+          sessionId: histSessionId,
+          limit,
+        });
+        jsonResponse(res, 200, result);
+      } catch (err) {
+        jsonResponse(res, 503, { error: String(err) });
+      }
       return;
     }
 
@@ -2311,35 +1638,38 @@ async function handleRequest(
         jsonResponse(res, 401, { error: "unauthorized" });
         return;
       }
-      if (!messageStoreRef) {
-        jsonResponse(res, 503, { error: "sessions unavailable" });
-        return;
-      }
-
       if (req.method === "GET") {
-        const prefix = `web:${sessAuth.user.id}:`;
-        const sessions = await messageStoreRef.listSessions(prefix);
-        jsonResponse(res, 200, {
-          sessions,
-          isAdmin: sessAuth.kind === "admin",
-        });
+        try {
+          const result = await gateway.listSessions({
+            userId: sessAuth.user.id,
+            includeAdminFlag: sessAuth.kind === "admin",
+          });
+          jsonResponse(res, 200, result);
+        } catch (err) {
+          jsonResponse(res, 503, { error: String(err) });
+        }
         return;
       }
 
       if (req.method === "DELETE") {
         const delSessionId = url.searchParams.get("sessionId") ?? "";
-        if (!/^[\w\-]{1,64}$/.test(delSessionId)) {
+        if (!isValidGatewaySessionId(delSessionId)) {
           jsonResponse(res, 400, { error: "invalid sessionId" });
           return;
         }
-        const delKey = `web:${sessAuth.user.id}:${delSessionId}`;
-        const deleted = messageStoreRef.deleteSession(delKey);
-        if (!deleted) {
-          jsonResponse(res, 404, { error: "session not found" });
-          return;
+        try {
+          const deleted = gateway.deleteSession({
+            userId: sessAuth.user.id,
+            sessionId: delSessionId,
+          });
+          if (!deleted) {
+            jsonResponse(res, 404, { error: "session not found" });
+            return;
+          }
+          jsonResponse(res, 200, { deleted: true });
+        } catch (err) {
+          jsonResponse(res, 503, { error: String(err) });
         }
-
-        jsonResponse(res, 200, { deleted: true });
         return;
       }
 
@@ -2365,14 +1695,16 @@ async function handleRequest(
         const fileName = url.pathname.slice("/api/avatars/".length);
         return handleAvatarServe(req, res, fileName);
       }
-      // Capability HTTP routes (registered by providers)
-      for (const route of capabilities.getAllHttpRoutes()) {
-        const match = route.match === "prefix"
-          ? url.pathname.startsWith(route.path)
-          : url.pathname === route.path;
-        if (match) {
-          if (route.auth === "admin" && !adminAuth(req, res)) return;
-          await route.handler(req, res);
+      {
+        const auth = authenticateRequest(req);
+        const handled = await gateway.dispatchCapabilityHttpRoute({
+          pathname: url.pathname,
+          req,
+          res,
+          isAuthenticated: auth.kind !== "invalid",
+          isAdmin: auth.kind === "admin",
+        });
+        if (handled) {
           return;
         }
       }
@@ -2397,11 +1729,9 @@ function deliverWebMessage(to: string, text: string): Promise<void> {
   };
 
   if (to === "*") {
-    for (const userId of wsClients.keys()) {
-      sendWsEvent(userId, event);
-    }
-  } else if (wsClients.has(to)) {
-    sendWsEvent(to, event);
+    gateway.deliverMessage("*", text);
+  } else if (gateway.hasConnectedUser(to)) {
+    gateway.deliverMessage(to, text);
   } else {
     console.warn(
       `[Web] deliver: user "${to}" has no active WebSocket connection, message dropped`,
@@ -2489,7 +1819,7 @@ export const webPlugin: ChannelPlugin = {
         ws.klausUserId = user.id;
         ws.klausIp = getClientIp(req);
 
-        addWsClient(user.id, ws);
+        gateway.registerClient(user.id, ws);
         console.log(`[Web] WebSocket connected: ${userLabel(user)}`);
 
         ws.on("pong", () => {
@@ -2501,7 +1831,7 @@ export const webPlugin: ChannelPlugin = {
         });
 
         ws.on("close", () => {
-          removeWsClient(user.id, ws);
+          gateway.unregisterClient(user.id, ws);
           console.log(`[Web] WebSocket disconnected: ${userLabel(user)}`);
         });
 
@@ -2510,7 +1840,7 @@ export const webPlugin: ChannelPlugin = {
             `[Web] WebSocket error (${userLabel(user)}):`,
             err.message,
           );
-          removeWsClient(user.id, ws);
+          gateway.unregisterClient(user.id, ws);
         });
       },
     );
@@ -2534,18 +1864,7 @@ export const webPlugin: ChannelPlugin = {
         configDebounce = setTimeout(() => {
           configDebounce = null;
           console.log("[Web] Config file changed, notifying clients");
-          const data = JSON.stringify({ type: "config_updated" });
-          for (const [, clients] of wsClients) {
-            for (const ws of [...clients]) {
-              if (ws.readyState === WebSocket.OPEN) {
-                try {
-                  ws.send(data);
-                } catch {
-                  /* ignore */
-                }
-              }
-            }
-          }
+          gateway.broadcastEvent({ type: "config_updated" });
         }, 500);
       });
     } catch {
@@ -2554,17 +1873,16 @@ export const webPlugin: ChannelPlugin = {
 
     // Application-layer ping — 25s keepalive
     const keepalive = setInterval(() => {
-      for (const [userId, clients] of wsClients) {
-        for (const ws of [...clients]) {
-          if (ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.send(JSON.stringify({ type: "ping" }));
-            } catch {
-              removeWsClient(userId, ws);
-            }
-          } else {
-            removeWsClient(userId, ws);
+      for (const client of wss.clients) {
+        const ws = client as KlausWebSocket;
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: "ping" }));
+          } catch {
+            gateway.unregisterClient(ws.klausUserId, ws);
           }
+        } else {
+          gateway.unregisterClient(ws.klausUserId, ws);
         }
       }
     }, 25_000);

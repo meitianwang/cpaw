@@ -1,0 +1,230 @@
+import type { AgentEvent } from "klaus-agent";
+import { formatDisplayText, type InboundMessage, type MediaFile } from "../../message.js";
+import type { Handler } from "../../types.js";
+import { buildWebSessionKey, type WsEvent } from "../protocol.js";
+
+function toolDisplay(toolName: string, args: unknown): Record<string, string> {
+  const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+  const cmd = typeof a.command === "string" ? a.command : "";
+  const path =
+    typeof a.path === "string"
+      ? a.path
+      : typeof a.file_path === "string"
+        ? a.file_path
+        : "";
+  const query =
+    typeof a.query === "string"
+      ? a.query
+      : typeof a.pattern === "string"
+        ? a.pattern
+        : "";
+  const name = toolName.toLowerCase();
+  if (name === "bash" || name === "shell" || name === "execute" || name === "run_command") {
+    return { style: "terminal", icon: "terminal", label: toolName, value: cmd || path };
+  }
+  if (name === "read" || name === "read_file" || name === "readfile") {
+    return { style: "file", icon: "file", label: toolName, value: path };
+  }
+  if (name === "write" || name === "write_file" || name === "writefile" || name === "create") {
+    return { style: "file", icon: "file-plus", label: toolName, value: path };
+  }
+  if (name === "edit" || name === "patch" || name === "replace") {
+    return { style: "file", icon: "edit", label: toolName, value: path };
+  }
+  if (name === "search" || name === "grep" || name === "glob" || name === "find") {
+    return { style: "search", icon: "search", label: toolName, value: query || path };
+  }
+  if (name === "web_search" || name === "fetch" || name === "http") {
+    return { style: "default", icon: "globe", label: toolName, value: query };
+  }
+  if (name === "agent") {
+    return { style: "default", icon: "agent", label: toolName, value: "" };
+  }
+  return { style: "default", icon: "tool", label: toolName, value: "" };
+}
+
+export function createGatewayAgentEventForwarder(params: {
+  userId: string;
+  sessionId: string;
+  sendEvent: (userId: string, event: WsEvent) => void;
+  onTextChunk?: (chunk: string) => void;
+  onThinkingChunk?: (chunk: string) => void;
+  onToolStart?: (params: {
+    toolName: string;
+    toolCallId: string;
+    args: unknown;
+  }) => void;
+  onToolEnd?: (params: {
+    toolName: string;
+    toolCallId: string;
+    isError: boolean;
+  }) => void;
+}): (event: AgentEvent) => void {
+  return (event: AgentEvent) => {
+    if (event.type === "message_update" && event.event.type === "text") {
+      params.onTextChunk?.(event.event.text);
+      params.sendEvent(params.userId, {
+        type: "stream",
+        chunk: event.event.text,
+        sessionId: params.sessionId,
+      });
+    }
+    if (event.type === "message_update" && event.event.type === "thinking") {
+      params.onThinkingChunk?.(event.event.thinking);
+      params.sendEvent(params.userId, {
+        type: "thinking",
+        chunk: event.event.thinking,
+        sessionId: params.sessionId,
+      });
+    }
+    if (event.type === "tool_execution_start") {
+      params.onToolStart?.({
+        toolName: event.toolName,
+        toolCallId: event.toolCallId,
+        args: event.args,
+      });
+      params.sendEvent(params.userId, {
+        type: "tool",
+        data: {
+          type: "tool_start",
+          toolUseId: event.toolCallId,
+          toolName: event.toolName,
+          display: toolDisplay(event.toolName, event.args),
+        },
+        sessionId: params.sessionId,
+      });
+    }
+    if (event.type === "tool_execution_end") {
+      params.onToolEnd?.({
+        toolName: event.toolName,
+        toolCallId: event.toolCallId,
+        isError: event.isError,
+      });
+      params.sendEvent(params.userId, {
+        type: "tool",
+        data: {
+          type: "tool_result",
+          toolUseId: event.toolCallId,
+          isError: event.isError,
+        },
+        sessionId: params.sessionId,
+      });
+    }
+  };
+}
+
+export async function appendGatewayUserTranscript(params: {
+  message: InboundMessage;
+  append: (sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>;
+}): Promise<void> {
+  const display = formatDisplayText(params.message);
+  if (!display) {
+    return;
+  }
+  await params.append(params.message.sessionKey, "user", display);
+}
+
+export async function appendGatewayAssistantTranscript(params: {
+  sessionKey: string;
+  reply: string;
+  append: (sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>;
+}): Promise<void> {
+  if (!params.reply) {
+    return;
+  }
+  await params.append(params.sessionKey, "assistant", params.reply);
+}
+
+export async function processGatewayInboundMessage(params: {
+  userId: string;
+  sessionId: string;
+  text: string;
+  handler: Handler;
+  media?: readonly MediaFile[];
+  sendEvent: (userId: string, event: WsEvent) => void;
+  appendTranscript?: (sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>;
+  onAttemptStart?: (sessionKey: string) => void;
+  onAttemptComplete?: (sessionKey: string) => void;
+  onAttemptError?: (sessionKey: string, error: unknown) => void;
+  onUserMessage?: (sessionKey: string, display: string) => void;
+  onAssistantMessage?: (sessionKey: string, reply: string) => void;
+}): Promise<string | null> {
+  const trimmedText = params.text.trim();
+  if (!trimmedText && (!params.media || params.media.length === 0)) {
+    return null;
+  }
+
+  const sessionKey = buildWebSessionKey(params.userId, params.sessionId);
+  const hasMedia = Boolean(params.media && params.media.length > 0);
+  const messageType =
+    hasMedia && trimmedText
+      ? "mixed"
+      : hasMedia
+        ? params.media?.[0]?.type === "image"
+          ? "image"
+          : "file"
+        : "text";
+  const message: InboundMessage = {
+    sessionKey,
+    text: trimmedText,
+    messageType,
+    chatType: "private",
+    senderId: params.userId,
+    ...(hasMedia ? { media: params.media } : {}),
+  };
+
+  const mediaLabel = hasMedia ? ` +${params.media?.length ?? 0} file(s)` : "";
+  console.log(
+    `[Gateway] Received (${params.userId.slice(0, 8)}): ${trimmedText.slice(0, 120)}${mediaLabel}`,
+  );
+
+  params.onAttemptStart?.(sessionKey);
+  const userDisplay = formatDisplayText(message);
+  if (userDisplay) {
+    params.onUserMessage?.(sessionKey, userDisplay);
+  }
+
+  try {
+    if (params.appendTranscript) {
+      try {
+        await appendGatewayUserTranscript({
+          message,
+          append: params.appendTranscript,
+        });
+      } catch (err) {
+        console.error("[Gateway] Failed to append user transcript:", err);
+      }
+    }
+
+    const reply = await params.handler(message);
+    if (reply === null) {
+      params.onAttemptComplete?.(sessionKey);
+      return null;
+    }
+
+    if (params.appendTranscript) {
+      try {
+        await appendGatewayAssistantTranscript({
+          sessionKey,
+          reply,
+          append: params.appendTranscript,
+        });
+      } catch (err) {
+        console.error("[Gateway] Failed to append assistant transcript:", err);
+      }
+    }
+
+    params.onAssistantMessage?.(sessionKey, reply);
+    params.onAttemptComplete?.(sessionKey);
+    params.sendEvent(params.userId, {
+      type: "message",
+      text: reply,
+      id: Date.now().toString(36),
+      sessionId: params.sessionId,
+    });
+    return reply;
+  } catch (err) {
+    params.onAttemptError?.(sessionKey, err);
+    throw err;
+  }
+}

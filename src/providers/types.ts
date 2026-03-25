@@ -1,5 +1,5 @@
 import type {
-  LLMProviderFactory,
+  LLMProvider,
   AgentTool,
   BeforeToolCallContext,
   BeforeToolCallResult,
@@ -41,7 +41,7 @@ export interface ProviderDefinition {
   readonly protocol: string;
   readonly defaultBaseUrl: string;
   readonly models: readonly ModelPreset[];
-  readonly factory?: LLMProviderFactory;
+  readonly factory?: (config: { apiKey?: string; baseUrl?: string }) => LLMProvider;
   readonly tools?: (apiKey: string, baseUrl: string, model: string) => AgentTool[];
   readonly auth?: ProviderAuth;
   readonly catalog?: (apiKey?: string, baseUrl?: string) => Promise<ModelPreset[]>;
