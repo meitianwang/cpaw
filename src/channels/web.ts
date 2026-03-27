@@ -1634,10 +1634,17 @@ let wechatQrSession: {
   startedAt: number;
 } | null = null;
 
+const WECHAT_QR_TTL_MS = 5 * 60_000; // 5 minutes
+
 async function handleAdminChannelWechat(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  // Auto-expire stale QR sessions
+  if (wechatQrSession && Date.now() - wechatQrSession.startedAt > WECHAT_QR_TTL_MS) {
+    wechatQrSession = null;
+  }
+
   const authUser = adminAuth(req, res);
   if (!authUser) return;
 

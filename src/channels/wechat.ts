@@ -49,6 +49,15 @@ function getConfig(): WechatConfig {
 // ---------------------------------------------------------------------------
 
 const contextTokens = new Map<string, string>();
+const CONTEXT_TOKEN_MAX = 10_000;
+
+function setContextToken(senderId: string, token: string): void {
+  contextTokens.set(senderId, token);
+  if (contextTokens.size > CONTEXT_TOKEN_MAX) {
+    const oldest = contextTokens.keys().next().value;
+    if (typeof oldest === "string") contextTokens.delete(oldest);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Message parsing
@@ -124,7 +133,7 @@ function toInboundMessage(msg: WechatMessage): InboundMessage {
 
   // Store context_token for reply
   if (msg.context_token) {
-    contextTokens.set(senderId, msg.context_token);
+    setContextToken(senderId, msg.context_token);
   }
 
   return {
