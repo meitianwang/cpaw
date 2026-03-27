@@ -1,5 +1,6 @@
 import { webPlugin } from "./channels/web.js";
 import { feishuPlugin, setFeishuConfig, setFeishuTranscript, setFeishuNotify } from "./channels/feishu.js";
+import { dingtalkPlugin, setDingtalkConfig, setDingtalkTranscript, setDingtalkNotify } from "./channels/dingtalk.js";
 import {
   registerChannel,
   getChannel,
@@ -29,6 +30,7 @@ import { parseWebSessionKey } from "./gateway/protocol.js";
 
 registerChannel(webPlugin);
 registerChannel(feishuPlugin);
+registerChannel(dingtalkPlugin);
 
 // ---------------------------------------------------------------------------
 // Main
@@ -63,13 +65,15 @@ async function start(): Promise<void> {
       memoryDir,
       transcriptsDir: memoryConfig.sources.includes("sessions") ? transcriptsDir : undefined,
     });
+    await memoryManager.initProvider();
     await memoryManager.sync().catch((err: unknown) => {
       console.warn(`[Memory] Initial sync failed: ${String(err)}`);
     });
     memoryManager.startPeriodicSync();
-    const mode = memoryConfig.openaiApiKey ? "hybrid" : "fts-only";
+    memoryManager.startWatcher();
+    const status = memoryManager.status();
     console.log(
-      `[Memory] Initialized (mode=${mode}, model=${memoryConfig.model}, sources=${memoryConfig.sources.join(",")}, dir=${memoryDir})`,
+      `[Memory] Initialized (mode=${status.searchMode}, provider=${status.provider}, model=${status.model}, sources=${memoryConfig.sources.join(",")}, dir=${memoryDir})`,
     );
   }
 
@@ -168,6 +172,30 @@ async function start(): Promise<void> {
         if (feishu) plugins.push(feishu);
       }
       console.log("[Feishu] Enabled (configured via admin panel)");
+    }
+  }
+
+  // Initialize DingTalk channel from SettingsStore (configured via settings page).
+  {
+    const dbClientId = settingsStore.get("channel.dingtalk.client_id");
+    const dbClientSecret = settingsStore.get("channel.dingtalk.client_secret");
+    const dbDtEnabled = settingsStore.getBool("channel.dingtalk.enabled", false);
+
+    if (dbDtEnabled && dbClientId && dbClientSecret) {
+      const dbDtOwnerId = settingsStore.get("channel.dingtalk.owner_id");
+      setDingtalkConfig({ clientId: dbClientId, clientSecret: dbClientSecret });
+      setDingtalkTranscript((sessionKey, role, text) => messageStore.append(sessionKey, role, text));
+      setDingtalkNotify((sessionKey, role, text) => {
+        const event = { type: "channel_message" as const, sessionKey, role, text };
+        if (dbDtOwnerId) gateway.sendEvent(dbDtOwnerId, event);
+        else gateway.broadcastEvent(event);
+      });
+      if (!channelNames.includes("dingtalk")) {
+        channelNames.push("dingtalk");
+        const dt = getChannel("dingtalk");
+        if (dt) plugins.push(dt);
+      }
+      console.log("[DingTalk] Enabled (configured via settings page)");
     }
   }
 

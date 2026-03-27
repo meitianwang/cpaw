@@ -1391,11 +1391,17 @@ async function handleAdminChannels(
     const feishuAppId = settingsStoreRef.get("channel.feishu.app_id") ?? "";
     const feishuEnabled = settingsStoreRef.getBool("channel.feishu.enabled", false);
     const feishuBotName = settingsStoreRef.get("channel.feishu.bot_name") ?? "";
+    const dtClientId = settingsStoreRef.get("channel.dingtalk.client_id") ?? "";
+    const dtEnabled = settingsStoreRef.getBool("channel.dingtalk.enabled", false);
     jsonResponse(res, 200, {
       feishu: {
         enabled: feishuEnabled && !!feishuAppId,
         app_id: feishuAppId,
         bot_name: feishuBotName,
+      },
+      dingtalk: {
+        enabled: dtEnabled && !!dtClientId,
+        client_id: dtClientId,
       },
     });
     return;
@@ -1515,9 +1521,10 @@ async function handleAdminMemory(
       const body = await readJsonBody(req, 8192);
       const fields: Record<string, string> = {
         "memory.enabled": "enabled",
-        "memory.openai_api_key": "openai_api_key",
-        "memory.openai_base_url": "openai_base_url",
+        "memory.provider": "provider",
+        "memory.fallback": "fallback",
         "memory.model": "model",
+        "memory.citations": "citations",
         "memory.sources": "sources",
         "memory.chunk_tokens": "chunk_tokens",
         "memory.chunk_overlap": "chunk_overlap",
@@ -1528,14 +1535,23 @@ async function handleAdminMemory(
         "memory.hybrid_text_weight": "hybrid_text_weight",
         "memory.sync_interval_minutes": "sync_interval_minutes",
       };
+      const b = body as Record<string, unknown>;
       for (const [storeKey, bodyKey] of Object.entries(fields)) {
-        const value = (body as Record<string, unknown>)[bodyKey];
+        const value = b[bodyKey];
         if (value !== undefined) {
           if (bodyKey === "sources" && Array.isArray(value)) {
             settingsStoreRef.set(storeKey, JSON.stringify(value));
           } else {
             settingsStoreRef.set(storeKey, String(value));
           }
+        }
+      }
+      // Per-provider API keys and base URLs
+      const providersCfg = b.providers as Record<string, Record<string, string>> | undefined;
+      if (providersCfg && typeof providersCfg === "object") {
+        for (const [pid, cfg] of Object.entries(providersCfg)) {
+          if (cfg.api_key !== undefined) settingsStoreRef.set(`memory.providers.${pid}.api_key`, cfg.api_key);
+          if (cfg.base_url !== undefined) settingsStoreRef.set(`memory.providers.${pid}.base_url`, cfg.base_url);
         }
       }
       const config = settingsStoreRef.getMemoryConfig();
@@ -1596,6 +1612,83 @@ async function handleAdminMemorySearch(
   } catch (err) {
     gatewayErrorResponse(res, err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Admin: DingTalk channel connect/disconnect
+// ---------------------------------------------------------------------------
+
+async function handleAdminChannelDingtalk(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const authUser = adminAuth(req, res);
+  if (!authUser) return;
+
+  if (!settingsStoreRef) {
+    jsonResponse(res, 503, { error: "settings store unavailable" });
+    return;
+  }
+
+  if (req.method === "POST") {
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      const clientId = String(parsed.client_id ?? "").trim();
+      const clientSecret = String(parsed.client_secret ?? "").trim();
+      if (!clientId || !clientSecret) {
+        jsonResponse(res, 400, { error: "client_id and client_secret are required" });
+        return;
+      }
+
+      // Validate credentials by getting access token
+      const { probeDingtalkCredentials } = await import("./dingtalk-client.js");
+      const probe = await probeDingtalkCredentials({ clientId, clientSecret });
+      if (!probe.ok) {
+        jsonResponse(res, 400, {
+          ok: false,
+          error: probe.error || "Failed to connect. Check Client ID and Client Secret.",
+        });
+        return;
+      }
+
+      settingsStoreRef.set("channel.dingtalk.client_id", clientId);
+      settingsStoreRef.set("channel.dingtalk.client_secret", clientSecret);
+      settingsStoreRef.set("channel.dingtalk.enabled", "true");
+      settingsStoreRef.set("channel.dingtalk.owner_id", authUser.id);
+
+      // Hot-start dingtalk channel
+      if (handlerRef) {
+        const { setDingtalkConfig, setDingtalkTranscript, setDingtalkNotify, dingtalkPlugin } = await import("./dingtalk.js");
+        setDingtalkConfig({ clientId, clientSecret });
+        if (messageStoreRef) {
+          setDingtalkTranscript((sk, role, text) => messageStoreRef!.append(sk, role, text));
+        }
+        const ownerId = authUser.id;
+        setDingtalkNotify((sk, role, text) => {
+          gateway.sendEvent(ownerId, { type: "channel_message" as const, sessionKey: sk, role, text });
+        });
+        dingtalkPlugin.start(handlerRef).catch((err) => {
+          console.error("[DingTalk] Channel start failed:", err);
+        });
+      }
+
+      jsonResponse(res, 200, { ok: true, client_id: clientId, enabled: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  if (req.method === "DELETE") {
+    settingsStoreRef.set("channel.dingtalk.enabled", "false");
+    settingsStoreRef.set("channel.dingtalk.client_id", "");
+    settingsStoreRef.set("channel.dingtalk.client_secret", "");
+    settingsStoreRef.set("channel.dingtalk.owner_id", "");
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
 }
 
 // ---------------------------------------------------------------------------
@@ -1828,6 +1921,8 @@ async function handleRequest(
       return handleAdminChannels(req, res);
     case "/api/admin/channels/feishu":
       return handleAdminChannelFeishu(req, res);
+    case "/api/admin/channels/dingtalk":
+      return handleAdminChannelDingtalk(req, res);
     case "/api/admin/memory":
       return handleAdminMemory(req, res);
     case "/api/admin/memory/sync":
@@ -1863,12 +1958,19 @@ async function handleRequest(
         jsonResponse(res, 400, { error: "invalid sessionId" });
         return;
       }
-      // Feishu sessions: only the channel owner can access
-      if (histSessionId.startsWith("feishu:")) {
-        const feishuOwnerId = settingsStoreRef?.get("channel.feishu.owner_id");
-        if (feishuOwnerId && feishuOwnerId !== histAuth.user.id) {
-          jsonResponse(res, 403, { error: "access denied" });
-          return;
+      // Channel sessions: only the channel owner can access
+      const channelOwnerChecks: Record<string, string> = {
+        "feishu:": "channel.feishu.owner_id",
+        "dingtalk:": "channel.dingtalk.owner_id",
+      };
+      for (const [prefix, ownerKey] of Object.entries(channelOwnerChecks)) {
+        if (histSessionId.startsWith(prefix)) {
+          const ownerId = settingsStoreRef?.get(ownerKey);
+          if (ownerId && ownerId !== histAuth.user.id) {
+            jsonResponse(res, 403, { error: "access denied" });
+            return;
+          }
+          break;
         }
       }
       const limitStr = url.searchParams.get("limit") ?? "200";
@@ -1900,11 +2002,15 @@ async function handleRequest(
       }
       if (req.method === "GET") {
         try {
+          // Build list of channel prefixes this user can see
+          const channels: string[] = [];
           const feishuOwnerId = settingsStoreRef?.get("channel.feishu.owner_id");
-          const isFeishuOwner = !feishuOwnerId || feishuOwnerId === sessAuth.user.id;
+          if (!feishuOwnerId || feishuOwnerId === sessAuth.user.id) channels.push("feishu:");
+          const dtOwnerId = settingsStoreRef?.get("channel.dingtalk.owner_id");
+          if (!dtOwnerId || dtOwnerId === sessAuth.user.id) channels.push("dingtalk:");
           const result = await gateway.listSessions({
             userId: sessAuth.user.id,
-            includeFeishu: isFeishuOwner,
+            includeChannels: channels,
           });
           jsonResponse(res, 200, result);
         } catch (err) {

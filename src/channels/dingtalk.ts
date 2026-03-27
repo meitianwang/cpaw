@@ -1,0 +1,296 @@
+/**
+ * DingTalk channel plugin for Klaus.
+ * Aligned with openclaw-china/extensions/dingtalk/src/
+ *
+ * Uses DingTalk Stream SDK for real-time message reception.
+ * Supports direct messages and group chats (with @mention detection).
+ */
+
+import { TOPIC_ROBOT, type DWClient, type DWClientDownStream } from "dingtalk-stream";
+import type { ChannelPlugin } from "./types.js";
+import type { Handler } from "../types.js";
+import type { InboundMessage, MessageType } from "../message.js";
+import type {
+  DingtalkConfig,
+  DingtalkRawMessage,
+  DingtalkMediaContent,
+} from "./dingtalk-types.js";
+import { createDingtalkClient } from "./dingtalk-client.js";
+import { sendTextMessage, sendMessage } from "./dingtalk-send.js";
+
+// ---------------------------------------------------------------------------
+// Module state
+// ---------------------------------------------------------------------------
+
+let dingtalkConfig: DingtalkConfig | undefined;
+let transcriptAppend: ((sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>) | undefined;
+let notifyWebClients: ((sessionKey: string, role: "user" | "assistant", text: string) => void) | undefined;
+
+export type { DingtalkConfig } from "./dingtalk-types.js";
+
+export function setDingtalkConfig(config: DingtalkConfig): void {
+  dingtalkConfig = config;
+}
+
+export function setDingtalkTranscript(
+  append: (sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>,
+): void {
+  transcriptAppend = append;
+}
+
+export function setDingtalkNotify(
+  notify: (sessionKey: string, role: "user" | "assistant", text: string) => void,
+): void {
+  notifyWebClients = notify;
+}
+
+function getConfig(): DingtalkConfig {
+  if (!dingtalkConfig) throw new Error("DingTalk config not set");
+  return dingtalkConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Message parsing (aligned with openclaw-china bot-handler.ts)
+// ---------------------------------------------------------------------------
+
+function parseMessageContent(raw: DingtalkRawMessage): { text: string; contentType: string } {
+  // Text message
+  if (raw.msgtype === "text" && raw.text?.content) {
+    return { text: raw.text.content.trim(), contentType: "text" };
+  }
+
+  // Media messages — extract content
+  if (raw.content) {
+    const content: DingtalkMediaContent =
+      typeof raw.content === "string"
+        ? (() => { try { return JSON.parse(raw.content); } catch { return {}; } })()
+        : raw.content;
+
+    // Audio with recognition
+    if (raw.msgtype === "audio" && content.recognition) {
+      return { text: content.recognition.trim(), contentType: "audio" };
+    }
+
+    // Rich text
+    if (raw.msgtype === "richText" && content.richText) {
+      const elements = typeof content.richText === "string"
+        ? (() => { try { return JSON.parse(content.richText); } catch { return []; } })()
+        : content.richText;
+
+      if (Array.isArray(elements)) {
+        const texts = elements
+          .filter((el) => el.type === "text" && el.text)
+          .map((el) => el.text!);
+        if (texts.length > 0) {
+          return { text: texts.join(""), contentType: "richText" };
+        }
+      }
+    }
+
+    // File
+    if (raw.msgtype === "file" && content.fileName) {
+      return { text: `[文件: ${content.fileName}]`, contentType: "file" };
+    }
+
+    // Picture / video
+    if (raw.msgtype === "picture" || raw.msgtype === "image") {
+      return { text: "[图片]", contentType: "image" };
+    }
+    if (raw.msgtype === "video") {
+      return { text: "[视频]", contentType: "video" };
+    }
+  }
+
+  return { text: `[${raw.msgtype || "unknown"}]`, contentType: raw.msgtype || "unknown" };
+}
+
+function toMessageType(contentType: string): MessageType {
+  switch (contentType) {
+    case "text":
+    case "richText":
+    case "audio":
+      return "text";
+    case "image":
+    case "picture":
+      return "image";
+    case "file":
+      return "file";
+    case "video":
+      return "video";
+    default:
+      return "text";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Message dedup (in-memory, 60s TTL, aligned with openclaw-china)
+// ---------------------------------------------------------------------------
+
+const processedMessages = new Map<string, number>();
+const MESSAGE_DEDUP_TTL_MS = 60_000;
+const MESSAGE_DEDUP_MAX_ENTRIES = 10_000;
+
+function isDuplicate(key: string): boolean {
+  const now = Date.now();
+  const prev = processedMessages.get(key);
+  if (typeof prev === "number" && now - prev < MESSAGE_DEDUP_TTL_MS) {
+    return true;
+  }
+
+  processedMessages.set(key, now);
+
+  // Prune old entries
+  if (processedMessages.size > MESSAGE_DEDUP_MAX_ENTRIES) {
+    for (const [k, ts] of processedMessages) {
+      if (now - ts > MESSAGE_DEDUP_TTL_MS) processedMessages.delete(k);
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Convert raw message → InboundMessage
+// ---------------------------------------------------------------------------
+
+function toInboundMessage(raw: DingtalkRawMessage): InboundMessage {
+  const { text, contentType } = parseMessageContent(raw);
+  const chatType = raw.conversationType === "1" ? "private" : "group";
+
+  // Strip bot @mention from text
+  let cleanText = text;
+  if (chatType === "group" && raw.atUsers?.length) {
+    // DingTalk includes @bot name in text, remove it
+    cleanText = text.replace(/@\S+\s*/g, "").trim();
+  }
+
+  const sessionKey = chatType === "private"
+    ? `dingtalk:${raw.senderId}`
+    : `dingtalk:${raw.conversationId}`;
+
+  return {
+    sessionKey,
+    text: cleanText,
+    messageType: toMessageType(contentType),
+    chatType: chatType === "private" ? "private" : "group",
+    senderId: raw.senderId,
+    senderName: raw.senderNick,
+    timestamp: Date.now(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Plugin export
+// ---------------------------------------------------------------------------
+
+export const dingtalkPlugin: ChannelPlugin = {
+  meta: {
+    id: "dingtalk",
+    label: "DingTalk",
+    description: "钉钉机器人，通过 Stream 模式接收消息",
+  },
+
+  capabilities: {
+    dm: true,
+    group: true,
+    mention: true,
+  },
+
+  start: async (handler: Handler) => {
+    const config = getConfig();
+
+    console.log("[DingTalk] Starting (mode=stream)");
+
+    // Create Stream client
+    const client = createDingtalkClient(config);
+
+    // Register message handler
+    client.registerCallbackListener(TOPIC_ROBOT, (payload: DWClientDownStream) => {
+      const streamMessageId = payload?.headers?.messageId;
+
+      // ACK immediately
+      if (streamMessageId) {
+        try {
+          client.socketCallBackResponse(streamMessageId, { success: true });
+        } catch (err) {
+          console.error(`[DingTalk] ACK failed for ${streamMessageId}:`, err);
+        }
+      }
+
+      // Dedup
+      const dedupeKey = streamMessageId ? `dingtalk:${streamMessageId}` : undefined;
+      if (dedupeKey && isDuplicate(dedupeKey)) return;
+
+      // Parse and handle
+      let raw: DingtalkRawMessage;
+      try {
+        raw = JSON.parse(payload.data) as DingtalkRawMessage;
+        if (streamMessageId) raw.streamMessageId = streamMessageId;
+      } catch (err) {
+        console.error("[DingTalk] Failed to parse message:", err);
+        return;
+      }
+
+      const senderName = raw.senderNick ?? raw.senderId;
+      const preview = (raw.text?.content ?? "").slice(0, 50);
+      console.log(`[DingTalk] Inbound: from=${senderName} text="${preview}"`);
+
+      // In group chats, only respond when bot is @mentioned
+      if (raw.conversationType === "2") {
+        const botMentioned = raw.atUsers?.some(
+          (u) => u.dingtalkId === raw.robotCode,
+        );
+        if (!botMentioned) return;
+      }
+
+      // Process message
+      void (async () => {
+        try {
+          const msg = toInboundMessage(raw);
+          if (!msg.text.trim()) return;
+
+          // Write user message to transcript + push to web
+          if (transcriptAppend) {
+            await transcriptAppend(msg.sessionKey, "user", msg.text.trim());
+          }
+          if (notifyWebClients) notifyWebClients(msg.sessionKey, "user", msg.text.trim());
+
+          const reply = await handler(msg);
+          if (reply) {
+            // Write assistant reply to transcript + push to web
+            if (transcriptAppend) {
+              await transcriptAppend(msg.sessionKey, "assistant", reply);
+            }
+            if (notifyWebClients) notifyWebClients(msg.sessionKey, "assistant", reply);
+
+            // Send reply to DingTalk
+            const chatType = raw.conversationType === "1" ? "direct" : "group";
+            const to = chatType === "direct" ? raw.senderId : raw.conversationId;
+            await sendTextMessage({ config, to, text: reply, chatType });
+          }
+        } catch (err) {
+          console.error("[DingTalk] Error handling message:", err);
+        }
+      })();
+    });
+
+    // Connect
+    await client.connect();
+    console.log("[DingTalk] Stream client connected");
+
+    // Block forever
+    return new Promise<void>((resolve) => {
+      const shutdown = () => {
+        console.log("[DingTalk] Shutting down...");
+        try { client.disconnect(); } catch { /* ignore */ }
+        resolve();
+      };
+      process.on("SIGTERM", shutdown);
+      process.on("SIGINT", shutdown);
+    });
+  },
+
+  deliver: async (to: string, text: string) => {
+    const config = getConfig();
+    await sendMessage({ config, to, text });
+  },
+};

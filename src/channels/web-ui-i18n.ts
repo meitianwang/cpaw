@@ -110,6 +110,12 @@ export function getChatI18n(): string {
       settings_ch_feishu_step_callback: '6. Callback Config \u2192 select "Long Connection" \u2192 Add "Card Interaction" callback',
       settings_ch_feishu_step_publish: '7. Click "Create Version", publish the app',
       settings_ch_feishu_open_console: "Open Feishu Console \u2192",
+      settings_ch_dingtalk: "DingTalk", settings_ch_dingtalk_desc: "Connect to DingTalk bot for team messaging",
+      settings_ch_dingtalk_guide_title: "Setup Steps",
+      settings_ch_dingtalk_step1: "Create app on DingTalk Open Platform",
+      settings_ch_dingtalk_step1_link: "Create App",
+      settings_ch_dingtalk_step2: 'Add "Bot" capability, enable Stream mode',
+      settings_ch_dingtalk_step3: "Copy Client ID (AppKey) and Client Secret (AppSecret) below",
       settings_confirm_delete: "Are you sure?",
     },
     zh: {
@@ -219,6 +225,12 @@ export function getChatI18n(): string {
       settings_ch_feishu_step_callback: "6. \u56de\u8c03\u914d\u7f6e \u2192 \u9009\u62e9\u300c\u957f\u8fde\u63a5\u300d\u2192 \u6dfb\u52a0\u300c\u5361\u7247\u56de\u4f20\u4ea4\u4e92\u300d\u56de\u8c03",
       settings_ch_feishu_step_publish: "7. \u70b9\u51fb\u300c\u521b\u5efa\u7248\u672c\u300d\u5e76\u53d1\u5e03\u5e94\u7528",
       settings_ch_feishu_open_console: "\u6253\u5f00\u98de\u4e66\u63a7\u5236\u53f0 \u2192",
+      settings_ch_dingtalk: "\u9489\u9489", settings_ch_dingtalk_desc: "\u63a5\u5165\u9489\u9489\u673a\u5668\u4eba\uff0c\u5728\u9489\u9489\u7fa4\u804a\u6216\u79c1\u804a\u4e2d\u4e0e Klaus \u5bf9\u8bdd",
+      settings_ch_dingtalk_guide_title: "\u914d\u7f6e\u6b65\u9aa4",
+      settings_ch_dingtalk_step1: "\u5728\u9489\u9489\u5f00\u653e\u5e73\u53f0\u521b\u5efa\u5e94\u7528",
+      settings_ch_dingtalk_step1_link: "\u524d\u5f80\u521b\u5efa",
+      settings_ch_dingtalk_step2: "\u6dfb\u52a0\u300c\u673a\u5668\u4eba\u300d\u80fd\u529b\uff0c\u542f\u7528 Stream \u6a21\u5f0f",
+      settings_ch_dingtalk_step3: "\u590d\u5236 Client ID (AppKey) \u548c Client Secret (AppSecret) \u586b\u5165\u4e0b\u65b9",
       settings_confirm_delete: "\u786e\u5b9a\u64cd\u4f5c\uff1f",
     }
   };

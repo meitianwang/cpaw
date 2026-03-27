@@ -219,6 +219,49 @@ export function getChatBodyHtml(): string {
                 </div>
               </div>
             </div>
+
+              <!-- DingTalk card -->
+              <div style="border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:16px" id="s-ch-dingtalk-card">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#0089FF"/><path d="M25.2 14.8c-.5-.3-3.2-1.5-5.4-.7-1 .4-1.8 1.2-2.3 2l-.3-.1c-1.4-.4-2.5.3-2.8.5-.3.2-.6.5-.8.8l4.5 1.5-5.3 3.2 7.8-2.2-2.5 5 4.8-5.5c.8-.9 1.5-2.1 1.5-3.1 0-.5-.3-.9-.7-1.2l-.5-.2z" fill="white"/></svg>
+                    <div>
+                      <div style="font-weight:600;font-size:15px" data-i18n="settings_ch_dingtalk">DingTalk</div>
+                      <div style="font-size:12px;color:var(--fg-tertiary)" data-i18n="settings_ch_dingtalk_desc">Connect to DingTalk bot for team messaging</div>
+                    </div>
+                  </div>
+                  <span class="s-badge" id="s-ch-dingtalk-status"></span>
+                </div>
+                <div id="s-ch-dingtalk-connected" style="display:none;margin-top:16px">
+                  <div style="border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                      <div style="font-size:12px;color:var(--fg-tertiary)">Client ID</div>
+                      <div style="font-family:var(--font-mono);font-size:13px" id="s-ch-dingtalk-clientid-display"></div>
+                    </div>
+                    <button class="s-btn s-btn-danger" id="s-ch-dingtalk-disconnect-btn" data-i18n="settings_ch_disconnect">Disconnect</button>
+                  </div>
+                </div>
+                <div id="s-ch-dingtalk-form" style="display:none;margin-top:16px">
+                  <div style="font-size:13px;color:var(--fg-tertiary);line-height:1.7;margin-bottom:20px">
+                    <div style="font-weight:600;color:var(--fg);margin-bottom:8px" data-i18n="settings_ch_dingtalk_guide_title">Setup Steps</div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">1.</span> <span data-i18n="settings_ch_dingtalk_step1">Create app on DingTalk Open Platform</span> <a href="https://open-dev.dingtalk.com/fe/app" target="_blank" rel="noopener" style="margin-left:6px;color:var(--accent);text-decoration:underline" data-i18n="settings_ch_dingtalk_step1_link">Create App</a></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">2.</span> <span data-i18n="settings_ch_dingtalk_step2">Add "Bot" capability, enable Stream mode</span></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">3.</span> <span data-i18n="settings_ch_dingtalk_step3">Copy Client ID (AppKey) and Client Secret (AppSecret) below</span></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:12px">
+                    <div><label class="settings-field-label">Client ID (AppKey) <span style="color:#dc2626">*</span></label><input class="settings-field-input" id="s-ch-dingtalk-clientid" style="max-width:100%" placeholder="dingxxxxxxxx"></div>
+                    <div><label class="settings-field-label">Client Secret (AppSecret) <span style="color:#dc2626">*</span></label><input class="settings-field-input" id="s-ch-dingtalk-secret" type="password" style="max-width:100%" placeholder="Enter Client Secret"></div>
+                  </div>
+                  <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+                    <button class="s-btn s-btn-ghost" id="s-ch-dingtalk-cancel-btn" data-i18n="settings_cancel">Cancel</button>
+                    <button class="s-btn s-btn-primary" id="s-ch-dingtalk-connect-btn" data-i18n="settings_ch_connect">Connect</button>
+                  </div>
+                </div>
+                <div id="s-ch-dingtalk-setup" style="margin-top:16px">
+                  <button class="s-btn s-btn-primary" id="s-ch-dingtalk-setup-btn" data-i18n="settings_ch_setup">Configure</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- MCP tab -->

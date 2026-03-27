@@ -1,14 +1,21 @@
 import type { MessageStore } from "../../message-store.js";
 import { buildWebSessionKey } from "../protocol.js";
 
+/** Channel prefixes that use their own session key format (not web:{userId}:{sessionId}). */
+const CHANNEL_PREFIXES = ["feishu:", "dingtalk:"] as const;
+
+function isChannelSession(sessionId: string): boolean {
+  return CHANNEL_PREFIXES.some((p) => sessionId.startsWith(p));
+}
+
 export async function readGatewayHistory(params: {
   messageStore: MessageStore;
   userId: string;
   sessionId: string;
   limit: number;
 }): Promise<{ messages: readonly unknown[]; total: number }> {
-  // Feishu sessions use their own key format (feishu:xxx), not web:{userId}:{sessionId}
-  const sessionKey = params.sessionId.startsWith("feishu:")
+  // Channel sessions use their own key format, not web:{userId}:{sessionId}
+  const sessionKey = isChannelSession(params.sessionId)
     ? params.sessionId
     : buildWebSessionKey(params.userId, params.sessionId);
   const all = await params.messageStore.readHistory(sessionKey);
@@ -19,23 +26,25 @@ export async function readGatewayHistory(params: {
 export async function listGatewaySessions(params: {
   messageStore: MessageStore;
   userId: string;
-  /** If true, include feishu channel sessions (only the feishu owner should see them). */
-  includeFeishu?: boolean;
+  /** Channel prefixes to include (e.g. ["feishu:", "dingtalk:"]). */
+  includeChannels?: readonly string[];
 }): Promise<{ sessions: readonly unknown[] }> {
   const webPrefix = buildWebSessionKey(params.userId, "");
   const webSessions = await params.messageStore.listSessions(webPrefix);
 
-  // Feishu sessions use "feishu:" prefix — only shown to the user who configured the channel
-  let feishuSessions: unknown[] = [];
-  if (params.includeFeishu) {
-    const raw = await params.messageStore.listSessions("feishu:");
-    feishuSessions = raw.map((s) => ({
-      ...s,
-      sessionId: `feishu:${(s as { sessionId: string }).sessionId}`,
-    }));
+  // Collect sessions from each enabled channel
+  const channelSessions: unknown[] = [];
+  for (const prefix of params.includeChannels ?? []) {
+    const raw = await params.messageStore.listSessions(prefix);
+    for (const s of raw) {
+      channelSessions.push({
+        ...s,
+        sessionId: `${prefix}${(s as { sessionId: string }).sessionId}`,
+      });
+    }
   }
 
-  return { sessions: [...webSessions, ...feishuSessions] };
+  return { sessions: [...webSessions, ...channelSessions] };
 }
 
 export function deleteGatewaySession(params: {
@@ -43,7 +52,7 @@ export function deleteGatewaySession(params: {
   userId: string;
   sessionId: string;
 }): boolean {
-  const key = params.sessionId.startsWith("feishu:")
+  const key = isChannelSession(params.sessionId)
     ? params.sessionId
     : buildWebSessionKey(params.userId, params.sessionId);
   return params.messageStore.deleteSession(key);

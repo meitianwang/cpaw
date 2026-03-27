@@ -380,8 +380,11 @@ export function getSettingsJs(): string {
     adminApi("channels", "GET").then(function(d) {
       var feishu = d && d.feishu;
       showFeishuState(feishu && feishu.enabled ? "connected" : "setup", feishu);
+      var dt = d && d.dingtalk;
+      showDingtalkState(dt && dt.enabled ? "connected" : "setup", dt);
     }).catch(function() {
       showFeishuState("setup", null);
+      showDingtalkState("setup", null);
     });
   }
 
@@ -430,6 +433,74 @@ export function getSettingsJs(): string {
       .then(function() {
         showSettingsToast(tt("settings_ch_disconnected"));
         showFeishuState("setup", null);
+      })
+      .catch(function() { showSettingsToast(tt("settings_failed")); });
+  });
+
+  // --- DingTalk ---
+  var sDtStatus = document.getElementById("s-ch-dingtalk-status");
+  var sDtConnected = document.getElementById("s-ch-dingtalk-connected");
+  var sDtForm = document.getElementById("s-ch-dingtalk-form");
+  var sDtSetup = document.getElementById("s-ch-dingtalk-setup");
+
+  function showDingtalkState(state, data) {
+    sDtConnected.style.display = state === "connected" ? "block" : "none";
+    sDtForm.style.display = state === "form" ? "block" : "none";
+    sDtSetup.style.display = state === "setup" ? "block" : "none";
+    if (state === "connected") {
+      sDtStatus.textContent = tt("settings_ch_connected");
+      sDtStatus.className = "s-badge s-badge-green";
+      document.getElementById("s-ch-dingtalk-clientid-display").textContent = data && data.client_id || "";
+    } else {
+      sDtStatus.textContent = tt("settings_ch_not_connected");
+      sDtStatus.className = "s-badge s-badge-gray";
+    }
+  }
+
+  function loadDingtalkState() {
+    adminApi("channels", "GET").then(function(d) {
+      var dt = d && d.dingtalk;
+      showDingtalkState(dt && dt.enabled ? "connected" : "setup", dt);
+    }).catch(function() { showDingtalkState("setup", null); });
+  }
+
+  document.getElementById("s-ch-dingtalk-setup-btn").addEventListener("click", function() {
+    document.getElementById("s-ch-dingtalk-clientid").value = "";
+    document.getElementById("s-ch-dingtalk-secret").value = "";
+    showDingtalkState("form", null);
+  });
+
+  document.getElementById("s-ch-dingtalk-cancel-btn").addEventListener("click", function() {
+    loadDingtalkState();
+  });
+
+  document.getElementById("s-ch-dingtalk-connect-btn").addEventListener("click", function() {
+    var clientId = document.getElementById("s-ch-dingtalk-clientid").value.trim();
+    var secret = document.getElementById("s-ch-dingtalk-secret").value.trim();
+    if (!clientId || !secret) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = tt("settings_ch_connecting");
+    adminApi("channels/dingtalk", "POST", { client_id: clientId, client_secret: secret })
+      .then(function(d) {
+        if (d && d.ok) {
+          showSettingsToast(tt("settings_ch_connect_ok"));
+          showDingtalkState("connected", d);
+        } else {
+          showSettingsToast(d && d.error ? d.error : tt("settings_ch_connect_fail"));
+          showDingtalkState("form", null);
+        }
+      })
+      .catch(function() { showSettingsToast(tt("settings_ch_connect_fail")); })
+      .finally(function() { btn.disabled = false; btn.textContent = tt("settings_ch_connect"); });
+  });
+
+  document.getElementById("s-ch-dingtalk-disconnect-btn").addEventListener("click", function() {
+    if (!confirm(tt("settings_confirm_delete"))) return;
+    adminApi("channels/dingtalk", "DELETE")
+      .then(function() {
+        showSettingsToast(tt("settings_ch_disconnected"));
+        showDingtalkState("setup", null);
       })
       .catch(function() { showSettingsToast(tt("settings_failed")); });
   });
