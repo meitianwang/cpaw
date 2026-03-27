@@ -17,6 +17,7 @@ import type {
 } from "./dingtalk-types.js";
 import { createDingtalkClient } from "./dingtalk-client.js";
 import { sendTextMessage, sendMessage } from "./dingtalk-send.js";
+import { createAICard, finishAICard } from "./dingtalk-card.js";
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -254,6 +255,14 @@ export const dingtalkPlugin: ChannelPlugin = {
           }
           if (notifyWebClients) notifyWebClients(msg.sessionKey, "user", msg.text.trim());
 
+          // Create AI Card as typing indicator (user sees "processing" immediately)
+          const card = await createAICard({
+            config,
+            conversationType: raw.conversationType,
+            conversationId: raw.conversationId,
+            senderId: raw.senderId,
+          });
+
           const reply = await handler(msg);
           if (reply) {
             // Write assistant reply to transcript + push to web
@@ -262,10 +271,14 @@ export const dingtalkPlugin: ChannelPlugin = {
             }
             if (notifyWebClients) notifyWebClients(msg.sessionKey, "assistant", reply);
 
-            // Send reply to DingTalk
-            const chatType = raw.conversationType === "1" ? "direct" : "group";
-            const to = chatType === "direct" ? raw.senderId : raw.conversationId;
-            await sendTextMessage({ config, to, text: reply, chatType });
+            // Send reply: update AI Card if available, otherwise send text
+            if (card) {
+              await finishAICard({ card, content: reply });
+            } else {
+              const chatType = raw.conversationType === "1" ? "direct" : "group";
+              const to = chatType === "direct" ? raw.senderId : raw.conversationId;
+              await sendTextMessage({ config, to, text: reply, chatType });
+            }
           }
         } catch (err) {
           console.error("[DingTalk] Error handling message:", err);
