@@ -397,7 +397,7 @@ const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self' cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' fonts.googleapis.com cdn.jsdelivr.net 'unsafe-inline'; font-src fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-src 'self' https://*.weixin.qq.com;",
+    "default-src 'self'; script-src 'self' cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' fonts.googleapis.com cdn.jsdelivr.net 'unsafe-inline'; font-src fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-src 'self';",
 };
 
 function serveHtmlPage(res: ServerResponse, html: string): void {
@@ -1647,10 +1647,12 @@ async function handleToolsList(
     jsonResponse(res, 503, { error: "agent manager unavailable" });
     return;
   }
-  const tools = agentManagerRef.buildTools();
-  jsonResponse(res, 200, {
-    tools: tools.map((t) => ({ name: t.name, label: t.label, description: t.description })),
-  });
+  const tools = agentManagerRef.buildTools().map((t) => ({
+    name: t.name, label: t.label, description: t.description,
+  }));
+  // Virtual tool: sandbox_exec (available when sandbox is enabled)
+  tools.push({ name: "sandbox_exec", label: "Sandbox Exec", description: "Execute a command in Docker sandbox" });
+  jsonResponse(res, 200, { tools });
 }
 
 async function handleToolsInvoke(
@@ -1730,7 +1732,10 @@ async function handleAdminChannelWechat(
         status: "wait",
         startedAt: Date.now(),
       };
-      jsonResponse(res, 200, { qrcodeUrl: qr.qrcodeUrl });
+      // Generate QR code image as base64 data URL (iframe/img won't work due to X-Frame-Options)
+      const QRCode = (await import("qrcode")).default;
+      const qrDataUrl = await QRCode.toDataURL(qr.qrcodeUrl, { width: 280, margin: 2 });
+      jsonResponse(res, 200, { qrcodeDataUrl: qrDataUrl });
     } catch (err) {
       jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -2016,11 +2021,11 @@ async function handleRequest(
     case "/avatar.jpg":
       return servePublicFile(res, "avatar.jpg", "image/jpeg");
     case "/feishu.png":
-      return servePublicFile(res, "feishu.png", "image/png");
+      return servePublicFile(res, "feishu.png", "image/jpeg");
     case "/dingtalk.png":
       return servePublicFile(res, "dingtalk.png", "image/jpeg");
     case "/wechat.png":
-      return servePublicFile(res, "wechat.png", "image/png");
+      return servePublicFile(res, "wechat.png", "image/jpeg");
 
     // Auth routes
     case "/api/auth/register":
