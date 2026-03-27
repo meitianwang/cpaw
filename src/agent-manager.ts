@@ -27,6 +27,8 @@ import { refreshAccessToken } from "./auth/oauth.js";
 import type { OAuthProviderAuth } from "./auth/oauth.js";
 import type { MemoryManager } from "./memory/manager.js";
 import { createMemorySearchTool, createMemoryGetTool, buildMemoryPromptSection } from "./memory/tools.js";
+import { createMemorySaveTool, MEMORY_FLUSH_USER_PROMPT } from "./memory/memory-write.js";
+import { ToolLoopDetector } from "./tool-loop-detector.js";
 
 type AgentEventCallback = (event: AgentEvent) => void;
 
@@ -83,8 +85,13 @@ function createMcpClient(config: MCPServerConfig): MCPClient {
   };
 }
 
+interface SessionEntry {
+  agent: Agent;
+  loopDetector: ToolLoopDetector;
+}
+
 export class AgentSessionManager {
-  private readonly agents = new Map<string, Agent>();
+  private readonly sessions = new Map<string, SessionEntry>();
   private readonly store: SettingsStore;
   private readonly maxSessions: number;
   private memoryManager: MemoryManager | null = null;
@@ -103,7 +110,7 @@ export class AgentSessionManager {
     text: string,
     onEvent?: AgentEventCallback,
   ): Promise<string | null> {
-    const agent = await this.getOrCreate(sessionKey);
+    const { agent } = await this.getOrCreate(sessionKey);
 
     let unsubscribe: (() => void) | undefined;
     if (onEvent) {
@@ -119,24 +126,25 @@ export class AgentSessionManager {
   }
 
   async reset(sessionKey: string): Promise<void> {
-    const agent = this.agents.get(sessionKey);
-    if (agent) {
-      this.agents.delete(sessionKey);
-      await agent.dispose();
+    const entry = this.sessions.get(sessionKey);
+    if (entry) {
+      this.sessions.delete(sessionKey);
+      await entry.agent.dispose();
     }
   }
 
   async disposeAll(): Promise<void> {
-    const agents = [...this.agents.values()];
-    this.agents.clear();
-    await Promise.allSettled(agents.map((a) => a.dispose()));
+    const entries = [...this.sessions.values()];
+    this.sessions.clear();
+    await Promise.allSettled(entries.map((e) => e.agent.dispose()));
   }
 
-  private async getOrCreate(sessionKey: string): Promise<Agent> {
-    const existing = this.agents.get(sessionKey);
+  private async getOrCreate(sessionKey: string): Promise<SessionEntry> {
+    const existing = this.sessions.get(sessionKey);
     if (existing) {
-      this.agents.delete(sessionKey);
-      this.agents.set(sessionKey, existing);
+      // LRU: move to end
+      this.sessions.delete(sessionKey);
+      this.sessions.set(sessionKey, existing);
       return existing;
     }
 
@@ -224,12 +232,21 @@ export class AgentSessionManager {
       tools.push(createMemoryGetTool(this.memoryManager));
     }
 
+    const loopDetector = new ToolLoopDetector();
+    const providerHooks = providerDef?.hooks;
     const agent = createAgent({
       model,
       systemPrompt,
       tools,
       approval: { yolo },
-      hooks: providerDef?.hooks,
+      hooks: {
+        async beforeToolCall(ctx) {
+          const loopResult = loopDetector.check(ctx);
+          if (loopResult?.block) return loopResult;
+          return providerHooks?.beforeToolCall?.(ctx);
+        },
+        afterToolCall: providerHooks?.afterToolCall,
+      },
       thinkingLevel: (modelRecord.thinking || "off") as ThinkingLevel,
       // Session persistence: JSONL files in ~/.klaus/agent-sessions/
       session: {
@@ -254,17 +271,18 @@ export class AgentSessionManager {
         : {}),
     });
 
-    this.agents.set(sessionKey, agent);
-    return agent;
+    const entry: SessionEntry = { agent, loopDetector };
+    this.sessions.set(sessionKey, entry);
+    return entry;
   }
 
   private evictIfNeeded(): void {
-    if (this.agents.size < this.maxSessions) return;
+    if (this.sessions.size < this.maxSessions) return;
 
-    for (const [key, agent] of this.agents) {
-      if (!agent.state.isRunning) {
-        this.agents.delete(key);
-        agent.dispose().catch((err) => {
+    for (const [key, entry] of this.sessions) {
+      if (!entry.agent.state.isRunning) {
+        this.sessions.delete(key);
+        entry.agent.dispose().catch((err) => {
           console.error(`[AgentManager] Dispose failed for ${key}:`, err);
         });
         return;
