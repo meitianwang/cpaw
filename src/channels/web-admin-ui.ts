@@ -257,6 +257,9 @@ tr.clickable:hover { background: var(--card-bg); }
       <button class="nav-item" data-tab="invites">
         <span data-i18n="tab_invites">Invites</span>
       </button>
+      <button class="nav-item" data-tab="memory">
+        <span data-i18n="tab_memory">Memory</span>
+      </button>
     </div>
     <div class="sidebar-footer">
       <a href="/">
@@ -474,6 +477,132 @@ tr.clickable:hover { background: var(--card-bg); }
       </div>
       <div id="invites-table-wrap"></div>
       <div id="invites-empty" class="empty" style="display:none" data-i18n="no_invites">No invite codes yet.</div>
+    </div>
+
+    <!-- ============ Memory Tab ============ -->
+    <div id="tab-memory" class="tab-panel">
+      <h1 class="page-title" data-i18n="tab_memory">Memory</h1>
+
+      <!-- Enable/Disable -->
+      <div class="section">
+        <div class="section-header">Configuration</div>
+        <div class="card">
+          <div class="card-row">
+            <div class="card-label">Enable Memory</div>
+            <div class="card-control"><label class="toggle"><input id="mem-enabled" type="checkbox"><span class="slider"></span></label></div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Embedding Provider</div>
+            <div class="card-control">
+              <select id="mem-provider" class="f-input f-input-sm">
+                <option value="auto">auto (detect available)</option>
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Gemini</option>
+                <option value="voyage">Voyage</option>
+                <option value="mistral">Mistral</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Fallback Provider</div>
+            <div class="card-control">
+              <select id="mem-fallback" class="f-input f-input-sm">
+                <option value="none">none</option>
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Gemini</option>
+                <option value="voyage">Voyage</option>
+                <option value="mistral">Mistral</option>
+                <option value="ollama">Ollama</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Embedding Model</div>
+            <div class="card-control"><input id="mem-model" type="text" class="f-input f-input-sm" placeholder="(auto based on provider)"></div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Citations</div>
+            <div class="card-control">
+              <select id="mem-citations" class="f-input f-input-sm">
+                <option value="auto">auto</option>
+                <option value="on">on</option>
+                <option value="off">off</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Sources</div>
+            <div class="card-control">
+              <label><input type="checkbox" id="mem-src-memory" checked> memory</label>
+              <label style="margin-left:8px"><input type="checkbox" id="mem-src-sessions"> sessions</label>
+            </div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Chunk Tokens / Overlap</div>
+            <div class="card-control" style="display:flex;gap:8px">
+              <input id="mem-chunk-tokens" type="number" class="f-input f-input-sm" style="width:80px" value="400">
+              <input id="mem-chunk-overlap" type="number" class="f-input f-input-sm" style="width:80px" value="80">
+            </div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Max Results / Min Score</div>
+            <div class="card-control" style="display:flex;gap:8px">
+              <input id="mem-max-results" type="number" class="f-input f-input-sm" style="width:80px" value="6">
+              <input id="mem-min-score" type="number" step="0.01" class="f-input f-input-sm" style="width:80px" value="0.35">
+            </div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Hybrid Search</div>
+            <div class="card-control"><label class="toggle"><input id="mem-hybrid" type="checkbox" checked><span class="slider"></span></label></div>
+          </div>
+          <div class="card-row">
+            <div class="card-label">Sync Interval (min)</div>
+            <div class="card-control"><input id="mem-sync-interval" type="number" class="f-input f-input-sm" style="width:80px" value="5"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-provider API keys -->
+      <div class="section">
+        <div class="section-header">Provider API Keys</div>
+        <div class="card">
+          <div class="card-row"><div class="card-label">OpenAI</div><div class="card-control" style="display:flex;gap:8px"><input id="mem-pk-openai" type="password" class="f-input f-input-sm" placeholder="sk-... (or auto from model)"><input id="mem-pu-openai" type="text" class="f-input f-input-sm" placeholder="Base URL"></div></div>
+          <div class="card-row"><div class="card-label">Gemini</div><div class="card-control" style="display:flex;gap:8px"><input id="mem-pk-gemini" type="password" class="f-input f-input-sm" placeholder="API Key"><input id="mem-pu-gemini" type="text" class="f-input f-input-sm" placeholder="Base URL"></div></div>
+          <div class="card-row"><div class="card-label">Voyage</div><div class="card-control" style="display:flex;gap:8px"><input id="mem-pk-voyage" type="password" class="f-input f-input-sm" placeholder="API Key"><input id="mem-pu-voyage" type="text" class="f-input f-input-sm" placeholder="Base URL"></div></div>
+          <div class="card-row"><div class="card-label">Mistral</div><div class="card-control" style="display:flex;gap:8px"><input id="mem-pk-mistral" type="password" class="f-input f-input-sm" placeholder="API Key"><input id="mem-pu-mistral" type="text" class="f-input f-input-sm" placeholder="Base URL"></div></div>
+          <div class="card-row"><div class="card-label">Ollama</div><div class="card-control" style="display:flex;gap:8px"><input id="mem-pk-ollama" type="password" class="f-input f-input-sm" placeholder="API Key (optional)"><input id="mem-pu-ollama" type="text" class="f-input f-input-sm" placeholder="http://localhost:11434"></div></div>
+          <div class="card-row" style="justify-content:flex-end;gap:8px">
+            <button class="btn btn-primary" id="mem-save-btn">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="section">
+        <div class="section-header">Status</div>
+        <div class="card" id="mem-status-card">
+          <div class="card-row"><div class="card-label">Status</div><div class="card-control" id="mem-status-text">—</div></div>
+          <div class="card-row"><div class="card-label">Files / Chunks</div><div class="card-control" id="mem-files-chunks">—</div></div>
+          <div class="card-row"><div class="card-label">FTS</div><div class="card-control" id="mem-fts-status">—</div></div>
+          <div class="card-row"><div class="card-label">Cache</div><div class="card-control" id="mem-cache-status">—</div></div>
+          <div class="card-row" style="justify-content:flex-end;gap:8px">
+            <button class="btn" id="mem-sync-btn">Sync Now</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search test -->
+      <div class="section">
+        <div class="section-header">Search Test</div>
+        <div class="card">
+          <div class="card-row" style="gap:8px">
+            <input id="mem-search-query" class="f-input" placeholder="Search query...">
+            <button class="btn btn-primary" id="mem-search-btn">Search</button>
+          </div>
+          <div id="mem-search-results" style="margin-top:12px;font-size:13px;white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
+        </div>
+      </div>
     </div>
 
   </div></main>
@@ -1325,6 +1454,139 @@ tr.clickable:hover { background: var(--card-bg); }
       });
     }
   });
+
+  // =====================================================
+  // MEMORY TAB
+  // =====================================================
+  var memEnabled = document.getElementById("mem-enabled");
+  var memProvider = document.getElementById("mem-provider");
+  var memFallback = document.getElementById("mem-fallback");
+  var memModel = document.getElementById("mem-model");
+  var memCitations = document.getElementById("mem-citations");
+  var memSrcMemory = document.getElementById("mem-src-memory");
+  var memSrcSessions = document.getElementById("mem-src-sessions");
+  var memChunkTokens = document.getElementById("mem-chunk-tokens");
+  var memChunkOverlap = document.getElementById("mem-chunk-overlap");
+  var memMaxResults = document.getElementById("mem-max-results");
+  var memMinScore = document.getElementById("mem-min-score");
+  var memHybrid = document.getElementById("mem-hybrid");
+  var memSyncInterval = document.getElementById("mem-sync-interval");
+  var memSaveBtn = document.getElementById("mem-save-btn");
+  var memSyncBtn = document.getElementById("mem-sync-btn");
+  var memSearchBtn = document.getElementById("mem-search-btn");
+  var memSearchQuery = document.getElementById("mem-search-query");
+  var memSearchResults = document.getElementById("mem-search-results");
+  var PROVIDER_IDS = ["openai", "gemini", "voyage", "mistral", "ollama"];
+
+  function loadMemoryConfig() {
+    api("memory", "GET").then(function(d) {
+      var c = d.config || {};
+      memEnabled.checked = !!c.enabled;
+      memProvider.value = c.provider || "auto";
+      memFallback.value = c.fallback || "none";
+      memModel.value = c.model || "";
+      memCitations.value = c.citations || "auto";
+      var sources = c.sources || ["memory"];
+      memSrcMemory.checked = sources.indexOf("memory") >= 0;
+      memSrcSessions.checked = sources.indexOf("sessions") >= 0;
+      memChunkTokens.value = (c.chunking && c.chunking.tokens) || 400;
+      memChunkOverlap.value = (c.chunking && c.chunking.overlap) || 80;
+      var q = c.query || {};
+      memMaxResults.value = q.maxResults || 6;
+      memMinScore.value = q.minScore || 0.35;
+      memHybrid.checked = q.hybrid ? !!q.hybrid.enabled : true;
+      memSyncInterval.value = c.syncIntervalMinutes || 5;
+      // Per-provider keys
+      var p = c.providers || {};
+      PROVIDER_IDS.forEach(function(pid) {
+        var pk = document.getElementById("mem-pk-" + pid);
+        var pu = document.getElementById("mem-pu-" + pid);
+        if (pk) pk.value = (p[pid] && p[pid].apiKey) || "";
+        if (pu) pu.value = (p[pid] && p[pid].baseUrl) || "";
+      });
+
+      var st = d.status;
+      if (st) {
+        var statusLine = st.searchMode + " (provider: " + st.provider + ", model: " + st.model + ")";
+        if (st.fallback) statusLine += " [fallback from " + st.fallback.from + "]";
+        document.getElementById("mem-status-text").textContent = st.enabled ? statusLine : "Disabled";
+        document.getElementById("mem-files-chunks").textContent = st.files + " files / " + st.chunks + " chunks" + (st.dirty ? " (dirty)" : "");
+        document.getElementById("mem-fts-status").textContent = st.fts ? (st.fts.available ? "Available" : "Unavailable" + (st.fts.error ? ": " + st.fts.error : "")) : "—";
+        document.getElementById("mem-cache-status").textContent = st.cache ? st.cache.entries + " entries" : "—";
+      } else {
+        document.getElementById("mem-status-text").textContent = "Not initialized";
+        document.getElementById("mem-files-chunks").textContent = "—";
+        document.getElementById("mem-fts-status").textContent = "—";
+        document.getElementById("mem-cache-status").textContent = "—";
+      }
+    }).catch(function() {});
+  }
+
+  memSaveBtn.onclick = function() {
+    var sources = [];
+    if (memSrcMemory.checked) sources.push("memory");
+    if (memSrcSessions.checked) sources.push("sessions");
+    var providers = {};
+    PROVIDER_IDS.forEach(function(pid) {
+      var pk = document.getElementById("mem-pk-" + pid);
+      var pu = document.getElementById("mem-pu-" + pid);
+      providers[pid] = { api_key: pk ? pk.value.trim() : "", base_url: pu ? pu.value.trim() : "" };
+    });
+    api("memory", "PATCH", {
+      enabled: memEnabled.checked,
+      provider: memProvider.value,
+      fallback: memFallback.value,
+      model: memModel.value.trim(),
+      citations: memCitations.value,
+      sources: sources,
+      providers: providers,
+      chunk_tokens: parseInt(memChunkTokens.value) || 400,
+      chunk_overlap: parseInt(memChunkOverlap.value) || 80,
+      max_results: parseInt(memMaxResults.value) || 6,
+      min_score: parseFloat(memMinScore.value) || 0.35,
+      hybrid_enabled: memHybrid.checked,
+      sync_interval_minutes: parseInt(memSyncInterval.value) || 5,
+    }).then(function() {
+      showToast("Memory settings saved. Restart required for changes to take effect.");
+    });
+  };
+
+  memSyncBtn.onclick = function() {
+    memSyncBtn.disabled = true;
+    memSyncBtn.textContent = "Syncing...";
+    api("memory/sync", "POST").then(function(d) {
+      var st = d.status;
+      if (st) {
+        document.getElementById("mem-files-chunks").textContent = st.files + " files / " + st.chunks + " chunks";
+      }
+      showToast("Memory sync complete");
+    }).catch(function(e) {
+      showToast("Sync failed: " + (e.message || e));
+    }).finally(function() {
+      memSyncBtn.disabled = false;
+      memSyncBtn.textContent = "Sync Now";
+    });
+  };
+
+  memSearchBtn.onclick = function() {
+    var q = memSearchQuery.value.trim();
+    if (!q) return;
+    memSearchResults.textContent = "Searching...";
+    api("memory/search?q=" + encodeURIComponent(q), "GET").then(function(d) {
+      var results = d.results || [];
+      if (results.length === 0) {
+        memSearchResults.textContent = "No results found.";
+        return;
+      }
+      memSearchResults.textContent = results.map(function(r, i) {
+        return "[" + (i + 1) + "] " + r.path + " (L" + r.startLine + "-" + r.endLine + ", score=" + (r.score || 0).toFixed(3) + ", src=" + r.source + ")\n" + (r.snippet || "").trim();
+      }).join("\n\n");
+    }).catch(function(e) {
+      memSearchResults.textContent = "Error: " + (e.message || e);
+    });
+  };
+  memSearchQuery.addEventListener("keydown", function(e) { if (e.key === "Enter") memSearchBtn.onclick(); });
+  loadMemoryConfig();
 
   } // end initAdmin
 })();

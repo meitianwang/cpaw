@@ -21,7 +21,12 @@ import {
 import { appendFile, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CONFIG_DIR } from "./config.js";
+import { emitSessionTranscriptUpdate } from "./memory/transcript-events.js";
 import type { TranscriptsConfig } from "./types.js";
+
+function emitTranscriptEvent(sessionFile: string, sessionKey: string): void {
+  try { emitSessionTranscriptUpdate({ sessionFile, sessionKey }); } catch {}
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -211,6 +216,8 @@ export class MessageStore {
       ts: Date.now(),
     };
     await this.appendLine(sessionKey, line);
+    // Emit transcript event for memory session indexing
+    emitTranscriptEvent(this.filePath(sessionKey), sessionKey);
   }
 
   /** Read all messages from a session's transcript (empty array if none). */

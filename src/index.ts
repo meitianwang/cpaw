@@ -71,6 +71,7 @@ async function start(): Promise<void> {
     });
     memoryManager.startPeriodicSync();
     memoryManager.startWatcher();
+    memoryManager.startSessionListener();
     const status = memoryManager.status();
     console.log(
       `[Memory] Initialized (mode=${status.searchMode}, provider=${status.provider}, model=${status.model}, sources=${memoryConfig.sources.join(",")}, dir=${memoryDir})`,

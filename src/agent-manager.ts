@@ -25,6 +25,8 @@ import type { SettingsStore } from "./settings-store.js";
 import { getProvider, capabilities } from "./providers/registry.js";
 import { refreshAccessToken } from "./auth/oauth.js";
 import type { OAuthProviderAuth } from "./auth/oauth.js";
+import type { MemoryManager } from "./memory/manager.js";
+import { createMemorySearchTool, createMemoryGetTool, buildMemoryPromptSection } from "./memory/tools.js";
 
 type AgentEventCallback = (event: AgentEvent) => void;
 
@@ -85,10 +87,15 @@ export class AgentSessionManager {
   private readonly agents = new Map<string, Agent>();
   private readonly store: SettingsStore;
   private readonly maxSessions: number;
+  private memoryManager: MemoryManager | null = null;
 
   constructor(store: SettingsStore) {
     this.store = store;
     this.maxSessions = store.getNumber("max_sessions", 20);
+  }
+
+  setMemoryManager(manager: MemoryManager | null): void {
+    this.memoryManager = manager;
   }
 
   async chat(
@@ -181,13 +188,16 @@ export class AgentSessionManager {
       ...(modelRecord.cost ? { cost: modelRecord.cost } : {}),
     };
 
-    // Build system prompt: default prompt + enabled rules
+    // Build system prompt: default prompt + enabled rules + memory section
     const promptRecord = this.store.getDefaultPrompt();
     const rules = this.store.getEnabledRules();
     const parts: string[] = [];
     if (promptRecord?.content) parts.push(promptRecord.content);
     for (const rule of rules) {
       parts.push(rule.content);
+    }
+    if (this.memoryManager) {
+      parts.push(buildMemoryPromptSection(this.memoryManager.citationsMode));
     }
     const systemPrompt = parts.join("\n\n") || "You are a helpful assistant.";
 
@@ -208,6 +218,11 @@ export class AgentSessionManager {
     }
     // Add capability-based tools (web search, etc.)
     tools.push(...capabilities.buildTools());
+    // Add memory tools if memory is enabled
+    if (this.memoryManager) {
+      tools.push(createMemorySearchTool(this.memoryManager));
+      tools.push(createMemoryGetTool(this.memoryManager));
+    }
 
     const agent = createAgent({
       model,
