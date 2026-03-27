@@ -156,9 +156,11 @@ async function start(): Promise<void> {
       const dbOwnerId = settingsStore.get("channel.feishu.owner_id");
       setFeishuConfig({ appId: dbAppId, appSecret: dbSecret, ownerUserId: dbOwnerId });
       setFeishuTranscript((sessionKey, role, text) => messageStore.append(sessionKey, role, text));
-      setFeishuNotify((sessionKey, role, text) =>
-        gateway.broadcastEvent({ type: "channel_message", sessionKey, role, text }),
-      );
+      setFeishuNotify((ownerUserId, sessionKey, role, text) => {
+        const event = { type: "channel_message" as const, sessionKey, role, text };
+        if (ownerUserId) gateway.sendEvent(ownerUserId, event);
+        else gateway.broadcastEvent(event);
+      });
       if (!channelNames.includes("feishu")) {
         channelNames.push("feishu");
         const feishu = getChannel("feishu");
@@ -177,9 +179,11 @@ async function start(): Promise<void> {
       setInviteStore,
       setUserStore,
       setSettingsStore,
+      setMemoryManager,
     } = await import("./channels/web.js");
     setMessageStore(messageStore);
     setSettingsStore(settingsStore);
+    if (memoryManager) setMemoryManager(memoryManager);
 
     const { InviteStore } = await import("./invite-store.js");
     const inviteStore = new InviteStore();
@@ -255,6 +259,7 @@ async function start(): Promise<void> {
     cronScheduler?.stop();
     await capabilities.stopServices();
     await agentManager.disposeAll();
+    await memoryManager?.close();
     inviteStoreInstance?.close();
     userStoreInstance?.close();
     settingsStore.close();

@@ -81,7 +81,7 @@ let feishuConfig: FeishuConfig | undefined;
 let botOpenId: string | undefined;
 let botName: string | undefined;
 let transcriptAppend: ((sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>) | undefined;
-let notifyWebClients: ((sessionKey: string, role: "user" | "assistant", text: string) => void) | undefined;
+let notifyWebClients: ((ownerUserId: string | undefined, sessionKey: string, role: "user" | "assistant", text: string) => void) | undefined;
 
 export function setFeishuConfig(config: FeishuConfig): void {
   feishuConfig = config;
@@ -94,7 +94,7 @@ export function setFeishuTranscript(
 }
 
 export function setFeishuNotify(
-  notify: (sessionKey: string, role: "user" | "assistant", text: string) => void,
+  notify: (ownerUserId: string | undefined, sessionKey: string, role: "user" | "assistant", text: string) => void,
 ): void {
   notifyWebClients = notify;
 }
@@ -753,7 +753,7 @@ export const feishuPlugin: ChannelPlugin = {
           if (transcriptAppend) {
             await transcriptAppend(msg.sessionKey, "user", msg.text.trim());
           }
-          if (notifyWebClients) notifyWebClients(msg.sessionKey, "user", msg.text.trim());
+          if (notifyWebClients) notifyWebClients(config.ownerUserId, msg.sessionKey, "user", msg.text.trim());
         }
 
         const reply = await handler(msg);
@@ -762,7 +762,7 @@ export const feishuPlugin: ChannelPlugin = {
           if (transcriptAppend) {
             await transcriptAppend(msg.sessionKey, "assistant", reply);
           }
-          if (notifyWebClients) notifyWebClients(msg.sessionKey, "assistant", reply);
+          if (notifyWebClients) notifyWebClients(config.ownerUserId, msg.sessionKey, "assistant", reply);
           // Determine reply mode
           const groupConfig = resolveGroupConfig({ config, groupId: effectiveEvent.message.chat_id });
           const replyInThread =

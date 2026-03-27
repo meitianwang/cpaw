@@ -255,6 +255,13 @@ export function setCronScheduler(scheduler: typeof cronSchedulerRef): void {
   gateway.setCronScheduler(scheduler);
 }
 
+// Memory manager reference (optional — set from index.ts when memory is enabled)
+let memoryManagerRef: import("../memory/manager.js").MemoryManager | null = null;
+
+export function setMemoryManager(manager: import("../memory/manager.js").MemoryManager): void {
+  memoryManagerRef = manager;
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket client management (keyed by userId instead of token)
 // ---------------------------------------------------------------------------
@@ -1450,9 +1457,11 @@ async function handleAdminChannelFeishu(
         if (messageStoreRef) {
           setFeishuTranscript((sk, role, text) => messageStoreRef!.append(sk, role, text));
         }
-        setFeishuNotify((sk, role, text) =>
-          gateway.broadcastEvent({ type: "channel_message", sessionKey: sk, role, text }),
-        );
+        setFeishuNotify((ownerUid, sk, role, text) => {
+          const event = { type: "channel_message" as const, sessionKey: sk, role, text };
+          if (ownerUid) gateway.sendEvent(ownerUid, event);
+          else gateway.broadcastEvent(event);
+        });
         feishuPlugin.start(handlerRef).catch((err) => {
           console.error("[Feishu] Channel start failed:", err);
         });
@@ -1483,6 +1492,115 @@ async function handleAdminChannelFeishu(
   }
 
   jsonResponse(res, 405, { error: "method not allowed" });
+}
+
+// ---------------------------------------------------------------------------
+// Memory admin handlers
+// ---------------------------------------------------------------------------
+
+async function handleAdminMemory(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!adminAuth(req, res)) return;
+  if (!settingsStoreRef) {
+    jsonResponse(res, 503, { error: "settings store unavailable" });
+    return;
+  }
+
+  if (req.method === "GET") {
+    const config = settingsStoreRef.getMemoryConfig();
+    const status = memoryManagerRef?.status() ?? null;
+    jsonResponse(res, 200, { config, status });
+    return;
+  }
+
+  if (req.method === "PATCH") {
+    try {
+      const body = await readJsonBody(req, 8192);
+      const fields: Record<string, string> = {
+        "memory.enabled": "enabled",
+        "memory.openai_api_key": "openai_api_key",
+        "memory.openai_base_url": "openai_base_url",
+        "memory.model": "model",
+        "memory.sources": "sources",
+        "memory.chunk_tokens": "chunk_tokens",
+        "memory.chunk_overlap": "chunk_overlap",
+        "memory.max_results": "max_results",
+        "memory.min_score": "min_score",
+        "memory.hybrid_enabled": "hybrid_enabled",
+        "memory.hybrid_vector_weight": "hybrid_vector_weight",
+        "memory.hybrid_text_weight": "hybrid_text_weight",
+        "memory.sync_interval_minutes": "sync_interval_minutes",
+      };
+      for (const [storeKey, bodyKey] of Object.entries(fields)) {
+        const value = (body as Record<string, unknown>)[bodyKey];
+        if (value !== undefined) {
+          if (bodyKey === "sources" && Array.isArray(value)) {
+            settingsStoreRef.set(storeKey, JSON.stringify(value));
+          } else {
+            settingsStoreRef.set(storeKey, String(value));
+          }
+        }
+      }
+      const config = settingsStoreRef.getMemoryConfig();
+      jsonResponse(res, 200, { ok: true, config });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
+}
+
+async function handleAdminMemorySync(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!adminAuth(req, res)) return;
+  if (req.method !== "POST") {
+    jsonResponse(res, 405, { error: "method not allowed" });
+    return;
+  }
+  if (!memoryManagerRef) {
+    jsonResponse(res, 503, { error: "memory system not enabled" });
+    return;
+  }
+  try {
+    await memoryManagerRef.sync({ force: true });
+    const status = memoryManagerRef.status();
+    jsonResponse(res, 200, { ok: true, status });
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
+}
+
+async function handleAdminMemorySearch(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!adminAuth(req, res)) return;
+  if (req.method !== "GET") {
+    jsonResponse(res, 405, { error: "method not allowed" });
+    return;
+  }
+  if (!memoryManagerRef) {
+    jsonResponse(res, 503, { error: "memory system not enabled" });
+    return;
+  }
+  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  const query = url.searchParams.get("q") ?? "";
+  if (!query.trim()) {
+    jsonResponse(res, 400, { error: "query parameter 'q' is required" });
+    return;
+  }
+  try {
+    const results = await memoryManagerRef.search(query);
+    jsonResponse(res, 200, { results });
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1715,6 +1833,12 @@ async function handleRequest(
       return handleAdminChannels(req, res);
     case "/api/admin/channels/feishu":
       return handleAdminChannelFeishu(req, res);
+    case "/api/admin/memory":
+      return handleAdminMemory(req, res);
+    case "/api/admin/memory/sync":
+      return handleAdminMemorySync(req, res);
+    case "/api/admin/memory/search":
+      return handleAdminMemorySearch(req, res);
     // Upload
     case "/api/upload":
       if (req.method !== "POST") {
