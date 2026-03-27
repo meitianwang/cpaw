@@ -128,7 +128,9 @@ async function start(): Promise<void> {
     if (dbEnabled && dbAppId && dbSecret) {
       setFeishuConfig({ appId: dbAppId, appSecret: dbSecret });
       setFeishuTranscript((sessionKey, role, text) => messageStore.append(sessionKey, role, text));
-      setFeishuNotify((sessionKey) => gateway.broadcastEvent({ type: "feishu_activity", sessionKey }));
+      setFeishuNotify((sessionKey, role, text) =>
+        gateway.broadcastEvent({ type: "channel_message", sessionKey, role, text }),
+      );
       if (!channelNames.includes("feishu")) {
         channelNames.push("feishu");
         const feishu = getChannel("feishu");

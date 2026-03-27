@@ -1448,7 +1448,9 @@ async function handleAdminChannelFeishu(
         if (messageStoreRef) {
           setFeishuTranscript((sk, role, text) => messageStoreRef!.append(sk, role, text));
         }
-        setFeishuNotify((sk) => gateway.broadcastEvent({ type: "feishu_activity", sessionKey: sk }));
+        setFeishuNotify((sk, role, text) =>
+          gateway.broadcastEvent({ type: "channel_message", sessionKey: sk, role, text }),
+        );
         feishuPlugin.start(handlerRef).catch((err) => {
           console.error("[Feishu] Channel start failed:", err);
         });

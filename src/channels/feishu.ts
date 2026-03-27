@@ -81,7 +81,7 @@ let feishuConfig: FeishuConfig | undefined;
 let botOpenId: string | undefined;
 let botName: string | undefined;
 let transcriptAppend: ((sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>) | undefined;
-let notifyWebClients: ((sessionKey: string) => void) | undefined;
+let notifyWebClients: ((sessionKey: string, role: "user" | "assistant", text: string) => void) | undefined;
 
 export function setFeishuConfig(config: FeishuConfig): void {
   feishuConfig = config;
@@ -93,7 +93,9 @@ export function setFeishuTranscript(
   transcriptAppend = append;
 }
 
-export function setFeishuNotify(notify: (sessionKey: string) => void): void {
+export function setFeishuNotify(
+  notify: (sessionKey: string, role: "user" | "assistant", text: string) => void,
+): void {
   notifyWebClients = notify;
 }
 
@@ -745,19 +747,21 @@ export const feishuPlugin: ChannelPlugin = {
         const msg = await toInboundMessage(effectiveEvent);
         if (!msg.text.trim() && !msg.media?.length) return;
 
-        // Write user message to transcript (visible in web UI history)
-        if (transcriptAppend && msg.text.trim()) {
-          await transcriptAppend(msg.sessionKey, "user", msg.text.trim());
+        // Write user message to transcript + push to web clients
+        if (msg.text.trim()) {
+          if (transcriptAppend) {
+            await transcriptAppend(msg.sessionKey, "user", msg.text.trim());
+          }
+          if (notifyWebClients) notifyWebClients(msg.sessionKey, "user", msg.text.trim());
         }
 
         const reply = await handler(msg);
         if (reply) {
-          // Write assistant reply to transcript
+          // Write assistant reply to transcript + push to web clients
           if (transcriptAppend) {
             await transcriptAppend(msg.sessionKey, "assistant", reply);
           }
-          // Notify web clients about new feishu activity
-          if (notifyWebClients) notifyWebClients(msg.sessionKey);
+          if (notifyWebClients) notifyWebClients(msg.sessionKey, "assistant", reply);
           // Determine reply mode
           const groupConfig = resolveGroupConfig({ config, groupId: effectiveEvent.message.chat_id });
           const replyInThread =
