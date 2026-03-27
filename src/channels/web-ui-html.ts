@@ -144,7 +144,7 @@ export function getChatBodyHtml(): string {
               <div style="border:1px solid var(--border);border-radius:12px;padding:20px" id="s-ch-feishu-card">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
                   <div style="display:flex;align-items:center;gap:12px">
-                    <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#2E73F8"/><path d="M10 22.5c0-2.5 1.5-5 4.5-7l5-3.5c1-.7 1.5-.3 1 .5l-2.5 4c-.3.5 0 .8.5.5l4-2c.8-.4 1.2 0 .7.7l-5 8c-.5.8-1.2 1-1.8.5L10 22.5z" fill="white"/></svg>
+                    <img src="https://sf3-scmcdn2-cn.feishucdn.com/ccm/pc/web/resource/bear/src/common/assets/favicon.ico" alt="Feishu" width="36" height="36" style="border-radius:8px">
                     <div>
                       <div style="font-weight:600;font-size:15px" data-i18n="settings_ch_feishu">Feishu / Lark</div>
                       <div style="font-size:12px;color:var(--fg-tertiary)" data-i18n="settings_ch_feishu_desc">Connect to Feishu bot for team messaging</div>
@@ -224,7 +224,7 @@ export function getChatBodyHtml(): string {
               <div style="border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:16px" id="s-ch-dingtalk-card">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
                   <div style="display:flex;align-items:center;gap:12px">
-                    <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#0089FF"/><path d="M25.2 14.8c-.5-.3-3.2-1.5-5.4-.7-1 .4-1.8 1.2-2.3 2l-.3-.1c-1.4-.4-2.5.3-2.8.5-.3.2-.6.5-.8.8l4.5 1.5-5.3 3.2 7.8-2.2-2.5 5 4.8-5.5c.8-.9 1.5-2.1 1.5-3.1 0-.5-.3-.9-.7-1.2l-.5-.2z" fill="white"/></svg>
+                    <img src="https://img.alicdn.com/imgextra/i2/O1CN01FF1t1g1Q1VUMVs2dt_!!6000000001920-2-tps-400-400.png" alt="DingTalk" width="36" height="36" style="border-radius:8px">
                     <div>
                       <div style="font-weight:600;font-size:15px" data-i18n="settings_ch_dingtalk">DingTalk</div>
                       <div style="font-size:12px;color:var(--fg-tertiary)" data-i18n="settings_ch_dingtalk_desc">Connect to DingTalk bot for team messaging</div>
