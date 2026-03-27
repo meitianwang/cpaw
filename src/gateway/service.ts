@@ -422,6 +422,7 @@ class GatewayService {
 
   async listSessions(params: {
     userId: string;
+    includeFeishu?: boolean;
   }): Promise<{ sessions: readonly unknown[] }> {
     return listGatewaySessions({
       messageStore: this.requireMessageStore(),

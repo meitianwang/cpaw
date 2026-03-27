@@ -81,7 +81,7 @@ let feishuConfig: FeishuConfig | undefined;
 let botOpenId: string | undefined;
 let botName: string | undefined;
 let transcriptAppend: ((sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>) | undefined;
-let notifyWebClients: ((ownerUserId: string | undefined, sessionKey: string, role: "user" | "assistant", text: string) => void) | undefined;
+let notifyWebClients: ((sessionKey: string, role: "user" | "assistant", text: string) => void) | undefined;
 
 export function setFeishuConfig(config: FeishuConfig): void {
   feishuConfig = config;
@@ -94,7 +94,7 @@ export function setFeishuTranscript(
 }
 
 export function setFeishuNotify(
-  notify: (ownerUserId: string | undefined, sessionKey: string, role: "user" | "assistant", text: string) => void,
+  notify: (sessionKey: string, role: "user" | "assistant", text: string) => void,
 ): void {
   notifyWebClients = notify;
 }
@@ -338,13 +338,12 @@ async function toInboundMessage(event: FeishuMessageEvent): Promise<InboundMessa
   const senderOpenId = sender.sender_id.open_id || sender.sender_id.user_id || "unknown";
   const isDirectMessage = message.chat_type === "p2p";
 
-  // Session key: includes ownerUserId for user-level isolation
-  const ownerPrefix = config.ownerUserId ? `feishu:${config.ownerUserId}:` : "feishu:";
+  // Session key: feishu:{peerId} — isolation handled at query layer
   let sessionKey: string;
   let replyInThread = false;
 
   if (isDirectMessage) {
-    sessionKey = `${ownerPrefix}${senderOpenId}`;
+    sessionKey = `feishu:${senderOpenId}`;
   } else {
     // Resolve per-group config
     const groupConfig = resolveGroupConfig({ config, groupId: message.chat_id });
@@ -361,7 +360,7 @@ async function toInboundMessage(event: FeishuMessageEvent): Promise<InboundMessa
       topicSessionMode:
         groupConfig?.topicSessionMode ?? config.topicSessionMode,
     });
-    sessionKey = `${ownerPrefix}${session.peerId}`;
+    sessionKey = `feishu:${session.peerId}`;
     replyInThread = session.replyInThread;
   }
 
@@ -753,7 +752,7 @@ export const feishuPlugin: ChannelPlugin = {
           if (transcriptAppend) {
             await transcriptAppend(msg.sessionKey, "user", msg.text.trim());
           }
-          if (notifyWebClients) notifyWebClients(config.ownerUserId, msg.sessionKey, "user", msg.text.trim());
+          if (notifyWebClients) notifyWebClients(msg.sessionKey, "user", msg.text.trim());
         }
 
         const reply = await handler(msg);
@@ -762,7 +761,7 @@ export const feishuPlugin: ChannelPlugin = {
           if (transcriptAppend) {
             await transcriptAppend(msg.sessionKey, "assistant", reply);
           }
-          if (notifyWebClients) notifyWebClients(config.ownerUserId, msg.sessionKey, "assistant", reply);
+          if (notifyWebClients) notifyWebClients(msg.sessionKey, "assistant", reply);
           // Determine reply mode
           const groupConfig = resolveGroupConfig({ config, groupId: effectiveEvent.message.chat_id });
           const replyInThread =

@@ -19,17 +19,21 @@ export async function readGatewayHistory(params: {
 export async function listGatewaySessions(params: {
   messageStore: MessageStore;
   userId: string;
+  /** If true, include feishu channel sessions (only the feishu owner should see them). */
+  includeFeishu?: boolean;
 }): Promise<{ sessions: readonly unknown[] }> {
   const webPrefix = buildWebSessionKey(params.userId, "");
   const webSessions = await params.messageStore.listSessions(webPrefix);
 
-  // Feishu sessions are scoped to the user who configured the channel
-  const feishuPrefix = `feishu:${params.userId}:`;
-  const rawFeishuSessions = await params.messageStore.listSessions(feishuPrefix);
-  const feishuSessions = rawFeishuSessions.map((s) => ({
-    ...s,
-    sessionId: `feishu:${params.userId}:${(s as { sessionId: string }).sessionId}`,
-  }));
+  // Feishu sessions use "feishu:" prefix — only shown to the user who configured the channel
+  let feishuSessions: unknown[] = [];
+  if (params.includeFeishu) {
+    const raw = await params.messageStore.listSessions("feishu:");
+    feishuSessions = raw.map((s) => ({
+      ...s,
+      sessionId: `feishu:${(s as { sessionId: string }).sessionId}`,
+    }));
+  }
 
   return { sessions: [...webSessions, ...feishuSessions] };
 }
@@ -39,7 +43,8 @@ export function deleteGatewaySession(params: {
   userId: string;
   sessionId: string;
 }): boolean {
-  return params.messageStore.deleteSession(
-    buildWebSessionKey(params.userId, params.sessionId),
-  );
+  const key = params.sessionId.startsWith("feishu:")
+    ? params.sessionId
+    : buildWebSessionKey(params.userId, params.sessionId);
+  return params.messageStore.deleteSession(key);
 }

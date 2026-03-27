@@ -51,7 +51,7 @@ async function start(): Promise<void> {
   // Initialize memory system if enabled
   let memoryManager: import("./memory/manager.js").MemoryManager | null = null;
   const memoryConfig = settingsStore.getMemoryConfig();
-  if (memoryConfig.enabled && memoryConfig.openaiApiKey) {
+  if (memoryConfig.enabled) {
     const { MemoryManager } = await import("./memory/manager.js");
     const { join } = await import("node:path");
     const { CONFIG_DIR } = await import("./config.js");
@@ -67,8 +67,9 @@ async function start(): Promise<void> {
       console.warn(`[Memory] Initial sync failed: ${String(err)}`);
     });
     memoryManager.startPeriodicSync();
+    const mode = memoryConfig.openaiApiKey ? "hybrid" : "fts-only";
     console.log(
-      `[Memory] Initialized (model=${memoryConfig.model}, sources=${memoryConfig.sources.join(",")}, dir=${memoryDir})`,
+      `[Memory] Initialized (mode=${mode}, model=${memoryConfig.model}, sources=${memoryConfig.sources.join(",")}, dir=${memoryDir})`,
     );
   }
 
@@ -154,11 +155,11 @@ async function start(): Promise<void> {
 
     if (dbEnabled && dbAppId && dbSecret) {
       const dbOwnerId = settingsStore.get("channel.feishu.owner_id");
-      setFeishuConfig({ appId: dbAppId, appSecret: dbSecret, ownerUserId: dbOwnerId });
+      setFeishuConfig({ appId: dbAppId, appSecret: dbSecret });
       setFeishuTranscript((sessionKey, role, text) => messageStore.append(sessionKey, role, text));
-      setFeishuNotify((ownerUserId, sessionKey, role, text) => {
+      setFeishuNotify((sessionKey, role, text) => {
         const event = { type: "channel_message" as const, sessionKey, role, text };
-        if (ownerUserId) gateway.sendEvent(ownerUserId, event);
+        if (dbOwnerId) gateway.sendEvent(dbOwnerId, event);
         else gateway.broadcastEvent(event);
       });
       if (!channelNames.includes("feishu")) {

@@ -1449,14 +1449,13 @@ async function handleAdminChannelFeishu(
       // Start feishu channel immediately (non-blocking)
       if (handlerRef) {
         const { setFeishuConfig, setFeishuTranscript, setFeishuNotify, feishuPlugin } = await import("./feishu.js");
-        setFeishuConfig({ appId, appSecret, ownerUserId: authUser.id });
+        setFeishuConfig({ appId, appSecret });
         if (messageStoreRef) {
           setFeishuTranscript((sk, role, text) => messageStoreRef!.append(sk, role, text));
         }
-        setFeishuNotify((ownerUid, sk, role, text) => {
-          const event = { type: "channel_message" as const, sessionKey: sk, role, text };
-          if (ownerUid) gateway.sendEvent(ownerUid, event);
-          else gateway.broadcastEvent(event);
+        const ownerId = authUser.id;
+        setFeishuNotify((sk, role, text) => {
+          gateway.sendEvent(ownerId, { type: "channel_message" as const, sessionKey: sk, role, text });
         });
         feishuPlugin.start(handlerRef).catch((err) => {
           console.error("[Feishu] Channel start failed:", err);
@@ -1864,10 +1863,13 @@ async function handleRequest(
         jsonResponse(res, 400, { error: "invalid sessionId" });
         return;
       }
-      // Feishu sessions are user-scoped: feishu:{ownerUserId}:{...}
-      if (histSessionId.startsWith("feishu:") && !histSessionId.startsWith(`feishu:${histAuth.user.id}:`)) {
-        jsonResponse(res, 403, { error: "access denied" });
-        return;
+      // Feishu sessions: only the channel owner can access
+      if (histSessionId.startsWith("feishu:")) {
+        const feishuOwnerId = settingsStoreRef?.get("channel.feishu.owner_id");
+        if (feishuOwnerId && feishuOwnerId !== histAuth.user.id) {
+          jsonResponse(res, 403, { error: "access denied" });
+          return;
+        }
       }
       const limitStr = url.searchParams.get("limit") ?? "200";
       const limit = Math.min(Math.max(parseInt(limitStr, 10) || 200, 1), 500);
@@ -1898,8 +1900,11 @@ async function handleRequest(
       }
       if (req.method === "GET") {
         try {
+          const feishuOwnerId = settingsStoreRef?.get("channel.feishu.owner_id");
+          const isFeishuOwner = !feishuOwnerId || feishuOwnerId === sessAuth.user.id;
           const result = await gateway.listSessions({
             userId: sessAuth.user.id,
+            includeFeishu: isFeishuOwner,
           });
           jsonResponse(res, 200, result);
         } catch (err) {
