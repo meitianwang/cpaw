@@ -2,6 +2,7 @@ import { webPlugin } from "./channels/web.js";
 import { feishuPlugin, setFeishuConfig, setFeishuTranscript, setFeishuNotify } from "./channels/feishu.js";
 import { dingtalkPlugin, setDingtalkConfig, setDingtalkTranscript, setDingtalkNotify } from "./channels/dingtalk.js";
 import { wechatPlugin, setWechatConfig, setWechatTranscript, setWechatNotify } from "./channels/wechat.js";
+import { decryptCred } from "./channels/channel-creds.js";
 import {
   registerChannel,
   getChannel,
@@ -157,7 +158,7 @@ async function start(): Promise<void> {
   // Initialize Feishu channel from SettingsStore (configured via admin panel).
   {
     const dbAppId = settingsStore.get("channel.feishu.app_id");
-    const dbSecret = settingsStore.get("channel.feishu.app_secret");
+    const dbSecret = decryptCred(settingsStore.get("channel.feishu.app_secret") ?? "");
     const dbEnabled = settingsStore.getBool("channel.feishu.enabled", false);
 
     if (dbEnabled && dbAppId && dbSecret) {
@@ -181,7 +182,7 @@ async function start(): Promise<void> {
   // Initialize DingTalk channel from SettingsStore (configured via settings page).
   {
     const dbClientId = settingsStore.get("channel.dingtalk.client_id");
-    const dbClientSecret = settingsStore.get("channel.dingtalk.client_secret");
+    const dbClientSecret = decryptCred(settingsStore.get("channel.dingtalk.client_secret") ?? "");
     const dbDtEnabled = settingsStore.getBool("channel.dingtalk.enabled", false);
 
     if (dbDtEnabled && dbClientId && dbClientSecret) {
@@ -204,7 +205,7 @@ async function start(): Promise<void> {
 
   // Initialize WeChat channel from SettingsStore (configured via QR login).
   {
-    const wxToken = settingsStore.get("channel.wechat.token");
+    const wxToken = decryptCred(settingsStore.get("channel.wechat.token") ?? "");
     const wxBaseUrl = settingsStore.get("channel.wechat.base_url");
     const wxAccountId = settingsStore.get("channel.wechat.account_id");
     const wxEnabled = settingsStore.getBool("channel.wechat.enabled", false);

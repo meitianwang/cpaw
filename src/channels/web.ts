@@ -38,6 +38,7 @@ import { mkdirSync, rmSync, watch, type FSWatcher } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocketServer, WebSocket, type RawData } from "ws";
+import { encryptCred, decryptCred } from "./channel-creds.js";
 import type { ChannelPlugin } from "./types.js";
 import type { Handler } from "../types.js";
 import type { WebConfig } from "../types.js";
@@ -1452,7 +1453,7 @@ async function handleAdminChannelFeishu(
 
       // Save to SettingsStore (including owner for user-level isolation)
       settingsStoreRef.set("channel.feishu.app_id", appId);
-      settingsStoreRef.set("channel.feishu.app_secret", appSecret);
+      settingsStoreRef.set("channel.feishu.app_secret", encryptCred(appSecret));
       settingsStoreRef.set("channel.feishu.enabled", "true");
       settingsStoreRef.set("channel.feishu.bot_name", identity.botName ?? "");
       settingsStoreRef.set("channel.feishu.bot_open_id", identity.botOpenId);
@@ -1688,7 +1689,7 @@ async function handleAdminChannelWechat(
 
       if (result.status === "confirmed" && result.botToken && result.accountId) {
         // Save credentials
-        settingsStoreRef.set("channel.wechat.token", result.botToken);
+        settingsStoreRef.set("channel.wechat.token", encryptCred(result.botToken));
         settingsStoreRef.set("channel.wechat.base_url", result.baseUrl || baseUrl);
         settingsStoreRef.set("channel.wechat.account_id", result.accountId);
         settingsStoreRef.set("channel.wechat.enabled", "true");
@@ -1777,7 +1778,7 @@ async function handleAdminChannelDingtalk(
       }
 
       settingsStoreRef.set("channel.dingtalk.client_id", clientId);
-      settingsStoreRef.set("channel.dingtalk.client_secret", clientSecret);
+      settingsStoreRef.set("channel.dingtalk.client_secret", encryptCred(clientSecret));
       settingsStoreRef.set("channel.dingtalk.enabled", "true");
       settingsStoreRef.set("channel.dingtalk.owner_id", authUser.id);
 

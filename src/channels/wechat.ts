@@ -7,11 +7,40 @@
  * context_token must be echoed back in every reply.
  */
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { homedir } from "node:os";
 import type { ChannelPlugin } from "./types.js";
 import type { Handler } from "../types.js";
 import type { InboundMessage, MessageType } from "../message.js";
 import type { WechatConfig, WechatMessage } from "./wechat-types.js";
 import { getUpdates, sendMessageWechat } from "./wechat-api.js";
+
+// ---------------------------------------------------------------------------
+// Sync cursor persistence (survives restarts, prevents duplicate messages)
+// ---------------------------------------------------------------------------
+
+const SYNC_FILE = join(homedir(), ".klaus", "wechat", "sync.json");
+
+function loadSyncBuf(): string {
+  try {
+    if (!existsSync(SYNC_FILE)) return "";
+    const data = JSON.parse(readFileSync(SYNC_FILE, "utf-8")) as { buf?: string };
+    return data.buf ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function saveSyncBuf(buf: string): void {
+  try {
+    const dir = dirname(SYNC_FILE);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(SYNC_FILE, JSON.stringify({ buf }), "utf-8");
+  } catch (err) {
+    console.warn("[WeChat] Failed to save sync cursor:", err);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -165,7 +194,8 @@ export const wechatPlugin: ChannelPlugin = {
     const config = getConfig();
     console.log("[WeChat] Starting (mode=long-poll)");
 
-    let getUpdatesBuf = "";
+    let getUpdatesBuf = loadSyncBuf();
+    if (getUpdatesBuf) console.log("[WeChat] Restored sync cursor from disk");
     let running = true;
 
     const shutdown = () => {
@@ -194,6 +224,7 @@ export const wechatPlugin: ChannelPlugin = {
 
         if (resp.get_updates_buf) {
           getUpdatesBuf = resp.get_updates_buf;
+          saveSyncBuf(getUpdatesBuf);
         }
 
         if (!resp.msgs?.length) continue;
