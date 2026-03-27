@@ -1,6 +1,7 @@
 import { webPlugin } from "./channels/web.js";
 import { feishuPlugin, setFeishuConfig, setFeishuTranscript, setFeishuNotify } from "./channels/feishu.js";
 import { dingtalkPlugin, setDingtalkConfig, setDingtalkTranscript, setDingtalkNotify } from "./channels/dingtalk.js";
+import { wechatPlugin, setWechatConfig, setWechatTranscript, setWechatNotify } from "./channels/wechat.js";
 import {
   registerChannel,
   getChannel,
@@ -31,6 +32,7 @@ import { parseWebSessionKey } from "./gateway/protocol.js";
 registerChannel(webPlugin);
 registerChannel(feishuPlugin);
 registerChannel(dingtalkPlugin);
+registerChannel(wechatPlugin);
 
 // ---------------------------------------------------------------------------
 // Main
@@ -197,6 +199,31 @@ async function start(): Promise<void> {
         if (dt) plugins.push(dt);
       }
       console.log("[DingTalk] Enabled (configured via settings page)");
+    }
+  }
+
+  // Initialize WeChat channel from SettingsStore (configured via QR login).
+  {
+    const wxToken = settingsStore.get("channel.wechat.token");
+    const wxBaseUrl = settingsStore.get("channel.wechat.base_url");
+    const wxAccountId = settingsStore.get("channel.wechat.account_id");
+    const wxEnabled = settingsStore.getBool("channel.wechat.enabled", false);
+
+    if (wxEnabled && wxToken && wxBaseUrl && wxAccountId) {
+      const wxOwnerId = settingsStore.get("channel.wechat.owner_id");
+      setWechatConfig({ token: wxToken, baseUrl: wxBaseUrl, accountId: wxAccountId });
+      setWechatTranscript((sessionKey, role, text) => messageStore.append(sessionKey, role, text));
+      setWechatNotify((sessionKey, role, text) => {
+        const event = { type: "channel_message" as const, sessionKey, role, text };
+        if (wxOwnerId) gateway.sendEvent(wxOwnerId, event);
+        else gateway.broadcastEvent(event);
+      });
+      if (!channelNames.includes("wechat")) {
+        channelNames.push("wechat");
+        const wx = getChannel("wechat");
+        if (wx) plugins.push(wx);
+      }
+      console.log("[WeChat] Enabled (configured via QR login)");
     }
   }
 

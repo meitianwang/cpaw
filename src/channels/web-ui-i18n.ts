@@ -116,6 +116,12 @@ export function getChatI18n(): string {
       settings_ch_dingtalk_step1_link: "Create App",
       settings_ch_dingtalk_step2: 'Add "Bot" capability, enable Stream mode',
       settings_ch_dingtalk_step3: "Copy Client ID (AppKey) and Client Secret (AppSecret) below",
+      settings_ch_wechat: "WeChat", settings_ch_wechat_desc: "Scan QR code to connect WeChat bot",
+      settings_ch_wechat_login: "Login with QR Code",
+      settings_ch_wechat_scan_hint: "Open WeChat and scan the QR code below",
+      settings_ch_wechat_waiting: "Waiting for scan...",
+      settings_ch_wechat_scanned: "QR code scanned, confirming...",
+      settings_ch_wechat_expired: "QR code expired, please try again",
       settings_confirm_delete: "Are you sure?",
     },
     zh: {
@@ -231,6 +237,12 @@ export function getChatI18n(): string {
       settings_ch_dingtalk_step1_link: "\u524d\u5f80\u521b\u5efa",
       settings_ch_dingtalk_step2: "\u6dfb\u52a0\u300c\u673a\u5668\u4eba\u300d\u80fd\u529b\uff0c\u542f\u7528 Stream \u6a21\u5f0f",
       settings_ch_dingtalk_step3: "\u590d\u5236 Client ID (AppKey) \u548c Client Secret (AppSecret) \u586b\u5165\u4e0b\u65b9",
+      settings_ch_wechat: "\u5fae\u4fe1", settings_ch_wechat_desc: "\u626b\u7801\u767b\u5f55\u5fae\u4fe1\u673a\u5668\u4eba",
+      settings_ch_wechat_login: "\u626b\u7801\u767b\u5f55",
+      settings_ch_wechat_scan_hint: "\u6253\u5f00\u5fae\u4fe1\u626b\u63cf\u4e0b\u65b9\u4e8c\u7ef4\u7801",
+      settings_ch_wechat_waiting: "\u7b49\u5f85\u626b\u7801...",
+      settings_ch_wechat_scanned: "\u5df2\u626b\u7801\uff0c\u786e\u8ba4\u4e2d...",
+      settings_ch_wechat_expired: "\u4e8c\u7ef4\u7801\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u8bd5",
       settings_confirm_delete: "\u786e\u5b9a\u64cd\u4f5c\uff1f",
     }
   };

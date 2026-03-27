@@ -382,9 +382,12 @@ export function getSettingsJs(): string {
       showFeishuState(feishu && feishu.enabled ? "connected" : "setup", feishu);
       var dt = d && d.dingtalk;
       showDingtalkState(dt && dt.enabled ? "connected" : "setup", dt);
+      var wx = d && d.wechat;
+      showWechatState(wx && wx.enabled ? "connected" : "setup", wx);
     }).catch(function() {
       showFeishuState("setup", null);
       showDingtalkState("setup", null);
+      showWechatState("setup", null);
     });
   }
 
@@ -501,6 +504,81 @@ export function getSettingsJs(): string {
       .then(function() {
         showSettingsToast(tt("settings_ch_disconnected"));
         showDingtalkState("setup", null);
+      })
+      .catch(function() { showSettingsToast(tt("settings_failed")); });
+  });
+
+  // --- WeChat ---
+  var sWxStatus = document.getElementById("s-ch-wechat-status");
+  var sWxConnected = document.getElementById("s-ch-wechat-connected");
+  var sWxQr = document.getElementById("s-ch-wechat-qr");
+  var sWxSetup = document.getElementById("s-ch-wechat-setup");
+
+  function showWechatState(state, data) {
+    sWxConnected.style.display = state === "connected" ? "block" : "none";
+    sWxQr.style.display = state === "qr" ? "block" : "none";
+    sWxSetup.style.display = state === "setup" ? "block" : "none";
+    if (state === "connected") {
+      sWxStatus.textContent = tt("settings_ch_connected");
+      sWxStatus.className = "s-badge s-badge-green";
+      document.getElementById("s-ch-wechat-account-display").textContent = data && data.account_id || "";
+    } else {
+      sWxStatus.textContent = tt("settings_ch_not_connected");
+      sWxStatus.className = "s-badge s-badge-gray";
+    }
+  }
+
+  function loadWechatState() {
+    adminApi("channels", "GET").then(function(d) {
+      var wx = d && d.wechat;
+      showWechatState(wx && wx.enabled ? "connected" : "setup", wx);
+    }).catch(function() { showWechatState("setup", null); });
+  }
+
+  var wxPollTimer = null;
+  function startWxQrPoll() {
+    if (wxPollTimer) clearInterval(wxPollTimer);
+    wxPollTimer = setInterval(function() {
+      adminApi("channels/wechat/qr-poll", "GET").then(function(d) {
+        var statusEl = document.getElementById("s-ch-wechat-qr-status");
+        if (d.status === "scaned") {
+          statusEl.textContent = tt("settings_ch_wechat_scanned");
+        } else if (d.status === "confirmed" && d.ok) {
+          clearInterval(wxPollTimer);
+          wxPollTimer = null;
+          showSettingsToast(tt("settings_ch_connect_ok"));
+          showWechatState("connected", d);
+        } else if (d.status === "expired") {
+          statusEl.textContent = tt("settings_ch_wechat_expired");
+          clearInterval(wxPollTimer);
+          wxPollTimer = null;
+        }
+      }).catch(function() {});
+    }, 3000);
+  }
+
+  document.getElementById("s-ch-wechat-login-btn").addEventListener("click", function() {
+    var btn = this;
+    btn.disabled = true;
+    adminApi("channels/wechat/qr-start", "POST").then(function(d) {
+      if (d.qrcodeUrl) {
+        document.getElementById("s-ch-wechat-qr-img").src = d.qrcodeUrl;
+        showWechatState("qr", null);
+        startWxQrPoll();
+      } else {
+        showSettingsToast(d.message || tt("settings_ch_connect_fail"));
+      }
+    }).catch(function() {
+      showSettingsToast(tt("settings_ch_connect_fail"));
+    }).finally(function() { btn.disabled = false; });
+  });
+
+  document.getElementById("s-ch-wechat-disconnect-btn").addEventListener("click", function() {
+    if (!confirm(tt("settings_confirm_delete"))) return;
+    adminApi("channels/wechat", "DELETE")
+      .then(function() {
+        showSettingsToast(tt("settings_ch_disconnected"));
+        showWechatState("setup", null);
       })
       .catch(function() { showSettingsToast(tt("settings_failed")); });
   });

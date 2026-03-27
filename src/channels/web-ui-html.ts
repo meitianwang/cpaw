@@ -261,6 +261,37 @@ export function getChatBodyHtml(): string {
                   <button class="s-btn s-btn-primary" id="s-ch-dingtalk-setup-btn" data-i18n="settings_ch_setup">Configure</button>
                 </div>
               </div>
+
+              <!-- WeChat card -->
+              <div style="border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:16px" id="s-ch-wechat-card">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <img src="/wechat.png" alt="WeChat" width="36" height="36" style="border-radius:8px">
+                    <div>
+                      <div style="font-weight:600;font-size:15px" data-i18n="settings_ch_wechat">WeChat</div>
+                      <div style="font-size:12px;color:var(--fg-tertiary)" data-i18n="settings_ch_wechat_desc">Scan QR code to connect WeChat bot</div>
+                    </div>
+                  </div>
+                  <span class="s-badge" id="s-ch-wechat-status"></span>
+                </div>
+                <div id="s-ch-wechat-connected" style="display:none;margin-top:16px">
+                  <div style="border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                      <div style="font-size:12px;color:var(--fg-tertiary)">Account ID</div>
+                      <div style="font-family:var(--font-mono);font-size:13px" id="s-ch-wechat-account-display"></div>
+                    </div>
+                    <button class="s-btn s-btn-danger" id="s-ch-wechat-disconnect-btn" data-i18n="settings_ch_disconnect">Disconnect</button>
+                  </div>
+                </div>
+                <div id="s-ch-wechat-qr" style="display:none;margin-top:16px;text-align:center">
+                  <div style="font-size:13px;color:var(--fg-tertiary);margin-bottom:12px" data-i18n="settings_ch_wechat_scan_hint">Open WeChat and scan the QR code below</div>
+                  <img id="s-ch-wechat-qr-img" style="max-width:240px;border-radius:8px;border:1px solid var(--border)" alt="QR Code">
+                  <div style="margin-top:8px;font-size:12px;color:var(--fg-tertiary)" id="s-ch-wechat-qr-status" data-i18n="settings_ch_wechat_waiting">Waiting for scan...</div>
+                </div>
+                <div id="s-ch-wechat-setup" style="margin-top:16px">
+                  <button class="s-btn s-btn-primary" id="s-ch-wechat-login-btn" data-i18n="settings_ch_wechat_login">Login with QR Code</button>
+                </div>
+              </div>
             </div>
           </div>
 

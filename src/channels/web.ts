@@ -1393,6 +1393,8 @@ async function handleAdminChannels(
     const feishuBotName = settingsStoreRef.get("channel.feishu.bot_name") ?? "";
     const dtClientId = settingsStoreRef.get("channel.dingtalk.client_id") ?? "";
     const dtEnabled = settingsStoreRef.getBool("channel.dingtalk.enabled", false);
+    const wxAccountId = settingsStoreRef.get("channel.wechat.account_id") ?? "";
+    const wxEnabled = settingsStoreRef.getBool("channel.wechat.enabled", false);
     jsonResponse(res, 200, {
       feishu: {
         enabled: feishuEnabled && !!feishuAppId,
@@ -1402,6 +1404,10 @@ async function handleAdminChannels(
       dingtalk: {
         enabled: dtEnabled && !!dtClientId,
         client_id: dtClientId,
+      },
+      wechat: {
+        enabled: wxEnabled && !!wxAccountId,
+        account_id: wxAccountId,
       },
     });
     return;
@@ -1614,6 +1620,116 @@ async function handleAdminMemorySearch(
   } catch (err) {
     gatewayErrorResponse(res, err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Admin: WeChat channel (QR code login flow)
+// ---------------------------------------------------------------------------
+
+// In-memory QR login session
+let wechatQrSession: {
+  qrcode: string;
+  qrcodeUrl: string;
+  status: "wait" | "scaned" | "confirmed" | "expired";
+  startedAt: number;
+} | null = null;
+
+async function handleAdminChannelWechat(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const authUser = adminAuth(req, res);
+  if (!authUser) return;
+
+  if (!settingsStoreRef) {
+    jsonResponse(res, 503, { error: "settings store unavailable" });
+    return;
+  }
+
+  const url = new URL(req.url ?? "", "http://localhost");
+
+  // POST /api/admin/channels/wechat/qr-start — request QR code
+  if (req.method === "POST" && url.pathname.endsWith("/qr-start")) {
+    try {
+      const { fetchQRCode, DEFAULT_BASE_URL } = await import("./wechat-api.js");
+      const baseUrl = settingsStoreRef.get("channel.wechat.base_url") || DEFAULT_BASE_URL;
+      const qr = await fetchQRCode(baseUrl);
+      wechatQrSession = {
+        qrcode: qr.qrcode,
+        qrcodeUrl: qr.qrcodeUrl,
+        status: "wait",
+        startedAt: Date.now(),
+      };
+      jsonResponse(res, 200, { qrcodeUrl: qr.qrcodeUrl });
+    } catch (err) {
+      jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // GET /api/admin/channels/wechat/qr-poll — poll scan status
+  if (req.method === "GET" && url.pathname.endsWith("/qr-poll")) {
+    if (!wechatQrSession) {
+      jsonResponse(res, 400, { error: "no active QR session" });
+      return;
+    }
+    try {
+      const { pollQRStatus, DEFAULT_BASE_URL } = await import("./wechat-api.js");
+      const baseUrl = settingsStoreRef.get("channel.wechat.base_url") || DEFAULT_BASE_URL;
+      const result = await pollQRStatus(baseUrl, wechatQrSession.qrcode);
+      wechatQrSession.status = result.status;
+
+      if (result.status === "confirmed" && result.botToken && result.accountId) {
+        // Save credentials
+        settingsStoreRef.set("channel.wechat.token", result.botToken);
+        settingsStoreRef.set("channel.wechat.base_url", result.baseUrl || baseUrl);
+        settingsStoreRef.set("channel.wechat.account_id", result.accountId);
+        settingsStoreRef.set("channel.wechat.enabled", "true");
+        settingsStoreRef.set("channel.wechat.owner_id", authUser.id);
+
+        // Hot-start wechat channel
+        if (handlerRef) {
+          const { setWechatConfig, setWechatTranscript, setWechatNotify, wechatPlugin } = await import("./wechat.js");
+          setWechatConfig({ token: result.botToken, baseUrl: result.baseUrl || baseUrl, accountId: result.accountId });
+          if (messageStoreRef) {
+            setWechatTranscript((sk, role, text) => messageStoreRef!.append(sk, role, text));
+          }
+          const ownerId = authUser.id;
+          setWechatNotify((sk, role, text) => {
+            gateway.sendEvent(ownerId, { type: "channel_message" as const, sessionKey: sk, role, text });
+          });
+          wechatPlugin.start(handlerRef).catch((err) => {
+            console.error("[WeChat] Channel start failed:", err);
+          });
+        }
+
+        wechatQrSession = null;
+        jsonResponse(res, 200, {
+          status: "confirmed",
+          accountId: result.accountId,
+          ok: true,
+        });
+      } else {
+        jsonResponse(res, 200, { status: result.status });
+      }
+    } catch (err) {
+      jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
+  // DELETE /api/admin/channels/wechat — disconnect
+  if (req.method === "DELETE") {
+    settingsStoreRef.set("channel.wechat.enabled", "false");
+    settingsStoreRef.set("channel.wechat.token", "");
+    settingsStoreRef.set("channel.wechat.base_url", "");
+    settingsStoreRef.set("channel.wechat.account_id", "");
+    settingsStoreRef.set("channel.wechat.owner_id", "");
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
 }
 
 // ---------------------------------------------------------------------------
@@ -1833,6 +1949,8 @@ async function handleRequest(
       return servePublicFile(res, "feishu.png", "image/png");
     case "/dingtalk.png":
       return servePublicFile(res, "dingtalk.png", "image/jpeg");
+    case "/wechat.png":
+      return servePublicFile(res, "wechat.png", "image/png");
 
     // Auth routes
     case "/api/auth/register":
@@ -1929,6 +2047,10 @@ async function handleRequest(
       return handleAdminChannelFeishu(req, res);
     case "/api/admin/channels/dingtalk":
       return handleAdminChannelDingtalk(req, res);
+    case "/api/admin/channels/wechat":
+    case "/api/admin/channels/wechat/qr-start":
+    case "/api/admin/channels/wechat/qr-poll":
+      return handleAdminChannelWechat(req, res);
     case "/api/admin/memory":
       return handleAdminMemory(req, res);
     case "/api/admin/memory/sync":
@@ -1968,6 +2090,7 @@ async function handleRequest(
       const channelOwnerChecks: Record<string, string> = {
         "feishu:": "channel.feishu.owner_id",
         "dingtalk:": "channel.dingtalk.owner_id",
+        "wechat:": "channel.wechat.owner_id",
       };
       for (const [prefix, ownerKey] of Object.entries(channelOwnerChecks)) {
         if (histSessionId.startsWith(prefix)) {
@@ -2014,6 +2137,8 @@ async function handleRequest(
           if (!feishuOwnerId || feishuOwnerId === sessAuth.user.id) channels.push("feishu:");
           const dtOwnerId = settingsStoreRef?.get("channel.dingtalk.owner_id");
           if (!dtOwnerId || dtOwnerId === sessAuth.user.id) channels.push("dingtalk:");
+          const wxOwnerId = settingsStoreRef?.get("channel.wechat.owner_id");
+          if (!wxOwnerId || wxOwnerId === sessAuth.user.id) channels.push("wechat:");
           const result = await gateway.listSessions({
             userId: sessAuth.user.id,
             includeChannels: channels,
