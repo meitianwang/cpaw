@@ -128,10 +128,9 @@ export class AgentSessionManager {
       const result = extractFinalText(messages);
 
       // Memory flush: after compaction, run a hidden prompt to save durable memories
+      // Awaited to prevent concurrent prompt() calls on the same agent
       if (compacted && this.memoryManager) {
-        this.runMemoryFlush(agent, sessionKey).catch((err) => {
-          console.warn(`[Memory] Flush failed for ${sessionKey}: ${err instanceof Error ? err.message : String(err)}`);
-        });
+        await this.runMemoryFlush(agent, sessionKey);
       }
 
       return result;
