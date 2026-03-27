@@ -755,7 +755,37 @@ export const feishuPlugin: ChannelPlugin = {
           if (notifyWebClients) notifyWebClients(msg.sessionKey, "user", msg.text.trim());
         }
 
+        // Add typing indicator (emoji reaction) on the user's message
+        let typingReactionId: string | null = null;
+        if (config.typingIndicator !== false) {
+          try {
+            const client = createFeishuClient(config);
+            const resp = await client.im.messageReaction.create({
+              path: { message_id: effectiveEvent.message.message_id },
+              data: { reaction_type: { emoji_type: "Typing" } },
+            });
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            typingReactionId = (resp as any)?.data?.reaction_id ?? null;
+          } catch {
+            // Non-critical — silently ignore (permission issues, message deleted, etc.)
+          }
+        }
+
         const reply = await handler(msg);
+
+        // Remove typing indicator
+        if (typingReactionId) {
+          try {
+            const client = createFeishuClient(config);
+            await client.im.messageReaction.delete({
+              path: {
+                message_id: effectiveEvent.message.message_id,
+                reaction_id: typingReactionId,
+              },
+            });
+          } catch { /* ignore */ }
+        }
+
         if (reply) {
           // Write assistant reply to transcript + push to web clients
           if (transcriptAppend) {
