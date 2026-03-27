@@ -7,7 +7,7 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import type { AgentTool, AgentToolResult, ToolExecutionContext } from "klaus-agent";
@@ -41,9 +41,8 @@ export async function appendToMemoryFile(memoryDir: string, content: string): Pr
   const relPath = `memory/${filename}`;
 
   if (existsSync(filePath)) {
-    const existing = await readFile(filePath, "utf-8");
-    const separator = existing.endsWith("\n") ? "\n" : "\n\n";
-    await appendFile(filePath, separator + content.trim() + "\n", "utf-8");
+    // Always prepend \n to ensure separation — avoids reading entire file just to check trailing newline
+    await appendFile(filePath, "\n" + content.trim() + "\n", "utf-8");
   } else {
     await writeFile(filePath, content.trim() + "\n", "utf-8");
   }
@@ -103,16 +102,6 @@ export function createMemorySaveTool(memoryDir: string): AgentTool {
 // ---------------------------------------------------------------------------
 // Memory flush prompt — injected as a hidden agent turn before compaction
 // ---------------------------------------------------------------------------
-
-export const MEMORY_FLUSH_SYSTEM_PROMPT = [
-  "Pre-compaction memory flush turn.",
-  "The session is near auto-compaction; capture durable memories to disk.",
-  "",
-  "Store durable memories using the memory_save tool.",
-  "Save: decisions made, user preferences learned, key facts discovered, important context.",
-  "Do NOT save: routine conversation, greetings, trivial exchanges.",
-  "If nothing worth saving, reply with a single period.",
-].join("\n");
 
 export const MEMORY_FLUSH_USER_PROMPT = [
   "Pre-compaction memory flush.",
