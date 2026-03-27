@@ -1546,10 +1546,12 @@ async function handleAdminMemory(
           }
         }
       }
-      // Per-provider API keys and base URLs
+      // Per-provider API keys and base URLs (whitelist provider IDs)
+      const VALID_PROVIDER_IDS = new Set(["openai", "local", "gemini", "voyage", "mistral", "ollama"]);
       const providersCfg = b.providers as Record<string, Record<string, string>> | undefined;
       if (providersCfg && typeof providersCfg === "object") {
         for (const [pid, cfg] of Object.entries(providersCfg)) {
+          if (!VALID_PROVIDER_IDS.has(pid)) continue;
           if (cfg.api_key !== undefined) settingsStoreRef.set(`memory.providers.${pid}.api_key`, cfg.api_key);
           if (cfg.base_url !== undefined) settingsStoreRef.set(`memory.providers.${pid}.base_url`, cfg.base_url);
         }
@@ -1827,6 +1829,10 @@ async function handleRequest(
       return servePublicFile(res, "logo.png", "image/png");
     case "/avatar.jpg":
       return servePublicFile(res, "avatar.jpg", "image/jpeg");
+    case "/feishu.png":
+      return servePublicFile(res, "feishu.png", "image/png");
+    case "/dingtalk.png":
+      return servePublicFile(res, "dingtalk.png", "image/jpeg");
 
     // Auth routes
     case "/api/auth/register":
