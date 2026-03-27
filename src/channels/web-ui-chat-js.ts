@@ -302,7 +302,16 @@ export function getChatMainJs(): string {
       }
       if (data.type === "ping") return;
       if (data.type === "config_updated") { showConfigNotification(); return; }
-      if (data.type === "feishu_activity") { loadSessionList(); return; }
+      if (data.type === "feishu_activity") {
+        loadSessionList();
+        // If currently viewing this feishu session, reload messages
+        if (data.sessionKey && currentSessionId === data.sessionKey) {
+          historyLoaded.delete(currentSessionId);
+          while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
+          loadHistory(currentSessionId);
+        }
+        return;
+      }
       if (data.sessionId && data.sessionId !== currentSessionId) return;
       if (data.type === "tool") { handleToolEvent(data.data); return; }
       if (data.type === "file") { appendFileCard(data.name, data.url); return; }
