@@ -1742,6 +1742,11 @@ async function handleRequest(
         jsonResponse(res, 400, { error: "invalid sessionId" });
         return;
       }
+      // Feishu sessions are only accessible to admins
+      if (histSessionId.startsWith("feishu:") && histAuth.kind !== "admin") {
+        jsonResponse(res, 403, { error: "admin access required for channel sessions" });
+        return;
+      }
       const limitStr = url.searchParams.get("limit") ?? "200";
       const limit = Math.min(Math.max(parseInt(limitStr, 10) || 200, 1), 500);
       try {

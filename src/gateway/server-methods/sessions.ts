@@ -21,17 +21,22 @@ export async function listGatewaySessions(params: {
   userId: string;
   includeAdminFlag?: boolean;
 }): Promise<{ sessions: readonly unknown[]; isAdmin: boolean }> {
-  // Include both web and feishu sessions for this user
+  const isAdmin = Boolean(params.includeAdminFlag);
   const webPrefix = buildWebSessionKey(params.userId, "");
   const webSessions = await params.messageStore.listSessions(webPrefix);
-  const rawFeishuSessions = await params.messageStore.listSessions("feishu:");
-  // Prefix feishu sessionIds so the client can route them correctly
-  const feishuSessions = rawFeishuSessions.map((s) => ({
-    ...s,
-    sessionId: `feishu:${(s as { sessionId: string }).sessionId}`,
-  }));
+
+  // Feishu sessions are shared across the instance — only visible to admins
+  let feishuSessions: unknown[] = [];
+  if (isAdmin) {
+    const rawFeishuSessions = await params.messageStore.listSessions("feishu:");
+    feishuSessions = rawFeishuSessions.map((s) => ({
+      ...s,
+      sessionId: `feishu:${(s as { sessionId: string }).sessionId}`,
+    }));
+  }
+
   const sessions = [...webSessions, ...feishuSessions];
-  return { sessions, isAdmin: Boolean(params.includeAdminFlag) };
+  return { sessions, isAdmin };
 }
 
 export function deleteGatewaySession(params: {
