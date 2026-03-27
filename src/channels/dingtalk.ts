@@ -254,19 +254,7 @@ export const dingtalkPlugin: ChannelPlugin = {
           }
           if (notifyWebClients) notifyWebClients(msg.sessionKey, "user", msg.text.trim());
 
-          // Long task notice: if AI takes > 5s, send a "still processing" message
-          const LONG_TASK_DELAY_MS = 5_000;
-          let longTaskSent = false;
-          const longTaskTimer = setTimeout(() => {
-            longTaskSent = true;
-            const chatType = raw.conversationType === "1" ? "direct" as const : "group" as const;
-            const to = chatType === "direct" ? raw.senderId : raw.conversationId;
-            sendTextMessage({ config, to, text: "正在思考中，请稍候...", chatType }).catch(() => {});
-          }, LONG_TASK_DELAY_MS);
-
           const reply = await handler(msg);
-          clearTimeout(longTaskTimer);
-
           if (reply) {
             // Write assistant reply to transcript + push to web
             if (transcriptAppend) {
