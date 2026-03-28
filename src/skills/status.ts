@@ -22,6 +22,8 @@ export interface SkillStatusEntry {
   readonly description: string;
   readonly source: "bundled" | "user" | "plugin";
   readonly emoji?: string;
+  readonly primaryEnv?: string;
+  readonly hasApiKey: boolean;
   readonly enabled: boolean;
   readonly eligible: boolean;
   readonly always: boolean;
@@ -53,9 +55,14 @@ function getMissingBins(meta?: KlausSkillMetadata): string[] {
   return missing;
 }
 
-function getMissingEnv(meta?: KlausSkillMetadata): string[] {
+function getMissingEnv(meta?: KlausSkillMetadata, storedApiKey?: string): string[] {
   if (!meta?.requires?.env) return [];
-  return meta.requires.env.filter((e) => !process.env[e]);
+  return meta.requires.env.filter((e) => {
+    if (process.env[e]) return false;
+    // If this env var matches primaryEnv and we have a stored API key, it's satisfied
+    if (e === meta.primaryEnv && storedApiKey) return false;
+    return true;
+  });
 }
 
 function extractInstallSpecs(meta?: KlausSkillMetadata): InstallSpec[] {
@@ -79,21 +86,33 @@ function extractInstallSpecs(meta?: KlausSkillMetadata): InstallSpec[] {
 export function buildSkillStatus(): SkillStatusEntry[] {
   const registry = getSkillRegistry();
   const pluginDirs = registry.getPluginDirList();
+  const rawLookup = registry.getApiKeyLookup();
+  // Cache API key lookups to avoid redundant SQLite reads + decryption
+  const keyCache = new Map<string, string | undefined>();
+  const apiKeyLookup: typeof rawLookup = rawLookup
+    ? (name) => {
+        if (!keyCache.has(name)) keyCache.set(name, rawLookup(name));
+        return keyCache.get(name);
+      }
+    : undefined;
   const allEntries = loadAllSkillEntries(pluginDirs);
   const enabledNames = new Set(
-    loadEnabledSkills(pluginDirs, allEntries).map((e) => e.name),
+    loadEnabledSkills(pluginDirs, allEntries, apiKeyLookup).map((e) => e.name),
   );
 
   return allEntries.map((entry) => {
     const meta = entry.metadata;
+    const storedKey = apiKeyLookup?.(entry.name);
     const missingBins = getMissingBins(meta);
-    const missingEnv = getMissingEnv(meta);
+    const missingEnv = getMissingEnv(meta, storedKey);
 
     return {
       name: entry.name,
       description: entry.description,
       source: entry.source,
       emoji: meta?.emoji,
+      primaryEnv: meta?.primaryEnv,
+      hasApiKey: Boolean(storedKey),
       enabled: enabledNames.has(entry.name),
       eligible: missingBins.length === 0 && missingEnv.length === 0,
       always: meta?.always ?? false,

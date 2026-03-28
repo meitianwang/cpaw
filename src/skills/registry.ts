@@ -16,6 +16,7 @@ import {
   resolveBundledSkillsDir,
   USER_SKILLS_DIR,
   type ResolvedSkill,
+  type ApiKeyLookup,
 } from "./index.js";
 const WATCH_DEBOUNCE_MS = 500;
 
@@ -28,16 +29,27 @@ class SkillRegistry {
   private watcher: FSWatcher | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly pluginDirs = new Map<string, string>();
+  private apiKeyLookup: ApiKeyLookup | undefined;
 
   /** Current version — bumped on every invalidation. */
   getVersion(): number {
     return this.version;
   }
 
+  /** Set the API key lookup callback (from SettingsStore). */
+  setApiKeyLookup(lookup: ApiKeyLookup): void {
+    this.apiKeyLookup = lookup;
+  }
+
+  /** Get the current API key lookup callback. */
+  getApiKeyLookup(): ApiKeyLookup | undefined {
+    return this.apiKeyLookup;
+  }
+
   /** Get cached skills, rebuilding if dirty. */
   getSkills(): ResolvedSkill[] {
     if (!this.cache) {
-      this.cache = loadResolvedSkills(this.getPluginDirList());
+      this.cache = loadResolvedSkills(this.getPluginDirList(), this.apiKeyLookup);
     }
     return this.cache;
   }

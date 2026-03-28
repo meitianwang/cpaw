@@ -578,9 +578,18 @@ class GatewayService {
     return { skills: buildSkillStatus() };
   }
 
-  updateAdminSkill(params: { name: string; enabled: boolean }): { ok: true } {
+  async updateAdminSkill(params: { name: string; enabled?: boolean; apiKey?: string }): Promise<{ ok: true }> {
     const store = this.requireSettingsStore();
-    store.set(`skill.${params.name}.enabled`, params.enabled ? "true" : "false");
+    if (params.enabled !== undefined) {
+      store.set(`skill.${params.name}.enabled`, params.enabled ? "true" : "false");
+    }
+    if (params.apiKey !== undefined) {
+      const { encryptCred } = await import("../channels/channel-creds.js");
+      store.set(`skill.${params.name}.apiKey`, params.apiKey ? encryptCred(params.apiKey) : "");
+      // Invalidate skill cache so eligibility re-checks with new key
+      const { getSkillRegistry } = await import("../skills/registry.js");
+      getSkillRegistry().invalidate();
+    }
     return { ok: true };
   }
 

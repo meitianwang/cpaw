@@ -69,6 +69,13 @@ async function start(): Promise<void> {
 
   // Initialize skill registry with hot-reload watcher
   const skillRegistry = getSkillRegistry();
+  const { decryptCred } = await import("./channels/channel-creds.js");
+  skillRegistry.setApiKeyLookup((name) => {
+    const encrypted = settingsStore.get(`skill.${name}.apiKey`);
+    if (!encrypted) return undefined;
+    const decrypted = decryptCred(encrypted);
+    return decrypted || undefined;
+  });
   skillRegistry.startWatching();
   const enabledSkills = skillRegistry.getSkills();
   console.log(`[Skills] ${enabledSkills.length} skill(s) loaded, watcher started`);

@@ -29,6 +29,7 @@ export interface KlausSkillMetadata {
   readonly emoji?: string;
   readonly os?: readonly string[];
   readonly always?: boolean;
+  readonly primaryEnv?: string;
   readonly requires?: {
     readonly bins?: readonly string[];
     readonly anyBins?: readonly string[];
@@ -264,15 +265,44 @@ function resolveSkillConfig(skillName: string): SkillConfig | undefined {
   return entries?.[skillName];
 }
 
+/** Optional callback to look up stored API keys (from SettingsStore). */
+export type ApiKeyLookup = (skillName: string) => string | undefined;
+
+/**
+ * Resolve skill config, enriching env with stored API key if primaryEnv is set.
+ * This allows `isEligible` to treat stored API keys as satisfying env requirements.
+ */
+function resolveFullSkillConfig(
+  entry: SkillEntry,
+  apiKeyLookup?: ApiKeyLookup,
+): SkillConfig | undefined {
+  const base = resolveSkillConfig(entry.name);
+  const primaryEnv = entry.metadata?.primaryEnv;
+  if (!primaryEnv || !apiKeyLookup) return base;
+
+  const storedKey = apiKeyLookup(entry.name);
+  if (!storedKey) return base;
+
+  // Inject stored API key into env map so isEligible treats it as satisfied
+  const env = { ...base?.env, [primaryEnv]: storedKey };
+  return { ...base, env };
+}
+
 /** Load enabled (eligible) skills after gating. Pass preloaded entries to avoid re-scanning. */
-export function loadEnabledSkills(pluginDirs: string[] = [], preloaded?: readonly SkillEntry[]): readonly SkillEntry[] {
+export function loadEnabledSkills(
+  pluginDirs: string[] = [],
+  preloaded?: readonly SkillEntry[],
+  apiKeyLookup?: ApiKeyLookup,
+): readonly SkillEntry[] {
   const cfg = loadConfig();
   const raw = cfg.skills;
   const all = preloaded ?? loadAllSkillEntries(pluginDirs);
 
+  const resolve = (e: SkillEntry) => resolveFullSkillConfig(e, apiKeyLookup);
+
   // always: true skills are loaded regardless of config
   const alwaysOn = all.filter(
-    (e) => e.metadata?.always && isEligible(e, resolveSkillConfig(e.name)),
+    (e) => e.metadata?.always && isEligible(e, resolve(e)),
   );
 
   // No skills section → return only always-on skills
@@ -281,21 +311,18 @@ export function loadEnabledSkills(pluginDirs: string[] = [], preloaded?: readonl
   let configured: SkillEntry[];
 
   if (raw === "all") {
-    // "all" → load all, still apply gating
-    configured = all.filter((e) => isEligible(e, resolveSkillConfig(e.name)));
+    configured = all.filter((e) => isEligible(e, resolve(e)));
   } else if (typeof raw === "object" && !Array.isArray(raw)) {
-    // Object with entries → per-skill config
     configured = all.filter((e) => {
-      const sc = resolveSkillConfig(e.name);
+      const sc = resolve(e);
       if (sc?.enabled === false) return false;
       return isEligible(e, sc);
     });
   } else if (Array.isArray(raw)) {
-    // Array of skill names → whitelist
     const names = new Set(raw.map(String));
     configured = all
       .filter((e) => names.has(e.name))
-      .filter((e) => isEligible(e, resolveSkillConfig(e.name)));
+      .filter((e) => isEligible(e, resolve(e)));
   } else {
     configured = [];
   }
@@ -330,8 +357,8 @@ function stripFrontmatter(raw: string): string {
 }
 
 /** Load enabled skills with full SKILL.md content (after gating). */
-export function loadResolvedSkills(pluginDirs: string[] = []): ResolvedSkill[] {
-  const entries = loadEnabledSkills(pluginDirs);
+export function loadResolvedSkills(pluginDirs: string[] = [], apiKeyLookup?: ApiKeyLookup): ResolvedSkill[] {
+  const entries = loadEnabledSkills(pluginDirs, undefined, apiKeyLookup);
   const results: ResolvedSkill[] = [];
   for (const entry of entries) {
     const content = stripFrontmatter(entry.rawContent);
