@@ -48,6 +48,7 @@ import {
   CONFIG_FILE,
   CONFIG_DIR,
 } from "../config.js";
+import { getUserUploadsDir } from "../user-dirs.js";
 import type {
   CronTask,
   CronTaskStatus,
@@ -122,7 +123,7 @@ function registerDownloadToken(
 ): { token: string; name: string } {
   // Resolve to absolute path and block path traversal
   const resolved = resolve(filePath);
-  const userUploadDir = join(CONFIG_DIR, "uploads", userId);
+  const userUploadDir = getUserUploadsDir(userId);
   const allowed =
     DOWNLOAD_ALLOWED_DIRS.some(
       (dir) => resolved === dir || resolved.startsWith(dir + "/"),
@@ -257,10 +258,10 @@ export function setCronScheduler(scheduler: typeof cronSchedulerRef): void {
 }
 
 // Memory manager reference (optional — set from index.ts when memory is enabled)
-let memoryManagerRef: import("../memory/manager.js").MemoryManager | null = null;
+let memoryPoolRef: import("../memory/pool.js").MemoryManagerPool | null = null;
 
-export function setMemoryManager(manager: import("../memory/manager.js").MemoryManager): void {
-  memoryManagerRef = manager;
+export function setMemoryPool(pool: import("../memory/pool.js").MemoryManagerPool): void {
+  memoryPoolRef = pool;
 }
 
 // Agent manager reference (for direct tool invocation API)
@@ -716,7 +717,7 @@ async function handleUpload(
   const diskName = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${safeBase}`;
 
   // Store uploads in user's uploads/ subdirectory
-  const userUploadDir = join(CONFIG_DIR, "uploads", auth.user.id);
+  const userUploadDir = getUserUploadsDir(auth.user.id);
   mkdirSync(userUploadDir, { recursive: true });
   const filePath = join(userUploadDir, diskName);
   const { writeFile } = await import("node:fs/promises");
@@ -1403,6 +1404,8 @@ async function handleAdminChannels(
     const dtEnabled = settingsStoreRef.getBool("channel.dingtalk.enabled", false);
     const wxAccountId = settingsStoreRef.get("channel.wechat.account_id") ?? "";
     const wxEnabled = settingsStoreRef.getBool("channel.wechat.enabled", false);
+    const qqAppId = settingsStoreRef.get("channel.qq.app_id") ?? "";
+    const qqEnabled = settingsStoreRef.getBool("channel.qq.enabled", false);
     jsonResponse(res, 200, {
       feishu: {
         enabled: feishuEnabled && !!feishuAppId,
@@ -1416,6 +1419,10 @@ async function handleAdminChannels(
       wechat: {
         enabled: wxEnabled && !!wxAccountId,
         account_id: wxAccountId,
+      },
+      qq: {
+        enabled: qqEnabled && !!qqAppId,
+        app_id: qqAppId,
       },
     });
     return;
@@ -1517,7 +1524,8 @@ async function handleAdminMemory(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  if (!adminAuth(req, res)) return;
+  const user = adminAuth(req, res);
+  if (!user) return;
   if (!settingsStoreRef) {
     jsonResponse(res, 503, { error: "settings store unavailable" });
     return;
@@ -1525,7 +1533,8 @@ async function handleAdminMemory(
 
   if (req.method === "GET") {
     const config = settingsStoreRef.getMemoryConfig();
-    const status = memoryManagerRef?.status() ?? null;
+    const adminMgr = memoryPoolRef ? await memoryPoolRef.getOrCreate(user.id) : null;
+    const status = adminMgr?.status() ?? null;
     jsonResponse(res, 200, { config, status });
     return;
   }
@@ -1585,19 +1594,20 @@ async function handleAdminMemorySync(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  if (!adminAuth(req, res)) return;
+  const user = adminAuth(req, res);
+  if (!user) return;
   if (req.method !== "POST") {
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
   }
-  if (!memoryManagerRef) {
+  if (!memoryPoolRef) {
     jsonResponse(res, 503, { error: "memory system not enabled" });
     return;
   }
   try {
-    await memoryManagerRef.sync({ force: true });
-    const status = memoryManagerRef.status();
-    jsonResponse(res, 200, { ok: true, status });
+    const mgr = await memoryPoolRef.getOrCreate(user.id);
+    await mgr.sync({ force: true });
+    jsonResponse(res, 200, { ok: true, status: mgr.status() });
   } catch (err) {
     gatewayErrorResponse(res, err);
   }
@@ -1607,12 +1617,13 @@ async function handleAdminMemorySearch(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  if (!adminAuth(req, res)) return;
+  const user = adminAuth(req, res);
+  if (!user) return;
   if (req.method !== "GET") {
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
   }
-  if (!memoryManagerRef) {
+  if (!memoryPoolRef) {
     jsonResponse(res, 503, { error: "memory system not enabled" });
     return;
   }
@@ -1623,7 +1634,8 @@ async function handleAdminMemorySearch(
     return;
   }
   try {
-    const results = await memoryManagerRef.search(query);
+    const mgr = await memoryPoolRef.getOrCreate(user.id);
+    const results = await mgr.search(query);
     jsonResponse(res, 200, { results });
   } catch (err) {
     gatewayErrorResponse(res, err);
@@ -1638,7 +1650,8 @@ async function handleToolsList(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  if (!adminAuth(req, res)) return;
+  const user = adminAuth(req, res);
+  if (!user) return;
   if (req.method !== "GET") {
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
@@ -1647,10 +1660,9 @@ async function handleToolsList(
     jsonResponse(res, 503, { error: "agent manager unavailable" });
     return;
   }
-  const tools = agentManagerRef.buildTools().map((t) => ({
+  const tools = (await agentManagerRef.buildTools(user.id)).map((t) => ({
     name: t.name, label: t.label, description: t.description,
   }));
-  // Virtual tool: sandbox_exec (available when sandbox is enabled)
   tools.push({ name: "sandbox_exec", label: "Sandbox Exec", description: "Execute a command in Docker sandbox" });
   jsonResponse(res, 200, { tools });
 }
@@ -1659,7 +1671,8 @@ async function handleToolsInvoke(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  if (!adminAuth(req, res)) return;
+  const user = adminAuth(req, res);
+  if (!user) return;
   if (req.method !== "POST") {
     jsonResponse(res, 405, { error: "method not allowed" });
     return;
@@ -1676,7 +1689,7 @@ async function handleToolsInvoke(
       return;
     }
     const args = (body.args && typeof body.args === "object" ? body.args : {}) as Record<string, unknown>;
-    const result = await agentManagerRef.invokeTool(toolName, args);
+    const result = await agentManagerRef.invokeTool(toolName, args, user.id);
     if (result.ok) {
       jsonResponse(res, 200, { ok: true, result: result.result });
     } else {
@@ -1884,6 +1897,79 @@ async function handleAdminChannelDingtalk(
   jsonResponse(res, 405, { error: "method not allowed" });
 }
 
+async function handleAdminChannelQQ(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const authUser = adminAuth(req, res);
+  if (!authUser) return;
+
+  if (!settingsStoreRef) {
+    jsonResponse(res, 503, { error: "settings store unavailable" });
+    return;
+  }
+
+  if (req.method === "POST") {
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      const appId = String(parsed.app_id ?? "").trim();
+      const clientSecret = String(parsed.client_secret ?? "").trim();
+      if (!appId || !clientSecret) {
+        jsonResponse(res, 400, { error: "app_id and client_secret are required" });
+        return;
+      }
+
+      // Validate credentials
+      const { probeQQBotCredentials } = await import("./qq-api.js");
+      const probe = await probeQQBotCredentials({ appId, clientSecret });
+      if (!probe.ok) {
+        jsonResponse(res, 400, {
+          ok: false,
+          error: probe.error || "Failed to connect. Check App ID and App Secret.",
+        });
+        return;
+      }
+
+      settingsStoreRef.set("channel.qq.app_id", appId);
+      settingsStoreRef.set("channel.qq.client_secret", encryptCred(clientSecret));
+      settingsStoreRef.set("channel.qq.enabled", "true");
+      settingsStoreRef.set("channel.qq.owner_id", authUser.id);
+
+      // Hot-start QQ channel
+      if (handlerRef) {
+        const { setQQBotConfig, setQQBotTranscript, setQQBotNotify, qqPlugin } = await import("./qq.js");
+        setQQBotConfig({ appId, clientSecret });
+        if (messageStoreRef) {
+          setQQBotTranscript((sk, role, text) => messageStoreRef!.append(sk, role, text));
+        }
+        const ownerId = authUser.id;
+        setQQBotNotify((sk, role, text) => {
+          gateway.sendEvent(ownerId, { type: "channel_message" as const, sessionKey: sk, role, text });
+        });
+        qqPlugin.start(handlerRef).catch((err) => {
+          console.error("[QQ] Channel start failed:", err);
+        });
+      }
+
+      jsonResponse(res, 200, { ok: true, app_id: appId, enabled: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  if (req.method === "DELETE") {
+    settingsStoreRef.set("channel.qq.enabled", "false");
+    settingsStoreRef.set("channel.qq.app_id", "");
+    settingsStoreRef.set("channel.qq.client_secret", "");
+    settingsStoreRef.set("channel.qq.owner_id", "");
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
+}
+
 // ---------------------------------------------------------------------------
 // File download handler
 // ---------------------------------------------------------------------------
@@ -2026,6 +2112,8 @@ async function handleRequest(
       return servePublicFile(res, "dingtalk.png", "image/jpeg");
     case "/wechat-icon.png":
       return servePublicFile(res, "wechat-icon.png", "image/jpeg");
+    case "/qq.png":
+      return servePublicFile(res, "qq.png", "image/jpeg");
 
     // Auth routes
     case "/api/auth/register":
@@ -2126,6 +2214,8 @@ async function handleRequest(
     case "/api/admin/channels/wechat/qr-start":
     case "/api/admin/channels/wechat/qr-poll":
       return handleAdminChannelWechat(req, res);
+    case "/api/admin/channels/qq":
+      return handleAdminChannelQQ(req, res);
     case "/api/admin/memory":
       return handleAdminMemory(req, res);
     case "/api/admin/memory/sync":
@@ -2172,6 +2262,7 @@ async function handleRequest(
         "feishu:": "channel.feishu.owner_id",
         "dingtalk:": "channel.dingtalk.owner_id",
         "wechat:": "channel.wechat.owner_id",
+        "qq:": "channel.qq.owner_id",
       };
       for (const [prefix, ownerKey] of Object.entries(channelOwnerChecks)) {
         if (histSessionId.startsWith(prefix)) {
@@ -2220,6 +2311,8 @@ async function handleRequest(
           if (!dtOwnerId || dtOwnerId === sessAuth.user.id) channels.push("dingtalk:");
           const wxOwnerId = settingsStoreRef?.get("channel.wechat.owner_id");
           if (!wxOwnerId || wxOwnerId === sessAuth.user.id) channels.push("wechat:");
+          const qqOwnerId = settingsStoreRef?.get("channel.qq.owner_id");
+          if (!qqOwnerId || qqOwnerId === sessAuth.user.id) channels.push("qq:");
           const result = await gateway.listSessions({
             userId: sessAuth.user.id,
             includeChannels: channels,

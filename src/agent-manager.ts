@@ -29,14 +29,15 @@ import { getProvider, capabilities } from "./providers/registry.js";
 import { refreshAccessToken } from "./auth/oauth.js";
 import type { OAuthProviderAuth } from "./auth/oauth.js";
 import type { MemoryManager } from "./memory/manager.js";
+import type { MemoryManagerPool } from "./memory/pool.js";
 import { createMemorySearchTool, createMemoryGetTool, buildMemoryPromptSection } from "./memory/tools.js";
 import { createMemorySaveTool, MEMORY_FLUSH_USER_PROMPT } from "./memory/memory-write.js";
 import { ToolLoopDetector } from "./tool-loop-detector.js";
 import { loadSandboxConfig, sandboxExec } from "./sandbox.js";
+import { createCodingTools } from "./tools/coding.js";
+import { extractUserId, getUserSessionsDir, getUserWorkspaceDir, ensureUserDirs } from "./user-dirs.js";
 
 type AgentEventCallback = (event: AgentEvent) => void;
-
-const SESSIONS_DIR = join(CONFIG_DIR, "agent-sessions");
 
 /** Auto-approve all tool calls (for direct invocation, not LLM). */
 const autoApproval: Approval = {
@@ -109,15 +110,15 @@ export class AgentSessionManager {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly store: SettingsStore;
   private readonly maxSessions: number;
-  private memoryManager: MemoryManager | null = null;
+  private memoryPool: MemoryManagerPool | null = null;
 
   constructor(store: SettingsStore) {
     this.store = store;
     this.maxSessions = store.getNumber("max_sessions", 20);
   }
 
-  setMemoryManager(manager: MemoryManager | null): void {
-    this.memoryManager = manager;
+  setMemoryPool(pool: MemoryManagerPool | null): void {
+    this.memoryPool = pool;
   }
 
   async chat(
@@ -129,7 +130,7 @@ export class AgentSessionManager {
 
     // Track compaction events for memory flush
     let compacted = false;
-    const memoryUnsub = this.memoryManager
+    const memoryUnsub = this.memoryPool
       ? agent.subscribe((event) => { if (event.type === "compaction_end") compacted = true; })
       : undefined;
 
@@ -144,7 +145,7 @@ export class AgentSessionManager {
 
       // Memory flush: after compaction, run a hidden prompt to save durable memories
       // Awaited to prevent concurrent prompt() calls on the same agent
-      if (compacted && this.memoryManager) {
+      if (compacted && this.memoryPool) {
         await this.runMemoryFlush(agent, sessionKey);
       }
 
@@ -164,14 +165,16 @@ export class AgentSessionManager {
       await agent.prompt(MEMORY_FLUSH_USER_PROMPT);
       console.log(`[Memory] Flush completed for ${sessionKey}`);
       // Trigger sync so new memory files are indexed
-      await this.memoryManager?.sync().catch(() => {});
+      const userId = extractUserId(sessionKey);
+      const mgr = await this.memoryPool?.getOrCreate(userId);
+      await mgr?.sync().catch(() => {});
     } catch (err) {
       console.warn(`[Memory] Flush prompt failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   /** Build the current tool list. Used by both getOrCreate() and invokeTool(). */
-  buildTools(apiKeyOverride?: string): AgentTool[] {
+  async buildTools(userId: string, apiKeyOverride?: string): Promise<AgentTool[]> {
     const modelRecord = this.store.getDefaultModel();
     const providerDef = modelRecord?.provider ? getProvider(modelRecord.provider) : undefined;
     const apiKey = apiKeyOverride ?? modelRecord?.apiKey;
@@ -182,10 +185,12 @@ export class AgentSessionManager {
       tools.push(...providerDef.tools(apiKey, baseUrl, modelRecord.model));
     }
     tools.push(...capabilities.buildTools());
-    if (this.memoryManager) {
-      tools.push(createMemorySearchTool(this.memoryManager));
-      tools.push(createMemoryGetTool(this.memoryManager));
-      tools.push(createMemorySaveTool(this.memoryManager.memoryDir));
+    tools.push(...createCodingTools(getUserWorkspaceDir(userId), this.store));
+    if (this.memoryPool) {
+      const mgr = await this.memoryPool.getOrCreate(userId);
+      tools.push(createMemorySearchTool(mgr));
+      tools.push(createMemoryGetTool(mgr));
+      tools.push(createMemorySaveTool(mgr.memoryDir));
     }
     return tools;
   }
@@ -194,13 +199,14 @@ export class AgentSessionManager {
   async invokeTool(
     toolName: string,
     args: Record<string, unknown>,
+    userId: string = "admin",
   ): Promise<{ ok: true; result: AgentToolResult } | { ok: false; error: string }> {
     // "sandbox_exec" is a virtual tool — not in the registry, handled separately
     if (toolName === "sandbox_exec") {
       return this.runSandboxExec(args);
     }
 
-    const tools = this.buildTools();
+    const tools = await this.buildTools(userId);
     const tool = tools.find((t) => t.name === toolName);
     if (!tool) {
       return { ok: false, error: `Tool "${toolName}" not found. Available: ${tools.map((t) => t.name).join(", ")}` };
@@ -252,8 +258,7 @@ export class AgentSessionManager {
   async reset(sessionKey: string): Promise<void> {
     const entry = this.sessions.get(sessionKey);
     if (entry) {
-      // Flush memories before disposing (like OpenClaw's session reset hook)
-      if (this.memoryManager) {
+      if (this.memoryPool) {
         await this.runMemoryFlush(entry.agent, sessionKey);
       }
       this.sessions.delete(sessionKey);
@@ -277,6 +282,9 @@ export class AgentSessionManager {
     }
 
     this.evictIfNeeded();
+
+    const userId = extractUserId(sessionKey);
+    await ensureUserDirs(userId);
 
     // Read config from store at creation time
     const modelRecord = this.store.getDefaultModel();
@@ -332,8 +340,8 @@ export class AgentSessionManager {
     for (const rule of rules) {
       parts.push(rule.content);
     }
-    if (this.memoryManager) {
-      parts.push(buildMemoryPromptSection(this.memoryManager.citationsMode));
+    if (this.memoryPool) {
+      parts.push(buildMemoryPromptSection(this.memoryPool.citationsMode));
     }
     const systemPrompt = parts.join("\n\n") || "You are a helpful assistant.";
 
@@ -346,7 +354,7 @@ export class AgentSessionManager {
       transport: s.transport as MCPServerConfig["transport"],
     }));
 
-    const tools = this.buildTools(apiKey);
+    const tools = await this.buildTools(userId, apiKey);
 
     const loopDetector = new ToolLoopDetector();
     const providerHooks = providerDef?.hooks;
@@ -364,10 +372,9 @@ export class AgentSessionManager {
         afterToolCall: providerHooks?.afterToolCall,
       },
       thinkingLevel: (modelRecord.thinking || "off") as ThinkingLevel,
-      // Session persistence: JSONL files in ~/.klaus/agent-sessions/
       session: {
         persist: true,
-        directory: SESSIONS_DIR,
+        directory: getUserSessionsDir(userId),
         sessionId: sanitizeSessionKey(sessionKey),
       },
       // Compaction: auto-compress when context gets large

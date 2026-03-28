@@ -2,6 +2,7 @@ import { webPlugin } from "./channels/web.js";
 import { feishuPlugin, setFeishuConfig, setFeishuTranscript, setFeishuNotify } from "./channels/feishu.js";
 import { dingtalkPlugin, setDingtalkConfig, setDingtalkTranscript, setDingtalkNotify } from "./channels/dingtalk.js";
 import { wechatPlugin, setWechatConfig, setWechatTranscript, setWechatNotify } from "./channels/wechat.js";
+import { qqPlugin, setQQBotConfig, setQQBotTranscript, setQQBotNotify } from "./channels/qq.js";
 import { decryptCred } from "./channels/channel-creds.js";
 import {
   registerChannel,
@@ -34,6 +35,7 @@ registerChannel(webPlugin);
 registerChannel(feishuPlugin);
 registerChannel(dingtalkPlugin);
 registerChannel(wechatPlugin);
+registerChannel(qqPlugin);
 
 // ---------------------------------------------------------------------------
 // Main
@@ -47,44 +49,32 @@ async function start(): Promise<void> {
   // Initialize settings store (SQLite)
   const settingsStore = new SettingsStore();
 
+  // Run per-user directory migration if needed
+  const { runMigrationIfNeeded } = await import("./migration/user-dirs.js");
+  await runMigrationIfNeeded();
+
   // Load external providers and register all factories + capabilities
   await loadExternalProviders();
   registerAllFactories();
   registerAllCapabilities();
   await capabilities.startServices();
 
-  // Initialize memory system if enabled
-  let memoryManager: import("./memory/manager.js").MemoryManager | null = null;
+  // Initialize per-user memory pool if enabled
+  let memoryPool: import("./memory/pool.js").MemoryManagerPool | null = null;
   const memoryConfig = settingsStore.getMemoryConfig();
   if (memoryConfig.enabled) {
-    const { MemoryManager } = await import("./memory/manager.js");
-    const { join } = await import("node:path");
-    const { CONFIG_DIR } = await import("./config.js");
-    const memoryDir = join(CONFIG_DIR, "memory");
-    const transcriptsDir = settingsStore.get("transcripts.dir") ?? join(CONFIG_DIR, "transcripts");
-    memoryManager = new MemoryManager({
-      dbPath: join(CONFIG_DIR, "memory.db"),
-      config: memoryConfig,
-      memoryDir,
-      transcriptsDir: memoryConfig.sources.includes("sessions") ? transcriptsDir : undefined,
-    });
-    await memoryManager.initProvider();
-    await memoryManager.sync().catch((err: unknown) => {
-      console.warn(`[Memory] Initial sync failed: ${String(err)}`);
-    });
-    memoryManager.startPeriodicSync();
-    memoryManager.startWatcher();
-    memoryManager.startSessionListener();
-    const status = memoryManager.status();
+    const { MemoryManagerPool } = await import("./memory/pool.js");
+    memoryPool = new MemoryManagerPool(memoryConfig);
+    memoryPool.startPeriodicSync();
     console.log(
-      `[Memory] Initialized (mode=${status.searchMode}, provider=${status.provider}, model=${status.model}, sources=${memoryConfig.sources.join(",")}, dir=${memoryDir})`,
+      `[Memory] Pool initialized (sources=${memoryConfig.sources.join(",")}, per-user isolation enabled)`,
     );
   }
 
   // Initialize agent session manager
   const agentManager = new AgentSessionManager(settingsStore);
-  if (memoryManager) {
-    agentManager.setMemoryManager(memoryManager);
+  if (memoryPool) {
+    agentManager.setMemoryPool(memoryPool);
   }
   const defaultModel = settingsStore.getDefaultModel();
   console.log(
@@ -228,6 +218,30 @@ async function start(): Promise<void> {
     }
   }
 
+  // Initialize QQ Bot channel from SettingsStore (configured via admin panel).
+  {
+    const qqAppId = settingsStore.get("channel.qq.app_id");
+    const qqSecret = decryptCred(settingsStore.get("channel.qq.client_secret") ?? "");
+    const qqEnabled = settingsStore.getBool("channel.qq.enabled", false);
+
+    if (qqEnabled && qqAppId && qqSecret) {
+      const qqOwnerId = settingsStore.get("channel.qq.owner_id");
+      setQQBotConfig({ appId: qqAppId, clientSecret: qqSecret });
+      setQQBotTranscript((sessionKey, role, text) => messageStore.append(sessionKey, role, text));
+      setQQBotNotify((sessionKey, role, text) => {
+        const event = { type: "channel_message" as const, sessionKey, role, text };
+        if (qqOwnerId) gateway.sendEvent(qqOwnerId, event);
+        else gateway.broadcastEvent(event);
+      });
+      if (!channelNames.includes("qq")) {
+        channelNames.push("qq");
+        const qq = getChannel("qq");
+        if (qq) plugins.push(qq);
+      }
+      console.log("[QQ] Enabled (configured via admin panel)");
+    }
+  }
+
   // Expose stores to web channel for API endpoints
   let inviteStoreInstance: { close(): void } | null = null;
   let userStoreInstance: { close(): void } | null = null;
@@ -237,11 +251,11 @@ async function start(): Promise<void> {
       setInviteStore,
       setUserStore,
       setSettingsStore,
-      setMemoryManager,
+      setMemoryPool: setWebMemoryPool,
     } = await import("./channels/web.js");
     setMessageStore(messageStore);
     setSettingsStore(settingsStore);
-    if (memoryManager) setMemoryManager(memoryManager);
+    if (memoryPool) setWebMemoryPool(memoryPool);
 
     const { InviteStore } = await import("./invite-store.js");
     const inviteStore = new InviteStore();
@@ -318,7 +332,7 @@ async function start(): Promise<void> {
     cronScheduler?.stop();
     await capabilities.stopServices();
     await agentManager.disposeAll();
-    await memoryManager?.close();
+    await memoryPool?.closeAll();
     inviteStoreInstance?.close();
     userStoreInstance?.close();
     settingsStore.close();

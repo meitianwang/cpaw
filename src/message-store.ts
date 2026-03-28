@@ -22,6 +22,7 @@ import { appendFile, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CONFIG_DIR } from "./config.js";
 import { emitSessionTranscriptUpdate } from "./memory/transcript-events.js";
+import { extractUserId, getUserTranscriptsDir } from "./user-dirs.js";
 import type { TranscriptsConfig } from "./types.js";
 
 function emitTranscriptEvent(sessionFile: string, sessionKey: string): void {
@@ -152,20 +153,25 @@ export class MessageStore {
   private readonly config: TranscriptsConfig;
   /** Tracks which sessionKeys already have a file (avoids repeated existsSync). */
   private readonly knownFiles = new Set<string>();
+  /** Tracks which per-user transcript dirs have been created (avoids repeated mkdirSync). */
+  private readonly ensuredDirs = new Set<string>();
   /** Per-key write locks to prevent concurrent header/append races. */
   private readonly writeLocks = new Map<string, Promise<void>>();
 
   constructor(config?: Partial<TranscriptsConfig>) {
     this.config = { ...DEFAULTS, ...config };
-    mkdirSync(this.config.transcriptsDir, { recursive: true });
+    // Legacy global dir is no longer auto-created; per-user dirs are created on demand
   }
 
-  /** Resolve the JSONL file path for a given sessionKey. */
+  /** Resolve the JSONL file path for a given sessionKey (per-user directory). */
   private filePath(sessionKey: string): string {
-    return join(
-      this.config.transcriptsDir,
-      sanitizeSessionKey(sessionKey) + ".jsonl",
-    );
+    const userId = extractUserId(sessionKey);
+    const dir = getUserTranscriptsDir(userId);
+    if (!this.ensuredDirs.has(dir)) {
+      mkdirSync(dir, { recursive: true });
+      this.ensuredDirs.add(dir);
+    }
+    return join(dir, sanitizeSessionKey(sessionKey) + ".jsonl");
   }
 
   /** Write the session header and line data (actual I/O, no locking). */
@@ -222,67 +228,73 @@ export class MessageStore {
 
   /** Read all messages from a session's transcript (empty array if none). */
   async readHistory(sessionKey: string): Promise<readonly TranscriptMessage[]> {
-    const fp = this.filePath(sessionKey);
-    if (!existsSync(fp)) return [];
-
+    let fp = this.filePath(sessionKey);
+    // Fallback to legacy global dir if not found in per-user dir
+    if (!existsSync(fp)) {
+      const legacyFp = join(this.config.transcriptsDir, sanitizeSessionKey(sessionKey) + ".jsonl");
+      if (existsSync(legacyFp)) { fp = legacyFp; } else { return []; }
+    }
     const raw = await readFile(fp, "utf-8");
     return parseMessages(raw);
   }
 
   /** Prune old transcript files by age and count. Returns number of files removed. */
   prune(): number {
-    const dir = this.config.transcriptsDir;
-    if (!existsSync(dir)) return 0;
+    const usersBase = join(CONFIG_DIR, "users");
+    if (!existsSync(usersBase)) return 0;
 
     const maxAgeMs = this.config.maxAgeDays * 24 * 60 * 60 * 1000;
     const now = Date.now();
     let removed = 0;
 
-    // Collect all .jsonl files with mtime
-    const files: Array<{ name: string; mtimeMs: number }> = [];
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith(".jsonl")) continue;
-      try {
-        const st = statSync(join(dir, name));
-        files.push({ name, mtimeMs: st.mtimeMs });
-      } catch {
-        // Skip unreadable files
-      }
-    }
+    // Scan all user directories
+    for (const userId of readdirSync(usersBase)) {
+      const dir = join(usersBase, userId, "transcripts");
+      if (!existsSync(dir)) continue;
 
-    // Remove files older than maxAge
-    const remaining: typeof files = [];
-    for (const f of files) {
-      if (now - f.mtimeMs > maxAgeMs) {
+      const files: Array<{ path: string; mtimeMs: number }> = [];
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith(".jsonl")) continue;
         try {
-          unlinkSync(join(dir, f.name));
-          removed++;
-        } catch {
+          const fp = join(dir, name);
+          files.push({ path: fp, mtimeMs: statSync(fp).mtimeMs });
+        } catch {}
+      }
+
+      // Remove files older than maxAge
+      const remaining: typeof files = [];
+      for (const f of files) {
+        if (now - f.mtimeMs > maxAgeMs) {
+          try { unlinkSync(f.path); removed++; } catch { remaining.push(f); }
+        } else {
           remaining.push(f);
         }
-      } else {
-        remaining.push(f);
+      }
+
+      // Cap per-user file count
+      if (remaining.length > this.config.maxFiles) {
+        remaining.sort((a, b) => b.mtimeMs - a.mtimeMs);
+        for (const f of remaining.slice(this.config.maxFiles)) {
+          try { unlinkSync(f.path); removed++; } catch {}
+        }
       }
     }
 
-    // Cap total file count (keep newest)
-    if (remaining.length > this.config.maxFiles) {
-      remaining.sort((a, b) => b.mtimeMs - a.mtimeMs); // newest first
-      const excess = remaining.slice(this.config.maxFiles);
-      for (const f of excess) {
+    // Also prune legacy global dir if it exists
+    const legacyDir = this.config.transcriptsDir;
+    if (existsSync(legacyDir)) {
+      for (const name of readdirSync(legacyDir)) {
+        if (!name.endsWith(".jsonl")) continue;
         try {
-          unlinkSync(join(dir, f.name));
-          removed++;
-        } catch {
-          // Ignore
-        }
+          const fp = join(legacyDir, name);
+          if (now - statSync(fp).mtimeMs > maxAgeMs) { unlinkSync(fp); removed++; }
+        } catch {}
       }
     }
 
     if (removed > 0) {
       console.log(`[MessageStore] Pruned ${removed} transcript file(s)`);
     }
-
     return removed;
   }
 
@@ -295,30 +307,46 @@ export class MessageStore {
     prefix: string,
     limit: number = 200,
   ): Promise<readonly SessionSummary[]> {
-    const dir = this.config.transcriptsDir;
+    const sanitizedPrefix = sanitizeSessionKey(prefix);
 
-    let names: string[];
-    try {
-      names = await readdir(dir);
-    } catch {
-      return [];
+    // Determine which user directories to scan
+    const usersBase = join(CONFIG_DIR, "users");
+    let userDirs: string[] = [];
+
+    // Optimization: if prefix identifies a specific user, only scan that user's dir
+    const userId = extractUserId(prefix);
+    const targetDir = getUserTranscriptsDir(userId);
+    if (existsSync(targetDir)) {
+      userDirs.push(targetDir);
+    } else {
+      // Fallback: scan all user dirs (e.g. admin queries)
+      try {
+        userDirs = (await readdir(usersBase)).map((u) => join(usersBase, u, "transcripts"));
+      } catch {}
+    }
+    // Also check legacy global dir
+    if (existsSync(this.config.transcriptsDir)) {
+      userDirs.push(this.config.transcriptsDir);
     }
 
-    const sanitizedPrefix = sanitizeSessionKey(prefix);
-    const matching = names.filter(
-      (n) => n.endsWith(".jsonl") && n.startsWith(sanitizedPrefix),
-    );
-
-    const tasks = matching.map(async (name) => {
-      const sessionId = name.slice(sanitizedPrefix.length, -".jsonl".length);
-      if (!sessionId) return null;
-      try {
-        const raw = await readFile(join(dir, name), "utf-8");
-        return parseSummary(raw, sessionId);
-      } catch {
-        return null;
+    const tasks: Promise<SessionSummary | null>[] = [];
+    for (const dir of userDirs) {
+      let names: string[];
+      try { names = await readdir(dir); } catch { continue; }
+      const matching = names.filter(
+        (n) => n.endsWith(".jsonl") && n.startsWith(sanitizedPrefix),
+      );
+      for (const name of matching) {
+        tasks.push((async () => {
+          const sessionId = name.slice(sanitizedPrefix.length, -".jsonl".length);
+          if (!sessionId) return null;
+          try {
+            const raw = await readFile(join(dir, name), "utf-8");
+            return parseSummary(raw, sessionId);
+          } catch { return null; }
+        })());
       }
-    });
+    }
 
     const results = (await Promise.all(tasks)).filter(
       (s): s is SessionSummary => s !== null,
