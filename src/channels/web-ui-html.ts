@@ -438,6 +438,7 @@ export function getChatBodyHtml(): string {
                         </div>
                         <button class="s-btn s-btn-danger" id="s-ch-imessage-disconnect-btn" data-i18n="settings_ch_disconnect">Disconnect</button>
                       </div>
+                      <div style="margin-top:12px;font-size:13px;color:var(--fg-tertiary);line-height:1.7" data-i18n="settings_ch_imessage_usage">iMessage bridge is running. Anyone who sends you an iMessage will get a reply from Klaus. You can view these conversations in the session list on the left.</div>
                     </div>
                     <div id="s-ch-imessage-form">
                       <div style="font-size:13px;color:var(--fg-tertiary);line-height:1.7;margin-bottom:20px">
