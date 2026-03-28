@@ -35,6 +35,8 @@ import { createMemorySaveTool, MEMORY_FLUSH_USER_PROMPT } from "./memory/memory-
 import { ToolLoopDetector } from "./tool-loop-detector.js";
 import { loadSandboxConfig, sandboxExec } from "./sandbox.js";
 import { createCodingTools } from "./tools/coding.js";
+import { createSkillTool } from "./skills/index.js";
+import { getSkillRegistry } from "./skills/registry.js";
 import { extractUserId, getUserSessionsDir, getUserWorkspaceDir, ensureUserDirs } from "./user-dirs.js";
 
 type AgentEventCallback = (event: AgentEvent) => void;
@@ -48,6 +50,7 @@ const autoApproval: Approval = {
   isYolo() { return true; },
   autoApproveActions: new Set<string>(),
   share() { return autoApproval; },
+  dispose() {},
 };
 const refreshLocks = new Map<string, Promise<string | undefined>>();
 
@@ -104,6 +107,7 @@ function createMcpClient(config: MCPServerConfig): MCPClient {
 interface SessionEntry {
   agent: Agent;
   loopDetector: ToolLoopDetector;
+  skillVersion: number;
 }
 
 export class AgentSessionManager {
@@ -126,6 +130,14 @@ export class AgentSessionManager {
     text: string,
     onEvent?: AgentEventCallback,
   ): Promise<string | null> {
+    // Hot-reload: evict session if skills changed (session persistence keeps history)
+    const registry = getSkillRegistry();
+    const existing = this.sessions.get(sessionKey);
+    if (existing && registry.getVersion() > existing.skillVersion) {
+      this.sessions.delete(sessionKey);
+      await existing.agent.dispose();
+    }
+
     const { agent } = await this.getOrCreate(sessionKey);
 
     // Track compaction events for memory flush
@@ -343,6 +355,16 @@ export class AgentSessionManager {
     if (this.memoryPool) {
       parts.push(buildMemoryPromptSection(this.memoryPool.citationsMode));
     }
+    const skillRegistry = getSkillRegistry();
+    const resolvedSkills = skillRegistry.getSkills();
+    if (resolvedSkills.length > 0) {
+      const skillList = resolvedSkills
+        .map((s) => `- ${s.name}: ${s.description}`)
+        .join("\n");
+      parts.push(
+        `Available skills (use invoke_skill tool to invoke):\n${skillList}`,
+      );
+    }
     const systemPrompt = parts.join("\n\n") || "You are a helpful assistant.";
 
     const yolo = this.store.getBool("yolo", true);
@@ -355,6 +377,9 @@ export class AgentSessionManager {
     }));
 
     const tools = await this.buildTools(userId, apiKey);
+    if (resolvedSkills.length > 0) {
+      tools.push(createSkillTool(resolvedSkills));
+    }
 
     const loopDetector = new ToolLoopDetector();
     const providerHooks = providerDef?.hooks;
@@ -394,7 +419,7 @@ export class AgentSessionManager {
         : {}),
     });
 
-    const entry: SessionEntry = { agent, loopDetector };
+    const entry: SessionEntry = { agent, loopDetector, skillVersion: skillRegistry.getVersion() };
     this.sessions.set(sessionKey, entry);
     return entry;
   }

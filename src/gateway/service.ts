@@ -569,6 +569,29 @@ class GatewayService {
     });
   }
 
+  // -------------------------------------------------------------------------
+  // Skills
+  // -------------------------------------------------------------------------
+
+  async listAdminSkills(): Promise<{ skills: readonly import("../skills/status.js").SkillStatusEntry[] }> {
+    const { buildSkillStatus } = await import("../skills/status.js");
+    return { skills: buildSkillStatus() };
+  }
+
+  updateAdminSkill(params: { name: string; enabled: boolean }): { ok: true } {
+    const store = this.requireSettingsStore();
+    store.set(`skill.${params.name}.enabled`, params.enabled ? "true" : "false");
+    return { ok: true };
+  }
+
+  async installAdminSkillDep(params: {
+    spec: import("../skills/installer.js").InstallSpec;
+    timeoutMs?: number;
+  }): Promise<import("../skills/installer.js").InstallResult> {
+    const { installSkillDep } = await import("../skills/installer.js");
+    return installSkillDep(params.spec, params.timeoutMs);
+  }
+
   async listAdminProviders(params?: {
     refresh?: boolean;
   }): Promise<{
