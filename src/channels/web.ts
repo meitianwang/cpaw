@@ -2190,16 +2190,49 @@ async function handleAdminChannelImessage(
 
   if (req.method === "POST") {
     try {
-      const parsed = await readJsonBody(req, 4096);
-      const cliPath = String(parsed.cli_path ?? "").trim() || "imsg";
+      const { execFileSync, execSync } = await import("node:child_process");
 
-      // Probe imsg CLI
+      // Step 1: Check if imsg is already installed
+      let cliPath = "imsg";
+      let installed = false;
       try {
-        const { execFileSync } = await import("node:child_process");
         execFileSync(cliPath, ["--version"], { timeout: 5000 });
+        installed = true;
+      } catch { /* not found */ }
+
+      // Step 2: Auto-install via Homebrew if not found
+      if (!installed) {
+        // Check Homebrew
+        try {
+          execFileSync("brew", ["--version"], { timeout: 5000 });
+        } catch {
+          jsonResponse(res, 400, { ok: false, error: "Homebrew not installed. Install from https://brew.sh first." });
+          return;
+        }
+
+        try {
+          execSync("brew install steipete/tap/imsg", { timeout: 300_000, stdio: "pipe" });
+        } catch (err) {
+          jsonResponse(res, 400, { ok: false, error: `imsg installation failed: ${String(err)}` });
+          return;
+        }
+
+        // Verify installation
+        try {
+          execFileSync(cliPath, ["--version"], { timeout: 5000 });
+          installed = true;
+        } catch {
+          jsonResponse(res, 400, { ok: false, error: "imsg installed but not found on PATH" });
+          return;
+        }
+      }
+
+      // Step 3: Test Messages DB access (triggers Automation permission dialog)
+      let needsFullDiskAccess = false;
+      try {
+        execFileSync(cliPath, ["chats", "--limit", "1"], { timeout: 10_000, stdio: "pipe" });
       } catch {
-        jsonResponse(res, 400, { ok: false, error: `Cannot find imsg at "${cliPath}"` });
-        return;
+        needsFullDiskAccess = true;
       }
 
       settingsStoreRef.set("channel.imessage.cli_path", cliPath);
@@ -2207,7 +2240,15 @@ async function handleAdminChannelImessage(
       settingsStoreRef.set("channel.imessage.owner_id", authUser.id);
 
       hotStartChannel("imessage");
-      jsonResponse(res, 200, { ok: true, cli_path: cliPath, enabled: true });
+      jsonResponse(res, 200, {
+        ok: true,
+        cli_path: cliPath,
+        enabled: true,
+        needsFullDiskAccess,
+        message: needsFullDiskAccess
+          ? "imsg installed. Grant Full Disk Access to your terminal in System Settings → Privacy & Security."
+          : "imsg connected.",
+      });
     } catch (err) { gatewayErrorResponse(res, err); }
     return;
   }

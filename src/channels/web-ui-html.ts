@@ -434,24 +434,20 @@ export function getChatBodyHtml(): string {
                     <div id="s-ch-imessage-connected" style="display:none">
                       <div style="border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
                         <div>
-                          <div style="font-size:12px;color:var(--fg-tertiary)">CLI Path</div>
-                          <div style="font-family:var(--font-mono);font-size:13px" id="s-ch-imessage-cli-display"></div>
+                          <div style="font-size:12px;color:var(--fg-tertiary)" data-i18n="settings_ch_connected">Connected</div>
                         </div>
                         <button class="s-btn s-btn-danger" id="s-ch-imessage-disconnect-btn" data-i18n="settings_ch_disconnect">Disconnect</button>
                       </div>
                     </div>
                     <div id="s-ch-imessage-form">
                       <div style="font-size:13px;color:var(--fg-tertiary);line-height:1.7;margin-bottom:20px">
-                        <div style="font-weight:600;color:var(--fg);margin-bottom:8px" data-i18n="settings_ch_imessage_guide_title">Setup Steps</div>
-                        <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">1.</span> <span data-i18n="settings_ch_imessage_step1">Install the imsg CLI tool on your macOS machine</span> <a href="https://github.com/anthropics/imsg" target="_blank" rel="noopener" style="margin-left:6px;color:var(--accent);text-decoration:underline" data-i18n="settings_ch_imessage_step1_link">GitHub</a></div>
-                        <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">2.</span> <span data-i18n="settings_ch_imessage_step2">Grant Full Disk Access to Terminal/iTerm in System Settings &rarr; Privacy</span></div>
-                        <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">3.</span> <span data-i18n="settings_ch_imessage_step3">Verify by running: imsg --version</span></div>
-                        <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">4.</span> <span data-i18n="settings_ch_imessage_step4">Enter CLI path below (leave empty for default)</span></div>
+                        <div data-i18n="settings_ch_imessage_info">Click Connect to auto-install imsg and set up iMessage bridge. You may need to grant Full Disk Access permission when prompted.</div>
                       </div>
-                      <div style="display:flex;flex-direction:column;gap:12px">
-                        <div><label class="settings-field-label">imsg CLI Path</label><input class="settings-field-input" id="s-ch-imessage-cli" style="max-width:100%" placeholder="imsg (default)"></div>
+                      <div id="s-ch-imessage-permission-hint" style="display:none;background:var(--bg-warning,#fef3cd);border:1px solid var(--border-warning,#ffc107);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--fg)">
+                        <div style="font-weight:600;margin-bottom:4px" data-i18n="settings_ch_imessage_perm_title">Grant Full Disk Access</div>
+                        <div data-i18n="settings_ch_imessage_perm_desc">Open System Settings &rarr; Privacy &amp; Security &rarr; Full Disk Access, and enable your terminal app (Terminal / iTerm / Warp). Then click Connect again.</div>
                       </div>
-                      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+                      <div style="display:flex;gap:8px;justify-content:flex-end">
                         <button class="s-btn s-btn-primary" id="s-ch-imessage-connect-btn" data-i18n="settings_ch_connect">Connect</button>
                       </div>
                     </div>

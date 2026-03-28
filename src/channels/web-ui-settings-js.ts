@@ -405,7 +405,7 @@ export function getSettingsJs(): string {
     { id: "wecom", icon: "/wecom-icon.png", displays: [["botid-display","bot_id"]], inputs: [["botid","bot_id"],["secret","secret"]] },
     { id: "qq", icon: "/qq-icon.png", displays: [["appid-display","app_id"]], inputs: [["appid","app_id"],["secret","client_secret"]] },
     { id: "telegram", icon: "/telegram-icon.png", displays: [["bot-display","bot_username"]], inputs: [["token","bot_token"]] },
-    { id: "imessage", icon: "/imessage-icon.png", displays: [["cli-display","cli_path"]], inputs: [["cli","cli_path"]] },
+    { id: "imessage", icon: "/imessage-icon.png", displays: [], inputs: [] },
     { id: "whatsapp", icon: "/whatsapp-icon.png", displays: [], inputs: [] }
   ];
 
@@ -483,7 +483,14 @@ export function getSettingsJs(): string {
       adminApi("channels/" + cfg.id, "POST", payload)
         .then(function(d) {
           if (d && d.ok) {
-            showSettingsToast(tt("settings_ch_connect_ok"));
+            // iMessage: show permission hint if needed
+            if (cfg.id === "imessage" && d.needsFullDiskAccess) {
+              var hint = document.getElementById("s-ch-imessage-permission-hint");
+              if (hint) hint.style.display = "block";
+              showSettingsToast(d.message || tt("settings_ch_connect_ok"));
+            } else {
+              showSettingsToast(tt("settings_ch_connect_ok"));
+            }
             showChannelState(cfg.id, "connected", d);
           } else {
             showSettingsToast(d && d.error ? d.error : tt("settings_ch_connect_fail"));
