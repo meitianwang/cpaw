@@ -202,6 +202,9 @@ export const telegramPlugin: ChannelPlugin<TelegramConfig> = {
       ctx.setStatus({ connected: true, lastConnectedAt: Date.now(), mode: "polling", tokenStatus: "valid", name: me.first_name });
       console.log(`[Telegram] Bot identity: @${botUsername} (${me.first_name})`);
 
+      // Per-session message queue to prevent concurrent agent calls
+      const sessionQueues = new Map<string, Promise<void>>();
+
       // Handle all messages
       bot.on("message", (grammyCtx: Context) => {
         const msg = grammyCtx.message as TelegramMessage | undefined;
@@ -247,7 +250,9 @@ export const telegramPlugin: ChannelPlugin<TelegramConfig> = {
           timestamp: Date.now(),
         };
 
-        void (async () => {
+        // Queue messages per session to avoid "Agent is already running" errors
+        const prev = sessionQueues.get(sessionKey) ?? Promise.resolve();
+        const task = prev.then(async () => {
           try {
             await ctx.transcript(sessionKey, "user", cleanText);
             ctx.notify(sessionKey, "user", cleanText);
@@ -274,7 +279,8 @@ export const telegramPlugin: ChannelPlugin<TelegramConfig> = {
           } catch (err) {
             console.error("[Telegram] Error handling message:", err);
           }
-        })();
+        });
+        sessionQueues.set(sessionKey, task.catch(() => {}));
       });
 
       // Error handler
