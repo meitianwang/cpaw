@@ -14,6 +14,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@tencent-connect/openclaw-qqbot": "^1.6.6",
     "@tencent-weixin/openclaw-weixin": "^2.0.1",
+    "@wecom/aibot-node-sdk": "^1.0.4",
     "better-sqlite3": "^12.6.2",
     "chokidar": "^5.0.0",
     "croner": "^10.0.1",

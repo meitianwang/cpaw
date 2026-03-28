@@ -384,12 +384,15 @@ export function getSettingsJs(): string {
       showDingtalkState(dt && dt.enabled ? "connected" : "setup", dt);
       var wx = d && d.wechat;
       showWechatState(wx && wx.enabled ? "connected" : "setup", wx);
+      var wecom = d && d.wecom;
+      showWecomState(wecom && wecom.enabled ? "connected" : "setup", wecom);
       var qq = d && d.qq;
       showQQState(qq && qq.enabled ? "connected" : "setup", qq);
     }).catch(function() {
       showFeishuState("setup", null);
       showDingtalkState("setup", null);
       showWechatState("setup", null);
+      showWecomState("setup", null);
       showQQState("setup", null);
     });
   }
@@ -582,6 +585,74 @@ export function getSettingsJs(): string {
       .then(function() {
         showSettingsToast(tt("settings_ch_disconnected"));
         showWechatState("setup", null);
+      })
+      .catch(function() { showSettingsToast(tt("settings_failed")); });
+  });
+
+  // --- WeCom ---
+  var sWecomStatus = document.getElementById("s-ch-wecom-status");
+  var sWecomConnected = document.getElementById("s-ch-wecom-connected");
+  var sWecomForm = document.getElementById("s-ch-wecom-form");
+  var sWecomSetup = document.getElementById("s-ch-wecom-setup");
+
+  function showWecomState(state, data) {
+    sWecomConnected.style.display = state === "connected" ? "block" : "none";
+    sWecomForm.style.display = state === "form" ? "block" : "none";
+    sWecomSetup.style.display = state === "setup" ? "block" : "none";
+    if (state === "connected") {
+      sWecomStatus.textContent = tt("settings_ch_connected");
+      sWecomStatus.className = "s-badge s-badge-green";
+      document.getElementById("s-ch-wecom-botid-display").textContent = data && data.bot_id || "";
+    } else {
+      sWecomStatus.textContent = tt("settings_ch_not_connected");
+      sWecomStatus.className = "s-badge s-badge-gray";
+    }
+  }
+
+  function loadWecomState() {
+    adminApi("channels", "GET").then(function(d) {
+      var wecom = d && d.wecom;
+      showWecomState(wecom && wecom.enabled ? "connected" : "setup", wecom);
+    }).catch(function() { showWecomState("setup", null); });
+  }
+
+  document.getElementById("s-ch-wecom-setup-btn").addEventListener("click", function() {
+    document.getElementById("s-ch-wecom-botid").value = "";
+    document.getElementById("s-ch-wecom-secret").value = "";
+    showWecomState("form", null);
+  });
+
+  document.getElementById("s-ch-wecom-cancel-btn").addEventListener("click", function() {
+    loadWecomState();
+  });
+
+  document.getElementById("s-ch-wecom-connect-btn").addEventListener("click", function() {
+    var botId = document.getElementById("s-ch-wecom-botid").value.trim();
+    var secret = document.getElementById("s-ch-wecom-secret").value.trim();
+    if (!botId || !secret) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = tt("settings_ch_connecting");
+    adminApi("channels/wecom", "POST", { bot_id: botId, secret: secret })
+      .then(function(d) {
+        if (d && d.ok) {
+          showSettingsToast(tt("settings_ch_connect_ok"));
+          showWecomState("connected", d);
+        } else {
+          showSettingsToast(d && d.error ? d.error : tt("settings_ch_connect_fail"));
+          showWecomState("form", null);
+        }
+      })
+      .catch(function() { showSettingsToast(tt("settings_ch_connect_fail")); })
+      .finally(function() { btn.disabled = false; btn.textContent = tt("settings_ch_connect"); });
+  });
+
+  document.getElementById("s-ch-wecom-disconnect-btn").addEventListener("click", function() {
+    if (!confirm(tt("settings_confirm_delete"))) return;
+    adminApi("channels/wecom", "DELETE")
+      .then(function() {
+        showSettingsToast(tt("settings_ch_disconnected"));
+        showWecomState("setup", null);
       })
       .catch(function() { showSettingsToast(tt("settings_failed")); });
   });

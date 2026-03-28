@@ -643,7 +643,7 @@ tr.clickable:hover { background: var(--card-bg); }
   var I18N = {
     en: {
       admin_title: "Admin",
-      tab_settings: "Settings", tab_models: "Models", tab_prompts: "Prompts", tab_rules: "Rules", tab_users: "Users", tab_invites: "Invites",
+      tab_settings: "Settings", tab_models: "Models", tab_prompts: "Prompts", tab_rules: "Rules", tab_users: "Users", tab_invites: "Invites", tab_memory: "Memory",
       back_chat: "Back to Chat", back_klaus: "Back to Klaus",
       sec_general: "General", sec_agent: "Agent", sec_web: "Web Server", sec_session: "Chat Sessions", sec_transcripts: "Transcripts", sec_cron: "Cron",
       lbl_persona: "System Prompt",
@@ -681,7 +681,7 @@ tr.clickable:hover { background: var(--card-bg); }
     },
     zh: {
       admin_title: "管理面板",
-      tab_settings: "设置", tab_models: "模型", tab_prompts: "提示词", tab_rules: "规则", tab_users: "用户", tab_invites: "邀请码",
+      tab_settings: "设置", tab_models: "模型", tab_prompts: "提示词", tab_rules: "规则", tab_users: "用户", tab_invites: "邀请码", tab_memory: "记忆",
       back_chat: "返回对话", back_klaus: "返回 Klaus",
       sec_general: "通用", sec_agent: "Agent", sec_web: "Web 服务器", sec_session: "对话会话", sec_transcripts: "历史记录", sec_cron: "定时任务",
       lbl_persona: "系统提示词",
@@ -1579,8 +1579,8 @@ tr.clickable:hover { background: var(--card-bg); }
         return;
       }
       memSearchResults.textContent = results.map(function(r, i) {
-        return "[" + (i + 1) + "] " + r.path + " (L" + r.startLine + "-" + r.endLine + ", score=" + (r.score || 0).toFixed(3) + ", src=" + r.source + ")\n" + (r.snippet || "").trim();
-      }).join("\n\n");
+        return "[" + (i + 1) + "] " + r.path + " (L" + r.startLine + "-" + r.endLine + ", score=" + (r.score || 0).toFixed(3) + ", src=" + r.source + ")\\n" + (r.snippet || "").trim();
+      }).join("\\n\\n");
     }).catch(function(e) {
       memSearchResults.textContent = "Error: " + (e.message || e);
     });

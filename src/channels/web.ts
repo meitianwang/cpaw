@@ -1424,6 +1424,10 @@ async function handleAdminChannels(
         enabled: qqEnabled && !!qqAppId,
         app_id: qqAppId,
       },
+      wecom: {
+        enabled: settingsStoreRef.getBool("channel.wecom.enabled", false) && !!(settingsStoreRef.get("channel.wecom.bot_id") ?? ""),
+        bot_id: settingsStoreRef.get("channel.wecom.bot_id") ?? "",
+      },
     });
     return;
   }
@@ -1970,6 +1974,79 @@ async function handleAdminChannelQQ(
   jsonResponse(res, 405, { error: "method not allowed" });
 }
 
+async function handleAdminChannelWecom(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const authUser = adminAuth(req, res);
+  if (!authUser) return;
+
+  if (!settingsStoreRef) {
+    jsonResponse(res, 503, { error: "settings store unavailable" });
+    return;
+  }
+
+  if (req.method === "POST") {
+    try {
+      const parsed = await readJsonBody(req, 4096);
+      const botId = String(parsed.bot_id ?? "").trim();
+      const secret = String(parsed.secret ?? "").trim();
+      if (!botId || !secret) {
+        jsonResponse(res, 400, { error: "bot_id and secret are required" });
+        return;
+      }
+
+      // Validate credentials
+      const { probeWecomCredentials } = await import("./wecom.js");
+      const probe = await probeWecomCredentials({ botId, secret });
+      if (!probe.ok) {
+        jsonResponse(res, 400, {
+          ok: false,
+          error: probe.error || "Failed to connect. Check Bot ID and Secret.",
+        });
+        return;
+      }
+
+      settingsStoreRef.set("channel.wecom.bot_id", botId);
+      settingsStoreRef.set("channel.wecom.secret", encryptCred(secret));
+      settingsStoreRef.set("channel.wecom.enabled", "true");
+      settingsStoreRef.set("channel.wecom.owner_id", authUser.id);
+
+      // Hot-start WeCom channel
+      if (handlerRef) {
+        const { setWecomConfig, setWecomTranscript, setWecomNotify, wecomPlugin } = await import("./wecom.js");
+        setWecomConfig({ botId, secret });
+        if (messageStoreRef) {
+          setWecomTranscript((sk, role, text) => messageStoreRef!.append(sk, role, text));
+        }
+        const ownerId = authUser.id;
+        setWecomNotify((sk, role, text) => {
+          gateway.sendEvent(ownerId, { type: "channel_message" as const, sessionKey: sk, role, text });
+        });
+        wecomPlugin.start(handlerRef).catch((err) => {
+          console.error("[WeCom] Channel start failed:", err);
+        });
+      }
+
+      jsonResponse(res, 200, { ok: true, bot_id: botId, enabled: true });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  if (req.method === "DELETE") {
+    settingsStoreRef.set("channel.wecom.enabled", "false");
+    settingsStoreRef.set("channel.wecom.bot_id", "");
+    settingsStoreRef.set("channel.wecom.secret", "");
+    settingsStoreRef.set("channel.wecom.owner_id", "");
+    jsonResponse(res, 200, { ok: true });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
+}
+
 // ---------------------------------------------------------------------------
 // File download handler
 // ---------------------------------------------------------------------------
@@ -2114,6 +2191,8 @@ async function handleRequest(
       return servePublicFile(res, "wechat-icon.png", "image/jpeg");
     case "/qq-icon.png":
       return servePublicFile(res, "qq-icon.png", "image/jpeg");
+    case "/wecom-icon.png":
+      return servePublicFile(res, "wecom-icon.png", "image/jpeg");
 
     // Auth routes
     case "/api/auth/register":
@@ -2216,6 +2295,8 @@ async function handleRequest(
       return handleAdminChannelWechat(req, res);
     case "/api/admin/channels/qq":
       return handleAdminChannelQQ(req, res);
+    case "/api/admin/channels/wecom":
+      return handleAdminChannelWecom(req, res);
     case "/api/admin/memory":
       return handleAdminMemory(req, res);
     case "/api/admin/memory/sync":
@@ -2263,6 +2344,7 @@ async function handleRequest(
         "dingtalk:": "channel.dingtalk.owner_id",
         "wechat:": "channel.wechat.owner_id",
         "qq:": "channel.qq.owner_id",
+        "wecom:": "channel.wecom.owner_id",
       };
       for (const [prefix, ownerKey] of Object.entries(channelOwnerChecks)) {
         if (histSessionId.startsWith(prefix)) {
@@ -2313,6 +2395,8 @@ async function handleRequest(
           if (!wxOwnerId || wxOwnerId === sessAuth.user.id) channels.push("wechat:");
           const qqOwnerId = settingsStoreRef?.get("channel.qq.owner_id");
           if (!qqOwnerId || qqOwnerId === sessAuth.user.id) channels.push("qq:");
+          const wecomOwnerId = settingsStoreRef?.get("channel.wecom.owner_id");
+          if (!wecomOwnerId || wecomOwnerId === sessAuth.user.id) channels.push("wecom:");
           const result = await gateway.listSessions({
             userId: sessAuth.user.id,
             includeChannels: channels,

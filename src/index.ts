@@ -3,6 +3,7 @@ import { feishuPlugin, setFeishuConfig, setFeishuTranscript, setFeishuNotify } f
 import { dingtalkPlugin, setDingtalkConfig, setDingtalkTranscript, setDingtalkNotify } from "./channels/dingtalk.js";
 import { wechatPlugin, setWechatConfig, setWechatTranscript, setWechatNotify } from "./channels/wechat.js";
 import { qqPlugin, setQQBotConfig, setQQBotTranscript, setQQBotNotify } from "./channels/qq.js";
+import { wecomPlugin, setWecomConfig, setWecomTranscript, setWecomNotify } from "./channels/wecom.js";
 import { decryptCred } from "./channels/channel-creds.js";
 import {
   registerChannel,
@@ -36,6 +37,7 @@ registerChannel(feishuPlugin);
 registerChannel(dingtalkPlugin);
 registerChannel(wechatPlugin);
 registerChannel(qqPlugin);
+registerChannel(wecomPlugin);
 
 // ---------------------------------------------------------------------------
 // Main
@@ -239,6 +241,30 @@ async function start(): Promise<void> {
         if (qq) plugins.push(qq);
       }
       console.log("[QQ] Enabled (configured via admin panel)");
+    }
+  }
+
+  // Initialize WeCom channel from SettingsStore (configured via admin panel).
+  {
+    const wecomBotId = settingsStore.get("channel.wecom.bot_id");
+    const wecomSecret = decryptCred(settingsStore.get("channel.wecom.secret") ?? "");
+    const wecomEnabled = settingsStore.getBool("channel.wecom.enabled", false);
+
+    if (wecomEnabled && wecomBotId && wecomSecret) {
+      const wecomOwnerId = settingsStore.get("channel.wecom.owner_id");
+      setWecomConfig({ botId: wecomBotId, secret: wecomSecret });
+      setWecomTranscript((sessionKey, role, text) => messageStore.append(sessionKey, role, text));
+      setWecomNotify((sessionKey, role, text) => {
+        const event = { type: "channel_message" as const, sessionKey, role, text };
+        if (wecomOwnerId) gateway.sendEvent(wecomOwnerId, event);
+        else gateway.broadcastEvent(event);
+      });
+      if (!channelNames.includes("wecom")) {
+        channelNames.push("wecom");
+        const wc = getChannel("wecom");
+        if (wc) plugins.push(wc);
+      }
+      console.log("[WeCom] Enabled (configured via admin panel)");
     }
   }
 

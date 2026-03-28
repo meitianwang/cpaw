@@ -293,6 +293,48 @@ export function getChatBodyHtml(): string {
                 </div>
               </div>
 
+              <!-- WeCom card -->
+              <div style="border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:16px" id="s-ch-wecom-card">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <img src="/wecom-icon.png" alt="WeCom" width="36" height="36" style="border-radius:8px">
+                    <div>
+                      <div style="font-weight:600;font-size:15px" data-i18n="settings_ch_wecom">WeCom</div>
+                      <div style="font-size:12px;color:var(--fg-tertiary)" data-i18n="settings_ch_wecom_desc">Connect to WeCom smart bot</div>
+                    </div>
+                  </div>
+                  <span class="s-badge" id="s-ch-wecom-status"></span>
+                </div>
+                <div id="s-ch-wecom-connected" style="display:none;margin-top:16px">
+                  <div style="border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                      <div style="font-size:12px;color:var(--fg-tertiary)">Bot ID</div>
+                      <div style="font-family:var(--font-mono);font-size:13px" id="s-ch-wecom-botid-display"></div>
+                    </div>
+                    <button class="s-btn s-btn-danger" id="s-ch-wecom-disconnect-btn" data-i18n="settings_ch_disconnect">Disconnect</button>
+                  </div>
+                </div>
+                <div id="s-ch-wecom-form" style="display:none;margin-top:16px">
+                  <div style="font-size:13px;color:var(--fg-tertiary);line-height:1.7;margin-bottom:20px">
+                    <div style="font-weight:600;color:var(--fg);margin-bottom:8px" data-i18n="settings_ch_wecom_guide_title">Setup Steps</div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">1.</span> <span data-i18n="settings_ch_wecom_step1">Open WeCom Admin Console, go to Apps &gt; Create App</span> <a href="https://work.weixin.qq.com/wework_admin/frame#apps" target="_blank" rel="noopener" style="margin-left:6px;color:var(--accent);text-decoration:underline" data-i18n="settings_ch_wecom_step1_link">Open Console</a></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">2.</span> <span data-i18n="settings_ch_wecom_step2">Create a smart bot, enable WebSocket mode</span></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">3.</span> <span data-i18n="settings_ch_wecom_step3">Copy Bot ID and Secret below</span></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:12px">
+                    <div><label class="settings-field-label">Bot ID <span style="color:#dc2626">*</span></label><input class="settings-field-input" id="s-ch-wecom-botid" style="max-width:100%" placeholder="Enter Bot ID"></div>
+                    <div><label class="settings-field-label">Secret <span style="color:#dc2626">*</span></label><input class="settings-field-input" id="s-ch-wecom-secret" type="password" style="max-width:100%" placeholder="Enter Secret"></div>
+                  </div>
+                  <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+                    <button class="s-btn s-btn-ghost" id="s-ch-wecom-cancel-btn" data-i18n="settings_cancel">Cancel</button>
+                    <button class="s-btn s-btn-primary" id="s-ch-wecom-connect-btn" data-i18n="settings_ch_connect">Connect</button>
+                  </div>
+                </div>
+                <div id="s-ch-wecom-setup" style="margin-top:16px">
+                  <button class="s-btn s-btn-primary" id="s-ch-wecom-setup-btn" data-i18n="settings_ch_setup">Configure</button>
+                </div>
+              </div>
+
               <!-- QQ Bot card -->
               <div style="border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:16px" id="s-ch-qq-card">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
