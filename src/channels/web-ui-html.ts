@@ -317,9 +317,10 @@ export function getChatBodyHtml(): string {
                 <div id="s-ch-wecom-form" style="display:none;margin-top:16px">
                   <div style="font-size:13px;color:var(--fg-tertiary);line-height:1.7;margin-bottom:20px">
                     <div style="font-weight:600;color:var(--fg);margin-bottom:8px" data-i18n="settings_ch_wecom_guide_title">Setup Steps</div>
-                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">1.</span> <span data-i18n="settings_ch_wecom_step1">Open WeCom Admin Console, go to Apps &gt; Create App</span> <a href="https://work.weixin.qq.com/wework_admin/frame#apps" target="_blank" rel="noopener" style="margin-left:6px;color:var(--accent);text-decoration:underline" data-i18n="settings_ch_wecom_step1_link">Open Console</a></div>
-                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">2.</span> <span data-i18n="settings_ch_wecom_step2">Create a smart bot, enable WebSocket mode</span></div>
-                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">3.</span> <span data-i18n="settings_ch_wecom_step3">Copy Bot ID and Secret below</span></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">1.</span> <span data-i18n="settings_ch_wecom_step1">Admin Console &rarr; &ldquo;Admin Tools&rdquo; (left sidebar, bottom)</span> <a href="https://work.weixin.qq.com/wework_admin/frame#manageTools" target="_blank" rel="noopener" style="margin-left:6px;color:var(--accent);text-decoration:underline" data-i18n="settings_ch_wecom_step1_link">Open Console</a></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">2.</span> <span data-i18n="settings_ch_wecom_step2">Click &ldquo;Smart Bot&rdquo; &rarr; &ldquo;Create Bot&rdquo; &rarr; &ldquo;Manual Create&rdquo;</span></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">3.</span> <span data-i18n="settings_ch_wecom_step3">At the bottom, click &ldquo;API Mode&rdquo; &rarr; choose &ldquo;Long Connection&rdquo; &rarr; Save</span></div>
+                    <div style="margin-bottom:6px"><span style="font-weight:500;color:var(--fg)">4.</span> <span data-i18n="settings_ch_wecom_step4">Copy Bot ID and Secret below</span></div>
                   </div>
                   <div style="display:flex;flex-direction:column;gap:12px">
                     <div><label class="settings-field-label">Bot ID <span style="color:#dc2626">*</span></label><input class="settings-field-input" id="s-ch-wecom-botid" style="max-width:100%" placeholder="Enter Bot ID"></div>
