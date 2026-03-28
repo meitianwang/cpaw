@@ -2484,6 +2484,8 @@ async function handleRequest(
           if (!qqOwnerId || qqOwnerId === sessAuth.user.id) channels.push("qq:");
           const wecomOwnerId = settingsStoreRef?.get("channel.wecom.owner_id");
           if (!wecomOwnerId || wecomOwnerId === sessAuth.user.id) channels.push("wecom:");
+          const tgOwnerId = settingsStoreRef?.get("channel.telegram.owner_id");
+          if (!tgOwnerId || tgOwnerId === sessAuth.user.id) channels.push("telegram:");
           const result = await gateway.listSessions({
             userId: sessAuth.user.id,
             includeChannels: channels,
