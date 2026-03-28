@@ -280,7 +280,9 @@ export const telegramPlugin: ChannelPlugin<TelegramConfig> = {
             console.error("[Telegram] Error handling message:", err);
           }
         });
-        sessionQueues.set(sessionKey, task.catch(() => {}));
+        const tracked = task.catch(() => {});
+        sessionQueues.set(sessionKey, tracked);
+        tracked.finally(() => { if (sessionQueues.get(sessionKey) === tracked) sessionQueues.delete(sessionKey); });
       });
 
       // Error handler

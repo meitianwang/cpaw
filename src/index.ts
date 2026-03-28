@@ -5,6 +5,8 @@ import { wechatPlugin } from "./channels/wechat.js";
 import { qqPlugin } from "./channels/qq.js";
 import { wecomPlugin } from "./channels/wecom.js";
 import { telegramPlugin } from "./channels/telegram.js";
+import { imessagePlugin } from "./channels/imessage.js";
+import { whatsappPlugin } from "./channels/whatsapp.js";
 import { ChannelManager } from "./channels/manager.js";
 import {
   getChannelNames,
@@ -76,6 +78,12 @@ async function start(): Promise<void> {
     if (!encrypted) return undefined;
     const decrypted = decryptCred(encrypted);
     return decrypted || undefined;
+  });
+  skillRegistry.setEnabledLookup((name) => {
+    const val = settingsStore.get(`skill.${name}.enabled`);
+    if (val === "true") return true;
+    if (val === "false") return false;
+    return undefined; // no explicit setting
   });
   skillRegistry.startWatching();
   const enabledSkills = skillRegistry.getSkills();
@@ -196,6 +204,8 @@ async function start(): Promise<void> {
   manager.register(qqPlugin);
   manager.register(wecomPlugin);
   manager.register(telegramPlugin);
+  manager.register(imessagePlugin);
+  manager.register(whatsappPlugin);
 
   // Cron executor
   const cronExecutor = (sessionKey: string, prompt: string) =>
