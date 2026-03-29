@@ -267,7 +267,6 @@ export function getChatMainJs(): string {
       if (!msgs.firstChild && !sessionDom.has(currentSessionId)) {
         loadHistory(currentSessionId);
       }
-      refreshSessionActivity(currentSessionId);
       // If we were streaming when WS dropped, the final message event was lost.
       // Reload full history from server to recover.
       if (isStreaming || busy) {
