@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   AgentTool,
-  AgentEvent,
   BeforeToolCallContext,
   BeforeToolCallResult,
   AfterToolCallContext,
   AfterToolCallResult,
 } from "../klaus-agent-compat.js";
+import type { EngineEvent } from "../agent-manager.js";
 
 // --- Tools (aligned with openclaw registerTool) ---
 
@@ -27,8 +27,8 @@ export type HookHandler<T extends HookName> =
   T extends "agent_end" ? (event: { sessionKey: string }) => void | Promise<void> :
   T extends "before_tool_call" ? (ctx: BeforeToolCallContext) => Promise<BeforeToolCallResult | void> :
   T extends "after_tool_call" ? (ctx: AfterToolCallContext) => Promise<AfterToolCallResult | void> :
-  T extends "message_start" ? (event: AgentEvent) => void :
-  T extends "message_end" ? (event: AgentEvent) => void :
+  T extends "message_start" ? (event: EngineEvent) => void :
+  T extends "message_end" ? (event: EngineEvent) => void :
   never;
 
 export interface HookRegistration {

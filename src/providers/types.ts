@@ -1,5 +1,4 @@
 import type {
-  AgentTool,
   BeforeToolCallContext,
   BeforeToolCallResult,
   AfterToolCallContext,
@@ -40,7 +39,6 @@ export interface ProviderDefinition {
   readonly protocol: string;
   readonly defaultBaseUrl: string;
   readonly models: readonly ModelPreset[];
-  readonly tools?: (apiKey: string, baseUrl: string, model: string) => AgentTool[];
   readonly auth?: ProviderAuth;
   readonly catalog?: (apiKey?: string, baseUrl?: string) => Promise<ModelPreset[]>;
   readonly hooks?: ProviderHooks;

@@ -5,7 +5,7 @@
  * 1. Discover SKILL.md files from bundled + user dirs (~/.klaus/skills/)
  * 2. Parse YAML frontmatter for metadata (name, description, gating)
  * 3. Filter by eligibility (binary presence, OS, env vars, config)
- * 4. createSkillTool() builds an invoke_skill AgentTool for the agent
+ * 4. Skill definitions are injected into engine AppState for SkillTool
  *
  * Sources (precedence high → low):
  *   ~/.klaus/skills/<name>/SKILL.md  (user overrides)
@@ -17,8 +17,6 @@ import { join, dirname, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { platform } from "node:os";
-import { Type, type Static } from "@sinclair/typebox";
-import type { AgentTool, AgentToolResult } from "../klaus-agent-compat.js";
 import { CONFIG_DIR } from "../config.js";
 
 // ---------------------------------------------------------------------------
@@ -352,35 +350,5 @@ export function loadResolvedSkills(options: LoadSkillsOptions = {}): ResolvedSki
     });
   }
   return results;
-}
-
-// ---------------------------------------------------------------------------
-// invoke_skill tool for the agent
-// ---------------------------------------------------------------------------
-
-const InvokeSkillParams = Type.Object({
-  skill: Type.String({ description: "Name of the skill to invoke" }),
-});
-type InvokeSkillParams = Static<typeof InvokeSkillParams>;
-
-/** Create an invoke_skill AgentTool that returns full SKILL.md content on demand. */
-export function createSkillTool(skills: readonly ResolvedSkill[]): AgentTool {
-  const skillMap = new Map(skills.map((s) => [s.name, s]));
-  const list = skills.map((s) => `- ${s.name}: ${s.description}`).join("\n");
-
-  return {
-    name: "invoke_skill",
-    label: "Invoke Skill",
-    description: `Invoke a skill to get specialized instructions. Available skills:\n${list}`,
-    parameters: InvokeSkillParams,
-    async execute(_id, params: InvokeSkillParams): Promise<AgentToolResult> {
-      const skill = skillMap.get(params.skill);
-      if (!skill) {
-        const available = [...skillMap.keys()].join(", ");
-        return { content: [{ type: "text", text: `Unknown skill: "${params.skill}". Available: ${available || "none"}` }] };
-      }
-      return { content: [{ type: "text", text: skill.content }] };
-    },
-  };
 }
 
