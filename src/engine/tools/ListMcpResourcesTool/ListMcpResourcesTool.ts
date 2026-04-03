@@ -1,9 +1,17 @@
+// @ts-nocheck
 import { z } from 'zod/v4'
+import {
+  ensureConnectedClient,
+  fetchResourcesForClient,
+} from '../../services/mcp/client.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { errorMessage } from '../../utils/errors.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import { logMCPError } from '../../utils/log.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
+import { isOutputLineTruncated } from '../../utils/terminal.js'
 import { DESCRIPTION, LIST_MCP_RESOURCES_TOOL_NAME, PROMPT } from './prompt.js'
+import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = lazySchema(() =>
   z.object({
@@ -69,16 +77,21 @@ export const ListMcpResourcesTool = buildTool({
       )
     }
 
+    // fetchResourcesForClient is LRU-cached (by server name) and already
+    // warm from startup prefetch. Cache is invalidated on onclose and on
+    // resources/list_changed notifications, so results are never stale.
+    // ensureConnectedClient is a no-op when healthy (memoize hit), but after
+    // onclose it returns a fresh connection so the re-fetch succeeds.
     const results = await Promise.all(
       clientsToProcess.map(async client => {
+        if (client.type !== 'connected') return []
         try {
-          const tools = await client.listTools()
-          // Return empty for resource listing — MCP clients in Klaus
-          // expose tools, not resources. Override if resources are needed.
-          return [] as Output
+          const fresh = await ensureConnectedClient(client)
+          return await fetchResourcesForClient(fresh)
         } catch (error) {
-          console.error(`MCP error for ${client.name}: ${errorMessage(error)}`)
-          return [] as Output
+          // One server's reconnect failure shouldn't sink the whole result.
+          logMCPError(client.name, errorMessage(error))
+          return []
         }
       }),
     )
@@ -87,9 +100,11 @@ export const ListMcpResourcesTool = buildTool({
       data: results.flat(),
     }
   },
+  renderToolUseMessage,
   userFacingName: () => 'listMcpResources',
+  renderToolResultMessage,
   isResultTruncated(output: Output): boolean {
-    return jsonStringify(output).includes('[... output truncated]')
+    return isOutputLineTruncated(jsonStringify(output))
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     if (!content || content.length === 0) {

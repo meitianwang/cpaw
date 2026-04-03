@@ -1,16 +1,25 @@
-/**
- * Query config — adapted from claude-code's query/config.ts.
- * Stripped: GrowthBook, bootstrap/state.
- * All gates hardcoded to false; sessionId generated with randomUUID().
- */
-
-import { randomUUID } from 'crypto'
+// @ts-nocheck
+import { getSessionId } from '../bootstrap/state.js'
+import { checkStatsigFeatureGate_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import type { SessionId } from '../types/ids.js'
+import { isEnvTruthy } from '../utils/envUtils.js'
 
+// -- config
+
+// Immutable values snapshotted once at query() entry. Separating these from
+// the per-iteration State struct and the mutable ToolUseContext makes future
+// step() extraction tractable — a pure reducer can take (state, event, config)
+// where config is plain data.
+//
+// Intentionally excludes feature() gates — those are tree-shaking boundaries
+// and must stay inline at the guarded blocks for dead-code elimination.
 export type QueryConfig = {
   sessionId: SessionId
 
+  // Runtime gates (env/statsig). NOT feature() gates — see above.
   gates: {
+    // Statsig — CACHED_MAY_BE_STALE already admits staleness, so snapshotting
+    // once per query() call stays within the existing contract.
     streamingToolExecution: boolean
     emitToolUseSummaries: boolean
     isAnt: boolean
@@ -20,12 +29,19 @@ export type QueryConfig = {
 
 export function buildQueryConfig(): QueryConfig {
   return {
-    sessionId: randomUUID() as unknown as SessionId,
+    sessionId: getSessionId(),
     gates: {
-      streamingToolExecution: false,
-      emitToolUseSummaries: false,
-      isAnt: false,
-      fastModeEnabled: false,
+      streamingToolExecution: checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
+        'tengu_streaming_tool_execution2',
+      ),
+      emitToolUseSummaries: isEnvTruthy(
+        process.env.CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES,
+      ),
+      isAnt: process.env.USER_TYPE === 'ant',
+      // Inlined from fastMode.ts to avoid pulling its heavy module graph
+      // (axios, settings, auth, model, oauth, config) into test shards that
+      // didn't previously load it — changes init order and breaks unrelated tests.
+      fastModeEnabled: !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_FAST_MODE),
     },
   }
 }

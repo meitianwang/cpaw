@@ -1,5 +1,6 @@
+// @ts-nocheck
 import { AsyncLocalStorage } from 'async_hooks'
-import { getOriginalCwd } from '../bootstrap/state.js'
+import { getCwdState, getOriginalCwd } from '../bootstrap/state.js'
 
 const cwdOverrideStorage = new AsyncLocalStorage<string>()
 
@@ -14,20 +15,19 @@ export function runWithCwdOverride<T>(cwd: string, fn: () => T): T {
 }
 
 /**
- * Get the current working directory from the async-local override or bootstrap state.
+ * Get the current working directory
  */
 export function pwd(): string {
-  return cwdOverrideStorage.getStore() ?? getOriginalCwd()
+  return cwdOverrideStorage.getStore() ?? getCwdState()
 }
 
 /**
- * Get the current working directory, falling back to process.cwd() if bootstrap
- * state is not yet initialized.
+ * Get the current working directory or the original working directory if the current one is not available
  */
 export function getCwd(): string {
   try {
     return pwd()
   } catch {
-    return process.cwd()
+    return getOriginalCwd()
   }
 }

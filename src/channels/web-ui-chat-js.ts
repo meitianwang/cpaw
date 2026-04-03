@@ -256,6 +256,29 @@ export function getChatMainJs(): string {
     }
   }
 
+  // --- Context Collapse stats display (aligned with claude-code TokenWarning) ---
+  var collapseStatsEl = document.getElementById("collapse-stats");
+  function updateCollapseStats(data) {
+    if (!collapseStatsEl) return;
+    var collapsed = data.collapsedSpans || 0;
+    var staged = data.stagedSpans || 0;
+    var errors = data.totalErrors || 0;
+    var total = collapsed + staged;
+    if (total === 0 && errors === 0) {
+      collapseStatsEl.style.display = "none";
+      return;
+    }
+    collapseStatsEl.style.display = "flex";
+    var text = collapsed + " / " + total + " summarized";
+    if (errors > 0) {
+      text += " \u00b7 errors: " + errors;
+      collapseStatsEl.className = "collapse-stats has-errors";
+    } else {
+      collapseStatsEl.className = "collapse-stats";
+    }
+    collapseStatsEl.textContent = text;
+  }
+
   function connectWs() {
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(proto + "//" + location.host + "/api/ws");
@@ -318,6 +341,7 @@ export function getChatMainJs(): string {
         }
         return;
       }
+      if (data.type === "context_collapse") { updateCollapseStats(data); return; }
       if (data.sessionId && data.sessionId !== currentSessionId) return;
       if (data.type === "tool") { handleToolEvent(data.data); return; }
       if (data.type === "file") { appendFileCard(data.name, data.url); return; }

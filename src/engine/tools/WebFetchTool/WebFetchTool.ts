@@ -1,14 +1,19 @@
-/**
- * WebFetchTool -- adapted from claude-code's WebFetchTool.ts.
- * Removed: React/Ink rendering, analytics, permissions system (always allow),
- * binary content persistence.
- */
+// @ts-nocheck
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import type { PermissionUpdate } from '../../types/permissions.js'
 import { formatFileSize } from '../../utils/format.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
+import { getRuleByContentsForTool } from '../../utils/permissions/permissions.js'
 import { isPreapprovedHost } from './preapproved.js'
 import { DESCRIPTION, WEB_FETCH_TOOL_NAME } from './prompt.js'
+import {
+  getToolUseSummary,
+  renderToolResultMessage,
+  renderToolUseMessage,
+  renderToolUseProgressMessage,
+} from './UI.js'
 import {
   applyPromptToMarkdown,
   type FetchedContent,
@@ -43,9 +48,26 @@ type OutputSchema = ReturnType<typeof outputSchema>
 
 export type Output = z.infer<OutputSchema>
 
+function webFetchToolInputToPermissionRuleContent(input: {
+  [k: string]: unknown
+}): string {
+  try {
+    const parsedInput = WebFetchTool.inputSchema.safeParse(input)
+    if (!parsedInput.success) {
+      return `input:${input.toString()}`
+    }
+    const { url } = parsedInput.data
+    const hostname = new URL(url).hostname
+    return `domain:${hostname}`
+  } catch {
+    return `input:${input.toString()}`
+  }
+}
+
 export const WebFetchTool = buildTool({
   name: WEB_FETCH_TOOL_NAME,
   searchHint: 'fetch and extract content from a URL',
+  // 100K chars - tool result persistence threshold
   maxResultSizeChars: 100_000,
   shouldDefer: true,
   async description(input) {
@@ -60,19 +82,9 @@ export const WebFetchTool = buildTool({
   userFacingName() {
     return 'Fetch'
   },
-  getToolUseSummary(input: Record<string, unknown>): string | null {
-    const url = input.url
-    if (typeof url === 'string') {
-      try {
-        return new URL(url).hostname
-      } catch {
-        return null
-      }
-    }
-    return null
-  },
+  getToolUseSummary,
   getActivityDescription(input) {
-    const summary = this.getToolUseSummary?.(input)
+    const summary = getToolUseSummary(input)
     return summary ? `Fetching ${summary}` : 'Fetching web page'
   },
   get inputSchema(): InputSchema {
@@ -90,15 +102,90 @@ export const WebFetchTool = buildTool({
   toAutoClassifierInput(input) {
     return input.prompt ? `${input.url}: ${input.prompt}` : input.url
   },
-  async checkPermissions() {
-    // Always allow in Klaus
+  async checkPermissions(input, context): Promise<PermissionDecision> {
+    const appState = context.getAppState()
+    const permissionContext = appState.toolPermissionContext
+
+    // Check if the hostname is in the preapproved list
+    try {
+      const { url } = input as { url: string }
+      const parsedUrl = new URL(url)
+      if (isPreapprovedHost(parsedUrl.hostname, parsedUrl.pathname)) {
+        return {
+          behavior: 'allow',
+          updatedInput: input,
+          decisionReason: { type: 'other', reason: 'Preapproved host' },
+        }
+      }
+    } catch {
+      // If URL parsing fails, continue with normal permission checks
+    }
+
+    // Check for a rule specific to the tool input (matching hostname)
+    const ruleContent = webFetchToolInputToPermissionRuleContent(input)
+
+    const denyRule = getRuleByContentsForTool(
+      permissionContext,
+      WebFetchTool,
+      'deny',
+    ).get(ruleContent)
+    if (denyRule) {
+      return {
+        behavior: 'deny',
+        message: `${WebFetchTool.name} denied access to ${ruleContent}.`,
+        decisionReason: {
+          type: 'rule',
+          rule: denyRule,
+        },
+      }
+    }
+
+    const askRule = getRuleByContentsForTool(
+      permissionContext,
+      WebFetchTool,
+      'ask',
+    ).get(ruleContent)
+    if (askRule) {
+      return {
+        behavior: 'ask',
+        message: `Claude requested permissions to use ${WebFetchTool.name}, but you haven't granted it yet.`,
+        decisionReason: {
+          type: 'rule',
+          rule: askRule,
+        },
+        suggestions: buildSuggestions(ruleContent),
+      }
+    }
+
+    const allowRule = getRuleByContentsForTool(
+      permissionContext,
+      WebFetchTool,
+      'allow',
+    ).get(ruleContent)
+    if (allowRule) {
+      return {
+        behavior: 'allow',
+        updatedInput: input,
+        decisionReason: {
+          type: 'rule',
+          rule: allowRule,
+        },
+      }
+    }
+
     return {
-      behavior: 'allow' as const,
-      updatedInput: undefined,
-      decisionReason: { type: 'other' as const, reason: 'Klaus auto-allow' },
+      behavior: 'ask',
+      message: `Claude requested permissions to use ${WebFetchTool.name}, but you haven't granted it yet.`,
+      suggestions: buildSuggestions(ruleContent),
     }
   },
-  async prompt() {
+  async prompt(_options) {
+    // Always include the auth warning regardless of whether ToolSearch is
+    // currently in the tools list. Conditionally toggling this prefix based
+    // on ToolSearch availability caused the tool description to flicker
+    // between SDK query() calls (when ToolSearch enablement varies due to
+    // MCP tool count thresholds), invalidating the Anthropic API prompt
+    // cache on each toggle — two consecutive cache misses per flicker event.
     return `IMPORTANT: WebFetch WILL FAIL for authenticated or private URLs. Before using this tool, check if the URL points to an authenticated service (e.g. Google Docs, Confluence, Jira, GitHub). If so, look for a specialized MCP tool that provides authenticated access.
 ${DESCRIPTION}`
   },
@@ -116,6 +203,9 @@ ${DESCRIPTION}`
     }
     return { result: true }
   },
+  renderToolUseMessage,
+  renderToolUseProgressMessage,
+  renderToolResultMessage,
   async call(
     { url, prompt },
     { abortController, options: { isNonInteractiveSession } },
@@ -154,7 +244,9 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
         url,
       }
 
-      return { data: output }
+      return {
+        data: output,
+      }
     }
 
     const {
@@ -163,6 +255,8 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
       code,
       codeText,
       contentType,
+      persistedPath,
+      persistedSize,
     } = response as FetchedContent
 
     const isPreapproved = isPreapprovedUrl(url)
@@ -184,6 +278,13 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
       )
     }
 
+    // Binary content (PDFs, etc.) was additionally saved to disk with a
+    // mime-derived extension. Note it so Claude can inspect the raw file
+    // if the Haiku summary above isn't enough.
+    if (persistedPath) {
+      result += `\n\n[Binary content (${contentType}, ${formatFileSize(persistedSize ?? bytes)}) also saved to ${persistedPath}]`
+    }
+
     const output: Output = {
       bytes,
       code,
@@ -193,7 +294,9 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
       url,
     }
 
-    return { data: output }
+    return {
+      data: output,
+    }
   },
   mapToolResultToToolResultBlockParam({ result }, toolUseID) {
     return {
@@ -203,3 +306,14 @@ To complete your request, I need to fetch content from the redirected URL. Pleas
     }
   },
 } satisfies ToolDef<InputSchema, Output>)
+
+function buildSuggestions(ruleContent: string): PermissionUpdate[] {
+  return [
+    {
+      type: 'addRules',
+      destination: 'localSettings',
+      rules: [{ toolName: WEB_FETCH_TOOL_NAME, ruleContent }],
+      behavior: 'allow',
+    },
+  ]
+}

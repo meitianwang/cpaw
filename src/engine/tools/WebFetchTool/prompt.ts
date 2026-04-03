@@ -1,3 +1,4 @@
+// @ts-nocheck
 export const WEB_FETCH_TOOL_NAME = 'WebFetch'
 
 export const DESCRIPTION = `
@@ -9,6 +10,7 @@ export const DESCRIPTION = `
 - Use this tool when you need to retrieve and analyze web content
 
 Usage notes:
+  - IMPORTANT: If an MCP-provided web fetch tool is available, prefer using that tool instead of this one, as it may have fewer restrictions.
   - The URL must be a fully-formed valid URL
   - HTTP URLs will be automatically upgraded to HTTPS
   - The prompt should describe what information you want to extract from the page

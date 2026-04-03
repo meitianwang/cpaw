@@ -1,10 +1,6 @@
-/**
- * Tool orchestration — copied from claude-code's services/tools/toolOrchestration.ts.
- * Partitions tool calls into concurrent-safe and serial batches.
- */
-
+// @ts-nocheck
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { CanUseToolFn } from '../../Tool.js'
+import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
 import { all } from '../../utils/generators.js'
@@ -37,6 +33,7 @@ export async function* runTools(
         string,
         ((context: ToolUseContext) => ToolUseContext)[]
       > = {}
+      // Run read-only batch concurrently
       for await (const update of runToolsConcurrently(
         blocks,
         assistantMessages,
@@ -57,13 +54,16 @@ export async function* runTools(
       }
       for (const block of blocks) {
         const modifiers = queuedContextModifiers[block.id]
-        if (!modifiers) continue
+        if (!modifiers) {
+          continue
+        }
         for (const modifier of modifiers) {
           currentContext = modifier(currentContext)
         }
       }
       yield { newContext: currentContext }
     } else {
+      // Run non-read-only batch serially
       for await (const update of runToolsSerially(
         blocks,
         assistantMessages,
@@ -84,6 +84,11 @@ export async function* runTools(
 
 type Batch = { isConcurrencySafe: boolean; blocks: ToolUseBlock[] }
 
+/**
+ * Partition tool calls into batches where each batch is either:
+ * 1. A single non-read-only tool, or
+ * 2. Multiple consecutive read-only tools
+ */
 function partitionToolCalls(
   toolUseMessages: ToolUseBlock[],
   toolUseContext: ToolUseContext,
@@ -96,6 +101,8 @@ function partitionToolCalls(
           try {
             return Boolean(tool?.isConcurrencySafe(parsedInput.data))
           } catch {
+            // If isConcurrencySafe throws (e.g., due to shell-quote parse failure),
+            // treat as not concurrency-safe to be conservative
             return false
           }
         })()

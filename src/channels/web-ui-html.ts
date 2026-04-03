@@ -38,6 +38,7 @@ export function getChatBodyHtml(): string {
         </button>
       </div>
       <div class="header-right">
+        <span id="collapse-stats" class="collapse-stats" style="display:none"></span>
         <span id="status" data-i18n="connected">Connected</span>
       </div>
     </div>

@@ -1,24 +1,22 @@
-/**
- * System prompt section memoization — adapted from claude-code's
- * constants/systemPromptSections.ts.
- *
- * Sections are computed once and cached until clearSystemPromptSections()
- * is called (on session reset or compact). Volatile sections (cacheBreak=true)
- * recompute every turn.
- */
+// @ts-nocheck
+import {
+  clearBetaHeaderLatches,
+  clearSystemPromptSectionState,
+  getSystemPromptSectionCache,
+  setSystemPromptSectionCacheEntry,
+} from '../bootstrap/state.js'
 
 type ComputeFn = () => string | null | Promise<string | null>
 
-export type SystemPromptSection = {
+type SystemPromptSection = {
   name: string
   compute: ComputeFn
   cacheBreak: boolean
 }
 
-const sectionCache = new Map<string, string | null>()
-
 /**
- * Create a memoized section. Computed once, cached until clear.
+ * Create a memoized system prompt section.
+ * Computed once, cached until /clear or /compact.
  */
 export function systemPromptSection(
   name: string,
@@ -28,8 +26,9 @@ export function systemPromptSection(
 }
 
 /**
- * Create a volatile section that recomputes every turn and breaks prompt cache.
- * Use sparingly — each call invalidates the cached prefix.
+ * Create a volatile system prompt section that recomputes every turn.
+ * This WILL break the prompt cache when the value changes.
+ * Requires a reason explaining why cache-breaking is necessary.
  */
 export function DANGEROUS_uncachedSystemPromptSection(
   name: string,
@@ -40,26 +39,31 @@ export function DANGEROUS_uncachedSystemPromptSection(
 }
 
 /**
- * Resolve all sections, using cache for non-cacheBreak sections.
+ * Resolve all system prompt sections, returning prompt strings.
  */
 export async function resolveSystemPromptSections(
   sections: SystemPromptSection[],
 ): Promise<(string | null)[]> {
+  const cache = getSystemPromptSectionCache()
+
   return Promise.all(
-    sections.map(async (s) => {
-      if (!s.cacheBreak && sectionCache.has(s.name)) {
-        return sectionCache.get(s.name) ?? null
+    sections.map(async s => {
+      if (!s.cacheBreak && cache.has(s.name)) {
+        return cache.get(s.name) ?? null
       }
       const value = await s.compute()
-      sectionCache.set(s.name, value)
+      setSystemPromptSectionCacheEntry(s.name, value)
       return value
     }),
   )
 }
 
 /**
- * Clear all cached sections. Called on session reset and compact.
+ * Clear all system prompt section state. Called on /clear and /compact.
+ * Also resets beta header latches so a fresh conversation gets fresh
+ * evaluation of AFK/fast-mode/cache-editing headers.
  */
 export function clearSystemPromptSections(): void {
-  sectionCache.clear()
+  clearSystemPromptSectionState()
+  clearBetaHeaderLatches()
 }

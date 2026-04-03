@@ -1,85 +1,93 @@
 /**
- * Klaus Engine — agent engine adapted from claude-code.
- * Main entry point for the engine module.
+ * Engine public API — re-exports everything Klaus integration layer needs.
+ * This file is NOT @ts-nocheck; it serves as the typed boundary.
  */
 
-// Core query loop
-export { query, type QueryParams, type Terminal } from './query.js'
-
-// Tool types and utilities
-export {
-  type Tool,
-  type Tools,
-  type ToolDef,
-  type ToolUseContext,
-  type ToolResult,
-  type ToolCallProgress,
-  type ToolInputJSONSchema,
-  type CanUseToolFn,
-  type ToolPermissionContext,
-  type ThinkingConfig,
-  type ValidationResult,
-  type AppState,
-  type MCPServerConnection,
-  type AgentDefinition,
-  type AgentDefinitionsResult,
-  buildTool,
-  findToolByName,
-  toolMatchesName,
-  getEmptyToolPermissionContext,
-} from './Tool.js'
+// Query loop
+export { query } from "./query.js";
+export type { QueryParams } from "./query.js";
 
 // Message types
 export type {
   Message,
-  UserMessage,
   AssistantMessage,
-  SystemMessage,
-  AttachmentMessage,
-  ProgressMessage,
+  UserMessage,
   StreamEvent,
-  TombstoneMessage,
-  ToolUseSummaryMessage,
-  SystemCompactBoundaryMessage,
-  MessageOrigin,
-} from './types/message.js'
+} from "./types/message.js";
 
-// Permission types
+// Tool types
 export type {
-  PermissionMode,
-  PermissionResult,
-  PermissionBehavior,
-  PermissionRule,
-  PermissionDecision,
-} from './types/permissions.js'
-
-// API
+  ToolUseContext,
+  ToolPermissionContext,
+  Tools,
+  Tool,
+} from "./Tool.js";
 export {
-  queryModelWithStreaming,
-  normalizeMessagesForAPI,
-  buildToolSchemas,
-} from './services/api/claude.js'
-export { createAnthropicClient } from './services/api/client.js'
+  getEmptyToolPermissionContext,
+  buildTool,
+} from "./Tool.js";
+export type { CanUseToolFn } from "./hooks/useCanUseTool.js";
 
-// Compaction
+// Thinking config
+export type { ThinkingConfig } from "./utils/thinking.js";
+
+// App state
+export type { AppState } from "./state/AppStateStore.js";
+
+// System prompt utilities
 export {
-  autoCompactIfNeeded,
-  shouldAutoCompact,
-  getAutoCompactThreshold,
-} from './services/compact/autoCompact.js'
+  systemPromptSection,
+  DANGEROUS_uncachedSystemPromptSection,
+  resolveSystemPromptSections,
+  clearSystemPromptSections,
+} from "./constants/systemPromptSections.js";
+export { getSystemPrompt } from "./constants/prompts.js";
+export { asSystemPrompt } from "./utils/systemPromptType.js";
+export type { SystemPrompt } from "./utils/systemPromptType.js";
+
+// Bootstrap state
 export {
-  compactConversation,
-  buildPostCompactMessages,
-  type CompactionResult,
-} from './services/compact/compact.js'
+  getSessionId,
+  getOriginalCwd,
+  setOriginalCwd,
+  setCwdState,
+  setProjectRoot,
+} from "./bootstrap/state.js";
 
-// Tool execution
-export { runTools } from './services/tools/toolOrchestration.js'
-export { runToolUse } from './services/tools/toolExecution.js'
+// Tools
+export { getAllBaseTools, assembleToolPool } from "./tools.js";
 
-// Utilities
-export { tokenCountWithEstimation, tokenCountFromLastAPIResponse } from './utils/tokens.js'
-export { getContextWindowForModel, getModelMaxOutputTokens } from './utils/context.js'
-export type { SystemPrompt } from './utils/systemPromptType.js'
-export type { QuerySource } from './constants/querySource.js'
-export type { SessionId, AgentId } from './types/ids.js'
+// Context collapse
+export {
+  initContextCollapse,
+  resetContextCollapse,
+  isContextCollapseEnabled,
+  getStats as getContextCollapseStats,
+} from "./services/contextCollapse/index.js";
+export type {
+  ContextCollapseStats,
+  ContextCollapseHealth,
+} from "./services/contextCollapse/index.js";
+
+// Content replacement state
+export { createContentReplacementState } from "./utils/toolResultStorage.js";
+export type { ContentReplacementState } from "./utils/toolResultStorage.js";
+
+// Analytics
+export { attachAnalyticsSink } from "./services/analytics/index.js";
+export type { AnalyticsSink } from "./services/analytics/index.js";
+
+// Cost tracker — re-export with names Klaus expects
+export {
+  getTotalCost,
+  getTotalDuration,
+  getTotalAPIDuration,
+  getModelUsage,
+  getTotalInputTokens,
+  getTotalOutputTokens,
+} from "./cost-tracker.js";
+export {
+  getTotalCostUSD,
+  getTotalToolDuration,
+} from "./bootstrap/state.js";
+export { formatTotalCost } from "./cost-tracker.js";

@@ -1,8 +1,42 @@
+// @ts-nocheck
 // ---------------------------------------------------------------------------
-// readFileInRange -- line-oriented file reader with two code paths
+// readFileInRange — line-oriented file reader with two code paths
 // ---------------------------------------------------------------------------
-// Adapted from claude-code's utils/readFileInRange.ts.
-// Removed GrowthBook/analytics dependencies.
+//
+// Returns lines [offset, offset + maxLines) from a file.
+//
+// Fast path (regular files < 10 MB):
+//   Opens the file, stats the fd, reads the whole file with readFile(),
+//   then splits lines in memory.  This avoids the per-chunk async overhead
+//   of createReadStream and is ~2x faster for typical source files.
+//
+// Streaming path (large files, pipes, devices, etc.):
+//   Uses createReadStream with manual indexOf('\n') scanning.  Content is
+//   only accumulated for lines inside the requested range — lines outside
+//   the range are counted (for totalLines) but discarded, so reading line
+//   1 of a 100 GB file won't balloon RSS.
+//
+//   All event handlers (streamOnOpen/Data/End) are module-level named
+//   functions with zero closures.  State lives in a StreamState object;
+//   handlers access it via `this`, bound at registration time.
+//
+//   Lifecycle: `open`, `end`, and `error` use .once() (auto-remove).
+//   `data` fires until the stream ends or is destroyed — either way the
+//   stream and state become unreachable together and are GC'd.
+//
+//   On error (including maxBytes exceeded), stream.destroy(err) emits
+//   'error' → reject (passed directly to .once('error')).
+//
+// Both paths strip UTF-8 BOM and \r (CRLF → LF).
+//
+// mtime comes from fstat/stat on the already-open fd — no extra open().
+//
+// maxBytes behavior depends on options.truncateOnByteLimit:
+//   false (default): legacy semantics — throws FileTooLargeError if the FILE
+//     size (fast path) or total streamed bytes (streaming) exceed maxBytes.
+//   true: caps SELECTED OUTPUT at maxBytes.  Stops at the last complete line
+//     that fits; sets truncatedByBytes in the result.  Never throws.
+// ---------------------------------------------------------------------------
 
 import { createReadStream, fstat } from 'fs'
 import { stat as fsStat, readFile } from 'fs/promises'
@@ -33,6 +67,10 @@ export class FileTooLargeError extends Error {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
 export async function readFileInRange(
   filePath: string,
   offset = 0,
@@ -44,6 +82,9 @@ export async function readFileInRange(
   signal?.throwIfAborted()
   const truncateOnByteLimit = options?.truncateOnByteLimit ?? false
 
+  // stat to decide the code path and guard against OOM.
+  // For regular files under 10 MB: readFile + in-memory split (fast).
+  // Everything else (large files, FIFOs, devices): streaming.
   const stats = await fsStat(filePath)
 
   if (stats.isDirectory()) {
@@ -81,6 +122,10 @@ export async function readFileInRange(
   )
 }
 
+// ---------------------------------------------------------------------------
+// Fast path — readFile + in-memory split
+// ---------------------------------------------------------------------------
+
 function readFileInRangeFast(
   raw: string,
   mtimeMs: number,
@@ -89,8 +134,11 @@ function readFileInRangeFast(
   truncateAtBytes: number | undefined,
 ): ReadFileRangeResult {
   const endLine = maxLines !== undefined ? offset + maxLines : Infinity
+
+  // Strip BOM.
   const text = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw
 
+  // Split lines, strip \r, select range.
   const selectedLines: string[] = []
   let lineIndex = 0
   let startPos = 0
@@ -124,6 +172,7 @@ function readFileInRangeFast(
     startPos = newlinePos + 1
   }
 
+  // Final fragment (no trailing newline).
   if (lineIndex >= offset && lineIndex < endLine && !truncatedByBytes) {
     let line = text.slice(startPos)
     if (line.endsWith('\r')) {
@@ -144,6 +193,10 @@ function readFileInRangeFast(
     ...(truncatedByBytes ? { truncatedByBytes: true } : {}),
   }
 }
+
+// ---------------------------------------------------------------------------
+// Streaming path — createReadStream + event handlers
+// ---------------------------------------------------------------------------
 
 type StreamState = {
   stream: ReturnType<typeof createReadStream>
@@ -207,6 +260,8 @@ function streamOnData(this: StreamState, chunk: string): void {
         const sep = this.selectedLines.length > 0 ? 1 : 0
         const nextBytes = this.selectedBytes + sep + Buffer.byteLength(line)
         if (nextBytes > this.maxBytes) {
+          // Cap hit — collapse the selection range so nothing more is
+          // accumulated.  Stream continues (to count totalLines).
           this.truncatedByBytes = true
           this.endLine = this.currentLineIndex
         } else {
@@ -221,12 +276,20 @@ function streamOnData(this: StreamState, chunk: string): void {
     startPos = newlinePos + 1
   }
 
+  // Only keep the trailing fragment when inside the selected range.
+  // Outside the range we just count newlines — discarding prevents
+  // unbounded memory growth on huge single-line files.
   if (startPos < data.length) {
     if (
       this.currentLineIndex >= this.offset &&
       this.currentLineIndex < this.endLine
     ) {
       const fragment = data.slice(startPos)
+      // In truncate mode, `partial` can grow unboundedly if the selected
+      // range contains a huge single line (no newline across many chunks).
+      // Once the fragment alone would overflow the remaining budget, we know
+      // the completed line can never fit — set truncated, collapse the
+      // selection range, and discard the fragment to stop accumulation.
       if (this.truncateOnByteLimit && this.maxBytes !== undefined) {
         const sep = this.selectedLines.length > 0 ? 1 : 0
         const fragBytes = this.selectedBytes + sep + Buffer.byteLength(fragment)
@@ -314,7 +377,7 @@ function readFileInRangeStreaming(
     })
 
     state.stream.once('open', streamOnOpen.bind(state))
-    state.stream.on('data', streamOnData.bind(state) as (chunk: string | Buffer) => void)
+    state.stream.on('data', streamOnData.bind(state))
     state.stream.once('end', streamOnEnd.bind(state))
     state.stream.once('error', reject)
   })

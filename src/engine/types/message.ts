@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Message types for the engine — reconstructed from claude-code's build-time generated types.
  * These mirror the exact shapes used by query.ts, utils/messages.ts, and the tool execution pipeline.
@@ -13,7 +14,6 @@ import type {
   BetaMessage,
   BetaUsage as Usage,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import type { APIError } from '@anthropic-ai/sdk'
 import type { PermissionMode } from './permissions.js'
 
 // Re-export Usage for convenience
@@ -70,16 +70,21 @@ export interface UserMessage extends BaseMessage {
 // Assistant Message
 // ============================================================================
 
-export interface SDKAssistantMessageError {
-  type: string
-  message: string
-}
+export type SDKAssistantMessageError =
+  | 'authentication_failed'
+  | 'billing_error'
+  | 'rate_limit'
+  | 'invalid_request'
+  | 'server_error'
+  | 'unknown'
+  | 'max_output_tokens'
+  | 'overloaded'
 
 export interface AssistantMessage extends BaseMessage {
   type: 'assistant'
   message: BetaMessage
   requestId?: string
-  apiError?: APIError
+  apiError?: string
   error?: SDKAssistantMessageError
   errorDetails?: string
   isApiErrorMessage?: boolean
@@ -114,15 +119,12 @@ export interface ProgressMessage<P = unknown> extends BaseMessage {
 // Attachment Message
 // ============================================================================
 
-export interface Attachment {
-  type: string
-  content: string
-  [key: string]: unknown
-}
+// Re-export the full Attachment union from attachments.ts
+export type { Attachment } from '../utils/attachments.js'
 
 export interface AttachmentMessage extends BaseMessage {
   type: 'attachment'
-  attachment: Attachment
+  attachment: import('../utils/attachments.js').Attachment
 }
 
 // ============================================================================
@@ -137,11 +139,9 @@ interface SystemMessageBase extends BaseMessage {
 }
 
 export interface StopHookInfo {
-  hookName: string
-  exitCode: number
-  stdout: string
-  stderr: string
-  durationMs: number
+  command: string
+  promptText?: string
+  durationMs?: number
 }
 
 export interface SystemInformationalMessage extends SystemMessageBase {

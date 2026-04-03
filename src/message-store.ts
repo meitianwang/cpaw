@@ -54,7 +54,36 @@ interface SessionSummary {
   readonly messageCount: number;
 }
 
-type TranscriptLine = TranscriptSessionLine | TranscriptMessage;
+/** Context collapse commit entry — persisted to JSONL for session restore. */
+interface TranscriptCollapseCommit {
+  readonly type: "marble-origami-commit";
+  readonly collapseId: string;
+  readonly summaryUuid: string;
+  readonly summaryContent: string;
+  readonly summary: string;
+  readonly firstArchivedUuid: string;
+  readonly lastArchivedUuid: string;
+}
+
+/** Context collapse snapshot — last-wins semantics on restore. */
+interface TranscriptCollapseSnapshot {
+  readonly type: "marble-origami-snapshot";
+  readonly staged: Array<{
+    startUuid: string;
+    endUuid: string;
+    summary: string;
+    risk: number;
+    stagedAt: number;
+  }>;
+  readonly armed: boolean;
+  readonly lastSpawnTokens: number;
+}
+
+type TranscriptLine =
+  | TranscriptSessionLine
+  | TranscriptMessage
+  | TranscriptCollapseCommit
+  | TranscriptCollapseSnapshot;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -368,6 +397,68 @@ export class MessageStore {
       console.error("[MessageStore] Failed to delete transcript:", fp, err);
       return false;
     }
+  }
+
+  /**
+   * Append a raw JSONL entry (collapse commit, snapshot, or other metadata).
+   * Aligned with claude-code's sessionStorage.appendEntry().
+   */
+  async appendEntry(
+    sessionKey: string,
+    entry: TranscriptCollapseCommit | TranscriptCollapseSnapshot,
+  ): Promise<void> {
+    await this.appendLine(sessionKey, entry);
+  }
+
+  /**
+   * Read ALL entries (messages + collapse entries) from a session's transcript.
+   * Used for session restore — returns raw parsed objects so the caller can
+   * reconstruct both messages and collapse state.
+   */
+  async readAllEntries(sessionKey: string): Promise<{
+    messages: TranscriptMessage[];
+    collapseCommits: TranscriptCollapseCommit[];
+    collapseSnapshot: TranscriptCollapseSnapshot | null;
+  }> {
+    let fp = this.filePath(sessionKey);
+    if (!existsSync(fp)) {
+      const legacyFp = join(this.config.transcriptsDir, sanitizeSessionKey(sessionKey) + ".jsonl");
+      if (existsSync(legacyFp)) { fp = legacyFp; } else {
+        return { messages: [], collapseCommits: [], collapseSnapshot: null };
+      }
+    }
+
+    const raw = await readFile(fp, "utf-8");
+    const messages: TranscriptMessage[] = [];
+    const collapseCommits: TranscriptCollapseCommit[] = [];
+    let collapseSnapshot: TranscriptCollapseSnapshot | null = null;
+
+    for (const line of raw.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+
+        if (parsed.type === "message" &&
+            (parsed.role === "user" || parsed.role === "assistant") &&
+            typeof parsed.content === "string") {
+          messages.push({
+            type: "message",
+            role: parsed.role,
+            content: parsed.content,
+            ts: typeof parsed.ts === "number" ? parsed.ts : 0,
+          });
+        } else if (parsed.type === "marble-origami-commit") {
+          collapseCommits.push(parsed as unknown as TranscriptCollapseCommit);
+        } else if (parsed.type === "marble-origami-snapshot") {
+          // Last-wins: only keep the most recent snapshot
+          collapseSnapshot = parsed as unknown as TranscriptCollapseSnapshot;
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+
+    return { messages, collapseCommits, collapseSnapshot };
   }
 
   /** No-op for now; async file writes are self-contained. */

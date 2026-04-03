@@ -1,74 +1,24 @@
+// @ts-nocheck
 import type {
   ImageBlockParam,
   TextBlockParam,
   ToolResultBlockParam,
 } from '@anthropic-ai/sdk/resources/index.mjs'
-import { readFileSync } from 'fs'
+import { BASH_TOOL_NAME } from '../tools/BashTool/toolName.js'
+import { formatOutput } from '../tools/BashTool/utils.js'
+import type {
+  NotebookCell,
+  NotebookCellOutput,
+  NotebookCellSource,
+  NotebookCellSourceOutput,
+  NotebookContent,
+  NotebookOutputImage,
+} from '../types/notebook.js'
+import { getFsImplementation } from './fsOperations.js'
 import { expandPath } from './path.js'
+import { jsonParse } from './slowOperations.js'
 
 const LARGE_OUTPUT_THRESHOLD = 10000
-
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface NotebookContent {
-  cells: NotebookCell[]
-  metadata: {
-    language_info?: { name: string }
-  }
-  nbformat: number
-  nbformat_minor: number
-}
-
-export interface NotebookCell {
-  cell_type: 'code' | 'markdown' | 'raw'
-  source: string | string[]
-  id?: string
-  execution_count?: number | null
-  outputs?: NotebookCellOutput[]
-  metadata?: Record<string, unknown>
-}
-
-export interface NotebookCellOutput {
-  output_type: 'stream' | 'execute_result' | 'display_data' | 'error'
-  text?: string | string[]
-  data?: Record<string, unknown>
-  ename?: string
-  evalue?: string
-  traceback?: string[]
-}
-
-export interface NotebookOutputImage {
-  image_data: string
-  media_type: 'image/png' | 'image/jpeg'
-}
-
-export interface NotebookCellSourceOutput {
-  output_type: string
-  text?: string
-  image?: NotebookOutputImage
-}
-
-export interface NotebookCellSource {
-  cellType: string
-  source: string
-  execution_count?: number
-  cell_id: string
-  language?: string
-  outputs?: NotebookCellSourceOutput[]
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-const MAX_OUTPUT_SIZE = 0.25 * 1024 * 1024
-
-function truncateOutput(text: string): string {
-  if (text.length <= MAX_OUTPUT_SIZE) return text
-  return text.slice(0, MAX_OUTPUT_SIZE) + '\n... (output truncated)'
-}
 
 function isLargeOutputs(
   outputs: (NotebookCellSourceOutput | undefined)[],
@@ -85,7 +35,8 @@ function isLargeOutputs(
 function processOutputText(text: string | string[] | undefined): string {
   if (!text) return ''
   const rawText = Array.isArray(text) ? text.join('') : text
-  return truncateOutput(rawText)
+  const { truncatedContent } = formatOutput(rawText)
+  return truncatedContent
 }
 
 function extractImage(
@@ -106,7 +57,7 @@ function extractImage(
   return undefined
 }
 
-function processOutput(output: NotebookCellOutput): NotebookCellSourceOutput {
+function processOutput(output: NotebookCellOutput) {
   switch (output.output_type) {
     case 'stream':
       return {
@@ -117,20 +68,16 @@ function processOutput(output: NotebookCellOutput): NotebookCellSourceOutput {
     case 'display_data':
       return {
         output_type: output.output_type,
-        text: processOutputText(
-          output.data?.['text/plain'] as string | string[] | undefined,
-        ),
-        image: output.data ? extractImage(output.data) : undefined,
+        text: processOutputText(output.data?.['text/plain']),
+        image: output.data && extractImage(output.data),
       }
     case 'error':
       return {
         output_type: output.output_type,
         text: processOutputText(
-          `${output.ename}: ${output.evalue}\n${(output.traceback ?? []).join('\n')}`,
+          `${output.ename}: ${output.evalue}\n${output.traceback.join('\n')}`,
         ),
       }
-    default:
-      return { output_type: output.output_type }
   }
 }
 
@@ -148,6 +95,7 @@ function processCell(
       cell.cell_type === 'code' ? cell.execution_count || undefined : undefined,
     cell_id: cellId,
   }
+  // Avoid giving text cells the code language.
   if (cell.cell_type === 'code') {
     cellData.language = codeLanguage
   }
@@ -158,7 +106,7 @@ function processCell(
       cellData.outputs = [
         {
           output_type: 'stream',
-          text: `Outputs are too large to include. Use Bash with: cat <notebook_path> | jq '.cells[${index}].outputs'`,
+          text: `Outputs are too large to include. Use ${BASH_TOOL_NAME} with: cat <notebook_path> | jq '.cells[${index}].outputs'`,
         },
       ]
     } else {
@@ -168,10 +116,6 @@ function processCell(
 
   return cellData
 }
-
-// ============================================================================
-// Public API
-// ============================================================================
 
 function cellContentToToolResult(cell: NotebookCellSource): TextBlockParam {
   const metadata = []
@@ -188,9 +132,7 @@ function cellContentToToolResult(cell: NotebookCellSource): TextBlockParam {
   }
 }
 
-function cellOutputToToolResult(
-  output: NotebookCellSourceOutput,
-): (TextBlockParam | ImageBlockParam)[] {
+function cellOutputToToolResult(output: NotebookCellSourceOutput) {
   const outputs: (TextBlockParam | ImageBlockParam)[] = []
   if (output.text) {
     outputs.push({
@@ -211,24 +153,23 @@ function cellOutputToToolResult(
   return outputs
 }
 
-function getToolResultFromCell(
-  cell: NotebookCellSource,
-): (TextBlockParam | ImageBlockParam)[] {
+function getToolResultFromCell(cell: NotebookCellSource) {
   const contentResult = cellContentToToolResult(cell)
   const outputResults = cell.outputs?.flatMap(cellOutputToToolResult)
   return [contentResult, ...(outputResults ?? [])]
 }
 
 /**
- * Reads and parses a Jupyter notebook file into processed cell data.
+ * Reads and parses a Jupyter notebook file into processed cell data
  */
 export async function readNotebook(
   notebookPath: string,
   cellId?: string,
 ): Promise<NotebookCellSource[]> {
   const fullPath = expandPath(notebookPath)
-  const content = readFileSync(fullPath, 'utf-8')
-  const notebook = JSON.parse(content) as NotebookContent
+  const buffer = await getFsImplementation().readFileBytes(fullPath)
+  const content = buffer.toString('utf-8')
+  const notebook = jsonParse(content) as NotebookContent
   const language = notebook.metadata.language_info?.name ?? 'python'
   if (cellId) {
     const cell = notebook.cells.find(c => c.id === cellId)
@@ -243,7 +184,7 @@ export async function readNotebook(
 }
 
 /**
- * Maps notebook cell data to tool result block parameters with text block merging.
+ * Maps notebook cell data to tool result block parameters with sophisticated text block merging
  */
 export function mapNotebookCellsToToolResult(
   data: NotebookCellSource[],
@@ -251,6 +192,7 @@ export function mapNotebookCellsToToolResult(
 ): ToolResultBlockParam {
   const allResults = data.flatMap(getToolResultFromCell)
 
+  // Merge adjacent text blocks
   return {
     tool_use_id: toolUseID,
     type: 'tool_result' as const,
@@ -260,6 +202,7 @@ export function mapNotebookCellsToToolResult(
 
         const prev = acc[acc.length - 1]
         if (prev && prev.type === 'text' && curr.type === 'text') {
+          // Merge the text blocks
           prev.text += '\n' + curr.text
           return acc
         }

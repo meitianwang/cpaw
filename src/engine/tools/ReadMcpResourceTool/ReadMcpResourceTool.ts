@@ -1,8 +1,24 @@
+// @ts-nocheck
+import {
+  type ReadResourceResult,
+  ReadResourceResultSchema,
+} from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod/v4'
+import { ensureConnectedClient } from '../../services/mcp/client.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
+import {
+  getBinaryBlobSavedMessage,
+  persistBinaryContent,
+} from '../../utils/mcpOutputStorage.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
+import { isOutputLineTruncated } from '../../utils/terminal.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
+import {
+  renderToolResultMessage,
+  renderToolUseMessage,
+  userFacingName,
+} from './UI.js'
 
 export const inputSchema = lazySchema(() =>
   z.object({
@@ -68,28 +84,70 @@ export const ReadMcpResourceTool = buildTool({
       )
     }
 
-    // Use the MCP client's callTool to read the resource.
-    // In Klaus's simplified MCP model, resource reading goes through
-    // the generic callTool interface. Override if native MCP resource
-    // reading is needed.
-    const result = await client.callTool('resources/read', { uri })
+    if (client.type !== 'connected') {
+      throw new Error(`Server "${serverName}" is not connected`)
+    }
 
-    // Normalize the result into the expected output shape
-    const contents = Array.isArray(result)
-      ? result.map((c: any) => ({
-          uri: c.uri ?? uri,
+    if (!client.capabilities?.resources) {
+      throw new Error(`Server "${serverName}" does not support resources`)
+    }
+
+    const connectedClient = await ensureConnectedClient(client)
+    const result = (await connectedClient.client.request(
+      {
+        method: 'resources/read',
+        params: { uri },
+      },
+      ReadResourceResultSchema,
+    )) as ReadResourceResult
+
+    // Intercept any blob fields: decode, write raw bytes to disk with a
+    // mime-derived extension, and replace with a path. Otherwise the base64
+    // would be stringified straight into the context.
+    const contents = await Promise.all(
+      result.contents.map(async (c, i) => {
+        if ('text' in c) {
+          return { uri: c.uri, mimeType: c.mimeType, text: c.text }
+        }
+        if (!('blob' in c) || typeof c.blob !== 'string') {
+          return { uri: c.uri, mimeType: c.mimeType }
+        }
+        const persistId = `mcp-resource-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`
+        const persisted = await persistBinaryContent(
+          Buffer.from(c.blob, 'base64'),
+          c.mimeType,
+          persistId,
+        )
+        if ('error' in persisted) {
+          return {
+            uri: c.uri,
+            mimeType: c.mimeType,
+            text: `Binary content could not be saved to disk: ${persisted.error}`,
+          }
+        }
+        return {
+          uri: c.uri,
           mimeType: c.mimeType,
-          text: c.text,
-        }))
-      : [{ uri, text: typeof result === 'string' ? result : jsonStringify(result) }]
+          blobSavedTo: persisted.filepath,
+          text: getBinaryBlobSavedMessage(
+            persisted.filepath,
+            c.mimeType,
+            persisted.size,
+            `[Resource from ${serverName} at ${c.uri}] `,
+          ),
+        }
+      }),
+    )
 
     return {
       data: { contents },
     }
   },
-  userFacingName: () => 'readMcpResource',
+  renderToolUseMessage,
+  userFacingName,
+  renderToolResultMessage,
   isResultTruncated(output: Output): boolean {
-    return jsonStringify(output).includes('[... output truncated]')
+    return isOutputLineTruncated(jsonStringify(output))
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     return {

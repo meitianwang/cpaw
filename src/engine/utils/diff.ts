@@ -1,18 +1,19 @@
+// @ts-nocheck
 import { type StructuredPatchHunk, structuredPatch } from 'diff'
+import { logEvent } from '../services/analytics/index.js'
+import { getLocCounter } from '../bootstrap/state.js'
+import { addToTotalLinesChanged } from '../cost-tracker.js'
+import type { FileEdit } from '../tools/FileEditTool/types.js'
+import { count } from './array.js'
 import { convertLeadingTabsToSpaces } from './file.js'
-
-export type FileEdit = {
-  old_string: string
-  new_string: string
-  replace_all?: boolean
-}
 
 export const CONTEXT_LINES = 3
 export const DIFF_TIMEOUT_MS = 5_000
 
 /**
  * Shifts hunk line numbers by offset. Use when getPatchForDisplay received
- * a slice of the file rather than the whole file.
+ * a slice of the file (e.g. readEditContext) rather than the whole file —
+ * callers pass `ctx.lineOffset - 1` to convert slice-relative to file-relative.
  */
 export function adjustHunkLineNumbers(
   hunks: StructuredPatchHunk[],
@@ -26,8 +27,10 @@ export function adjustHunkLineNumbers(
   }))
 }
 
-// & and $ confuse the diff library, so we escape them for diffing.
+// For some reason, & confuses the diff library, so we replace it with a token,
+// then substitute it back in after the diff is computed.
 const AMPERSAND_TOKEN = '<<:AMPERSAND_TOKEN:>>'
+
 const DOLLAR_TOKEN = '<<:DOLLAR_TOKEN:>>'
 
 function escapeForDiff(s: string): string {
@@ -39,27 +42,41 @@ function unescapeFromDiff(s: string): string {
 }
 
 /**
- * Count lines added and removed in a patch.
+ * Count lines added and removed in a patch and update the total
+ * For new files, pass the content string as the second parameter
+ * @param patch Array of diff hunks
+ * @param newFileContent Optional content string for new files
  */
 export function countLinesChanged(
   patch: StructuredPatchHunk[],
   newFileContent?: string,
-): { numAdditions: number; numRemovals: number } {
+): void {
   let numAdditions = 0
   let numRemovals = 0
 
   if (patch.length === 0 && newFileContent) {
+    // For new files, count all lines as additions
     numAdditions = newFileContent.split(/\r?\n/).length
   } else {
-    for (const hunk of patch) {
-      for (const line of hunk.lines) {
-        if (line.startsWith('+')) numAdditions++
-        else if (line.startsWith('-')) numRemovals++
-      }
-    }
+    numAdditions = patch.reduce(
+      (acc, hunk) => acc + count(hunk.lines, _ => _.startsWith('+')),
+      0,
+    )
+    numRemovals = patch.reduce(
+      (acc, hunk) => acc + count(hunk.lines, _ => _.startsWith('-')),
+      0,
+    )
   }
 
-  return { numAdditions, numRemovals }
+  addToTotalLinesChanged(numAdditions, numRemovals)
+
+  getLocCounter()?.add(numAdditions, { type: 'added' })
+  getLocCounter()?.add(numRemovals, { type: 'removed' })
+
+  logEvent('tengu_file_changed', {
+    lines_added: numAdditions,
+    lines_removed: numRemovals,
+  })
 }
 
 export function getPatchFromContents({
@@ -98,9 +115,17 @@ export function getPatchFromContents({
 }
 
 /**
- * Get a patch for display with edits applied.
- * Returns the diff with all leading tabs rendered as spaces for display.
+ * Get a patch for display with edits applied
+ * @param filePath The path to the file
+ * @param fileContents The contents of the file
+ * @param edits An array of edits to apply to the file
+ * @param ignoreWhitespace Whether to ignore whitespace changes
+ * @returns An array of hunks representing the diff
+ *
+ * NOTE: This function will return the diff with all leading tabs
+ * rendered as spaces for display
  */
+
 export function getPatchForDisplay({
   filePath,
   fileContents,
@@ -121,7 +146,7 @@ export function getPatchForDisplay({
     preparedFileContents,
     edits.reduce((p, edit) => {
       const { old_string, new_string } = edit
-      const replace_all = edit.replace_all ?? false
+      const replace_all = 'replace_all' in edit ? edit.replace_all : false
       const escapedOldString = escapeForDiff(
         convertLeadingTabsToSpaces(old_string),
       )

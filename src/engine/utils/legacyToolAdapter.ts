@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Adapter: wraps Klaus legacy AgentTool (execute()) as an engine Tool (call()).
  * This allows legacy tools (memory, skills, moonshot, capabilities) to work
@@ -5,8 +6,8 @@
  */
 
 import { z } from 'zod/v4'
-import { buildTool, type ToolDef } from '../Tool.js'
-import type { ToolUseContext, CanUseToolFn, ToolCallProgress, ToolProgressData } from '../Tool.js'
+import { buildTool } from '../Tool.js'
+import type { ToolUseContext, CanUseToolFn } from '../Tool.js'
 import type { AssistantMessage } from '../types/message.js'
 import type { PermissionResult } from '../types/permissions.js'
 
@@ -40,14 +41,14 @@ export function wrapLegacyTool(legacyTool: LegacyAgentTool) {
     maxResultSizeChars: 100_000,
 
     inputSchema,
-    inputJSONSchema: legacyTool.parameters as any,
+    inputJSONSchema: legacyTool.parameters,
 
     async call(
-      args: Record<string, unknown>,
-      context: ToolUseContext,
-      _canUseTool: CanUseToolFn,
-      _parentMessage: AssistantMessage,
-      _onProgress?: ToolCallProgress,
+      args,
+      context,
+      _canUseTool,
+      _parentMessage,
+      _onProgress,
     ) {
       const result = await legacyTool.execute(
         `legacy-${Date.now()}`,
@@ -63,7 +64,7 @@ export function wrapLegacyTool(legacyTool: LegacyAgentTool) {
       // Convert legacy result to engine format
       const textParts = result.content
         .filter(b => b.type === 'text' && b.text)
-        .map(b => b.text!)
+        .map(b => b.text)
       const text = textParts.join('\n') || '(no output)'
 
       return { data: text }
@@ -83,13 +84,13 @@ export function wrapLegacyTool(legacyTool: LegacyAgentTool) {
     userFacingName: () => legacyTool.label || legacyTool.name,
     toAutoClassifierInput: () => '',
 
-    async checkPermissions(input: Record<string, unknown>) {
-      return { behavior: 'allow' as const, updatedInput: input } as PermissionResult
+    async checkPermissions(input) {
+      return { behavior: 'allow', updatedInput: input }
     },
 
-    mapToolResultToToolResultBlockParam(content: string, toolUseID: string) {
+    mapToolResultToToolResultBlockParam(content, toolUseID) {
       return {
-        type: 'tool_result' as const,
+        type: 'tool_result',
         tool_use_id: toolUseID,
         content: content,
       }

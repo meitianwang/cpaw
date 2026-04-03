@@ -4,14 +4,15 @@
  */
 
 import { randomUUID } from "crypto";
-import { initState } from "./engine/bootstrap/state.js";
+import { setOriginalCwd, setCwdState, setProjectRoot } from "./engine/bootstrap/state.js";
 import type { SettingsStore } from "./settings-store.js";
 import { getProvider, capabilities } from "./providers/registry.js";
 import { refreshAccessToken } from "./auth/oauth.js";
 import type { OAuthProviderAuth } from "./auth/oauth.js";
 import type { MemoryManagerPool } from "./memory/pool.js";
 import { createMemorySearchTool, createMemoryGetTool, buildMemoryPromptSection } from "./memory/tools.js";
-import { buildSystemPrompt, ensureScratchpadDir, clearSystemPromptSections } from "./engine/constants/prompts.js";
+import { getSystemPrompt } from "./engine/constants/prompts.js";
+import { clearSystemPromptSections } from "./engine/constants/systemPromptSections.js";
 import { createMemorySaveTool } from "./memory/memory-write.js";
 import { ToolLoopDetector } from "./tool-loop-detector.js";
 import { loadSandboxConfig, sandboxExec } from "./sandbox.js";
@@ -19,8 +20,15 @@ import { getAllBaseTools, assembleToolPool } from "./engine/tools.js";
 import { wrapLegacyTools, type LegacyAgentTool } from "./engine/utils/legacyToolAdapter.js";
 import type { MCPManager } from "./mcp-manager.js";
 import { getSkillRegistry } from "./skills/registry.js";
-import type { SkillDefinition } from "./engine/tools/SkillTool/SkillTool.js";
+// SkillTool removed from engine — define type locally
+type SkillDefinition = { name: string; description: string; command: string };
 import { extractUserId, ensureUserDirs } from "./user-dirs.js";
+import { initContextCollapse, resetContextCollapse } from "./engine/services/contextCollapse/index.js";
+import type { ContextCollapseStats } from "./engine/services/contextCollapse/index.js";
+import { MessageQueueManager } from "./engine/services/messageQueue.js";
+import type { MessageStore } from "./message-store.js";
+import { createContentReplacementState } from "./engine/utils/toolResultStorage.js";
+import type { ContentReplacementState } from "./engine/utils/toolResultStorage.js";
 
 // Engine imports
 import {
@@ -48,6 +56,7 @@ export type EngineEvent =
   | { type: "tool_end"; toolName: string; toolCallId: string; isError: boolean }
   | { type: "compaction_start" }
   | { type: "compaction_end" }
+  | { type: "context_collapse_stats"; collapsedSpans: number; stagedSpans: number; totalErrors: number }
   | { type: "message_complete"; message: AssistantMessage };
 
 type EngineEventCallback = (event: EngineEvent) => void;
@@ -67,6 +76,10 @@ interface SessionEntry {
   loopDetector: ToolLoopDetector;
   skillVersion: number;
   isRunning: boolean;
+  /** Per-session message queue for the attachment pipeline. */
+  messageQueue: import("./engine/services/messageQueue.js").MessageQueueManager;
+  /** Per-session content replacement state for tool result budget — survives across chat turns. */
+  contentReplacementState: ContentReplacementState;
 }
 
 // ============================================================================
@@ -79,18 +92,24 @@ export class AgentSessionManager {
   private readonly maxSessions: number;
   private memoryPool: MemoryManagerPool | null = null;
   private mcpManager: MCPManager | null = null;
+  private messageStore: MessageStore | null = null;
 
   constructor(store: SettingsStore) {
     this.store = store;
     this.maxSessions = store.getNumber("max_sessions", 20);
     // Initialize engine bootstrap state (cwd, sessionId) — required by tools
-    initState(process.cwd());
-    // Create scratchpad directory for this session
-    ensureScratchpadDir();
+    const cwd = process.cwd();
+    setOriginalCwd(cwd);
+    setCwdState(cwd);
+    setProjectRoot(cwd);
   }
 
   setMemoryPool(pool: MemoryManagerPool | null): void {
     this.memoryPool = pool;
+  }
+
+  setMessageStore(store: MessageStore | null): void {
+    this.messageStore = store;
   }
 
   setMCPManager(mgr: MCPManager | null): void {
@@ -114,16 +133,16 @@ export class AgentSessionManager {
 
     try {
       // Build query params
-      const { systemPrompt, userContext, apiKey, baseUrl, model, maxContextTokens, thinkingConfig, tools, toolSchemas, skillDefinitions } =
+      const { systemPrompt, userContext, systemContext, apiKey, baseUrl, model, fallbackModel, maxContextTokens, thinkingConfig, tools, toolSchemas, skillDefinitions } =
         await this.buildQueryConfig(sessionKey);
 
       // Inject user context as first message (matches claude-code's prependUserContext)
-      if (userContext && session.messages.length === 0) {
+      if (userContext.claudeMd && session.messages.length === 0) {
         const contextMessage: Message = {
           type: "user",
           message: {
             role: "user",
-            content: `<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# claudeMd\n${userContext}\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n`,
+            content: `<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# claudeMd\n${userContext.claudeMd}\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n`,
           },
           uuid: randomUUID(),
           timestamp: new Date().toISOString(),
@@ -142,7 +161,7 @@ export class AgentSessionManager {
       session.messages.push(userMessage);
 
       // Build ToolUseContext
-      const toolUseContext = this.buildToolUseContext(session, tools, model, thinkingConfig, skillDefinitions, apiKey, baseUrl);
+      const toolUseContext = this.buildToolUseContext(sessionKey, session, tools, model, thinkingConfig, skillDefinitions, apiKey, baseUrl);
 
       // Auto-approve all tools (Klaus uses yolo mode)
       const canUseTool: CanUseToolFn = async (_tool, input) => {
@@ -161,16 +180,15 @@ export class AgentSessionManager {
       const queryParams: QueryParams = {
         messages: session.messages,
         systemPrompt,
+        userContext,
+        systemContext,
         canUseTool,
         toolUseContext,
         querySource: "repl_main_thread",
         maxOutputTokensOverride: undefined,
         maxTurns: 100,
-        apiKey,
-        baseURL: baseUrl,
-        maxContextTokens,
-        toolSchemas,
-      };
+        fallbackModel,
+      } as any;
 
       // Track compaction for memory flush via callback
       let compacted = false;
@@ -181,6 +199,11 @@ export class AgentSessionManager {
         } else {
           onEvent?.({ type: "compaction_start" });
         }
+      };
+
+      // Forward context collapse stats to UI
+      (toolUseContext as any).onCollapseStats = (stats: { collapsedSpans: number; stagedSpans: number; totalErrors: number }) => {
+        onEvent?.({ type: "context_collapse_stats", ...stats });
       };
 
       // Consume the query generator
@@ -368,11 +391,47 @@ export class AgentSessionManager {
     const userId = extractUserId(sessionKey);
     await ensureUserDirs(userId);
 
+    // Restore session from JSONL transcript if available.
+    const messages: Message[] = [];
+    if (this.messageStore) {
+      try {
+        const { messages: transcriptMsgs, collapseCommits, collapseSnapshot } =
+          await this.messageStore.readAllEntries(sessionKey);
+
+        // Rebuild engine Message objects from transcript
+        for (const tm of transcriptMsgs) {
+          messages.push({
+            type: "user",
+            message: { role: tm.role, content: tm.content },
+            uuid: randomUUID(),
+            timestamp: new Date(tm.ts).toISOString(),
+            ...(tm.role === "assistant" ? { type: "assistant" as const, message: { role: "assistant" as const, content: [{ type: "text" as const, text: tm.content }], id: `msg_${randomUUID()}`, type: "message" as const, model: "<restored>", stop_reason: "end_turn" as const, stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } } } : {}),
+          } as Message);
+        }
+
+        if (collapseCommits.length > 0) {
+          console.log(
+            `[Session] Found ${collapseCommits.length} collapse commit(s) for ${sessionKey} (context collapse disabled in external build)`,
+          );
+        }
+
+        if (messages.length > 0) {
+          console.log(
+            `[Session] Restored ${messages.length} message(s) from transcript for ${sessionKey}`,
+          );
+        }
+      } catch (error) {
+        console.warn(`[Session] Failed to restore transcript for ${sessionKey}:`, error);
+      }
+    }
+
     const entry: SessionEntry = {
-      messages: [],
+      messages,
       loopDetector: new ToolLoopDetector(),
       skillVersion: getSkillRegistry().getVersion(),
       isRunning: false,
+      messageQueue: new MessageQueueManager(),
+      contentReplacementState: createContentReplacementState(),
     };
     this.sessions.set(sessionKey, entry);
     return entry;
@@ -395,10 +454,12 @@ export class AgentSessionManager {
 
   private async buildQueryConfig(sessionKey: string): Promise<{
     systemPrompt: SystemPrompt;
-    userContext: string | null;
+    userContext: { [k: string]: string };
+    systemContext: { [k: string]: string };
     apiKey: string;
     baseUrl: string | undefined;
     model: string;
+    fallbackModel: string | undefined;
     maxContextTokens: number;
     thinkingConfig: ThinkingConfig;
     tools: any[];
@@ -470,28 +531,31 @@ export class AgentSessionManager {
     // Git status snapshot (matches claude-code's getGitStatus in context.ts)
     const gitStatus = await getGitStatusSnapshot(process.cwd());
 
-    const systemPromptParts = await buildSystemPrompt({
-      model: modelRecord.model,
-      cwd: process.cwd(),
+    const systemPromptParts = await getSystemPrompt(
       tools,
-      skills: resolvedSkills.map((s) => ({ name: s.name, description: s.description })),
-      mcpClients: this.mcpManager?.mcpClients,
-      currentDate: new Date().toISOString().split("T")[0],
-      gitStatus,
-      language: this.store.getUserLanguage(userId),
-      outputStyle: this.store.getUserOutputStyle(userId),
-    });
+      modelRecord.model,
+      undefined, // additionalWorkingDirectories
+      this.mcpManager?.mcpClients,
+    );
     const systemPrompt = asSystemPrompt(systemPromptParts);
 
-    // claudeMd injected as user context (matches claude-code's prependUserContext)
-    const userContext = claudeMdParts.length > 0 ? claudeMdParts.join("\n\n") : null;
+    // Build userContext & systemContext dicts (aligned with claude-code's context.ts)
+    const claudeMd = claudeMdParts.length > 0 ? claudeMdParts.join("\n\n") : null;
+    const userContext: { [k: string]: string } = {
+      ...(claudeMd && { claudeMd }),
+      currentDate: `Today's date is ${new Date().toISOString().split("T")[0]}.`,
+    };
+    const systemContext: { [k: string]: string } = {
+      ...(gitStatus && { gitStatus }),
+    };
 
     // Build skill definitions for engine SkillTool
-    const skillDefinitions: SkillDefinition[] = resolvedSkills.map((s) => ({
+    const skillDefinitions = resolvedSkills.map((s) => ({
       name: s.name,
       description: s.description,
       content: s.content,
-    }));
+      command: s.name,
+    })) as SkillDefinition[];
 
     // Thinking config
     const thinkingLevel = modelRecord.thinking || "off";
@@ -499,12 +563,20 @@ export class AgentSessionManager {
       ? { type: "disabled" }
       : { type: "enabled", budgetTokens: Math.floor(modelRecord.maxContextTokens * 0.8) };
 
+    // Pick a fallback model: first non-default model from the same provider
+    const allModels = this.store.listModels();
+    const fallbackRecord = allModels.find(
+      (m) => m.id !== modelRecord.id && m.provider === modelRecord.provider && m.model && m.apiKey,
+    );
+
     return {
       systemPrompt,
       userContext,
+      systemContext,
       apiKey,
       baseUrl,
       model: modelRecord.model,
+      fallbackModel: fallbackRecord?.model,
       maxContextTokens: modelRecord.maxContextTokens,
       thinkingConfig,
       tools,
@@ -518,6 +590,7 @@ export class AgentSessionManager {
   // ============================================================================
 
   private buildToolUseContext(
+    sessionKey: string,
     session: SessionEntry,
     tools: any[],
     model: string,
@@ -526,10 +599,10 @@ export class AgentSessionManager {
     apiKey?: string,
     baseURL?: string,
   ): ToolUseContext {
-    const appState: AppState = {
+    const appState = {
       toolPermissionContext: getEmptyToolPermissionContext(),
       skills: skillDefinitions,
-    };
+    } as any as AppState;
 
     return {
       options: {
@@ -548,7 +621,7 @@ export class AgentSessionManager {
       abortController: new AbortController(),
       readFileState: new Map() as any,
       getAppState: () => appState,
-      setAppState: (f) => { Object.assign(appState, f(appState)); },
+      setAppState: (f: any) => { Object.assign(appState, f(appState)); },
       setInProgressToolUseIDs: () => {},
       setResponseLength: () => {},
       updateFileHistoryState: () => {},
@@ -557,7 +630,29 @@ export class AgentSessionManager {
       // API credentials for SubAgent (AgentTool)
       apiKey,
       baseURL,
-    } as ToolUseContext;
+      // Per-session message queue for the attachment pipeline
+      messageQueue: session.messageQueue,
+      // User ID for memory prefetch and per-user features
+      userId: extractUserId(sessionKey),
+      // Memory pool adapter for memory prefetch — wraps MemoryManagerPool.getOrCreate().search()
+      memoryPool: this.memoryPool ? {
+        search: async (uid: string, query: string) => {
+          const mgr = await this.memoryPool!.getOrCreate(uid);
+          const results = await mgr.search(query);
+          return results.map(r => ({ path: r.path, content: r.snippet, score: r.score }));
+        },
+      } : null,
+      // Per-session content replacement state for tool result budget
+      contentReplacementState: session.contentReplacementState,
+      // Persist collapse entries to JSONL transcript (fire-and-forget)
+      persistCollapseEntry: this.messageStore
+        ? (entry: any) => {
+            this.messageStore!.appendEntry(sessionKey, entry as any).catch((err) => {
+              console.warn('[Session] Failed to persist collapse entry:', err);
+            });
+          }
+        : undefined,
+    } as any as ToolUseContext;
   }
 }
 

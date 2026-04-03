@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Utility types — reconstructed from claude-code's build-time generated types.
  */

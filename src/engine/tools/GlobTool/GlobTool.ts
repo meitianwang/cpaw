@@ -1,13 +1,28 @@
+// @ts-nocheck
 import { z } from 'zod/v4'
 import type { ValidationResult } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { getCwd } from '../../utils/cwd.js'
 import { isENOENT } from '../../utils/errors.js'
+import {
+  FILE_NOT_FOUND_CWD_NOTE,
+  suggestPathUnderCwd,
+} from '../../utils/file.js'
+import { getFsImplementation } from '../../utils/fsOperations.js'
 import { glob } from '../../utils/glob.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { expandPath, toRelativePath } from '../../utils/path.js'
+import { checkReadPermissionForTool } from '../../utils/permissions/filesystem.js'
+import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
+import { matchWildcardPattern } from '../../utils/permissions/shellRuleMatching.js'
 import { DESCRIPTION, GLOB_TOOL_NAME } from './prompt.js'
-import fs from 'fs/promises'
+import {
+  getToolUseSummary,
+  renderToolResultMessage,
+  renderToolUseErrorMessage,
+  renderToolUseMessage,
+  userFacingName,
+} from './UI.js'
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
@@ -47,14 +62,10 @@ export const GlobTool = buildTool({
   async description() {
     return DESCRIPTION
   },
-  userFacingName() {
-    return 'Glob'
-  },
-  getToolUseSummary(input) {
-    return input?.pattern ?? null
-  },
+  userFacingName,
+  getToolUseSummary,
   getActivityDescription(input) {
-    const summary = input?.pattern
+    const summary = getToolUseSummary(input)
     return summary ? `Finding ${summary}` : 'Finding files'
   },
   get inputSchema(): InputSchema {
@@ -78,11 +89,16 @@ export const GlobTool = buildTool({
   getPath({ path }): string {
     return path ? expandPath(path) : getCwd()
   },
+  async preparePermissionMatcher({ pattern }) {
+    return rulePattern => matchWildcardPattern(rulePattern, pattern)
+  },
   async validateInput({ path }): Promise<ValidationResult> {
+    // If path is provided, validate that it exists and is a directory
     if (path) {
+      const fs = getFsImplementation()
       const absolutePath = expandPath(path)
 
-      // SECURITY: Skip filesystem operations for UNC paths
+      // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
       if (absolutePath.startsWith('\\\\') || absolutePath.startsWith('//')) {
         return { result: true }
       }
@@ -92,9 +108,14 @@ export const GlobTool = buildTool({
         stats = await fs.stat(absolutePath)
       } catch (e: unknown) {
         if (isENOENT(e)) {
+          const cwdSuggestion = await suggestPathUnderCwd(absolutePath)
+          let message = `Directory does not exist: ${path}. ${FILE_NOT_FOUND_CWD_NOTE} ${getCwd()}.`
+          if (cwdSuggestion) {
+            message += ` Did you mean ${cwdSuggestion}?`
+          }
           return {
             result: false,
-            message: `Directory does not exist: ${path}. Current working directory is ${getCwd()}.`,
+            message,
             errorCode: 1,
           }
         }
@@ -112,21 +133,37 @@ export const GlobTool = buildTool({
 
     return { result: true }
   },
+  async checkPermissions(input, context): Promise<PermissionDecision> {
+    const appState = context.getAppState()
+    return checkReadPermissionForTool(
+      GlobTool,
+      input,
+      appState.toolPermissionContext,
+    )
+  },
   async prompt() {
     return DESCRIPTION
   },
+  renderToolUseMessage,
+  renderToolUseErrorMessage,
+  renderToolResultMessage,
+  // Reuses Grep's render (UI.tsx:65) — shows filenames.join. durationMs/
+  // numFiles are "Found 3 files in 12ms" chrome (under-count, fine).
   extractSearchText({ filenames }) {
     return filenames.join('\n')
   },
-  async call(input, { abortController, globLimits }) {
+  async call(input, { abortController, getAppState, globLimits }) {
     const start = Date.now()
+    const appState = getAppState()
     const limit = globLimits?.maxResults ?? 100
     const { files, truncated } = await glob(
       input.pattern,
       GlobTool.getPath(input),
       { limit, offset: 0 },
       abortController.signal,
+      appState.toolPermissionContext,
     )
+    // Relativize paths under cwd to save tokens (same as GrepTool)
     const filenames = files.map(toRelativePath)
     const output: Output = {
       filenames,

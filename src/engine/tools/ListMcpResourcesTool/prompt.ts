@@ -1,3 +1,4 @@
+// @ts-nocheck
 export const LIST_MCP_RESOURCES_TOOL_NAME = 'ListMcpResourcesTool'
 
 export const DESCRIPTION = `
@@ -11,7 +12,7 @@ Usage examples:
 
 export const PROMPT = `
 List available resources from configured MCP servers.
-Each returned resource will include all standard MCP resource fields plus a 'server' field
+Each returned resource will include all standard MCP resource fields plus a 'server' field 
 indicating which server the resource belongs to.
 
 Parameters:

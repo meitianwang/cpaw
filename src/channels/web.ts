@@ -215,6 +215,7 @@ let messageStoreRef: MessageStore | null = null;
 let inviteStoreRef: InviteStore | null = null;
 let userStoreRef: UserStore | null = null;
 let settingsStoreRef: import("../settings-store.js").SettingsStore | null = null;
+let analyticsSinkRef: import("../engine/services/analytics/sink.js").SQLiteAnalyticsSink | null = null;
 const gateway = getGatewayService();
 
 function setMessageStore(store: MessageStore): void {
@@ -234,6 +235,10 @@ function setUserStore(store: UserStore): void {
 function setSettingsStore(store: import("../settings-store.js").SettingsStore): void {
   settingsStoreRef = store;
   gateway.setSettingsStore(store);
+}
+
+function setAnalyticsSink(sink: import("../engine/services/analytics/sink.js").SQLiteAnalyticsSink): void {
+  analyticsSinkRef = sink;
 }
 
 // Cron scheduler reference (optional — set from index.ts when cron is available)
@@ -505,6 +510,12 @@ function serveAdmin(req: IncomingMessage, res: ServerResponse): void {
 // Message processing (shared by WebSocket handler)
 // ---------------------------------------------------------------------------
 
+// Per-session message queue — prevents concurrent chat() calls for the same session.
+// Ported from Klaus's Telegram/iMessage channels (promise chain pattern).
+// When a user sends a message while the agent is busy, the new message waits
+// in the queue and is processed after the current turn finishes.
+const sessionQueues = new Map<string, Promise<void>>();
+
 async function processUserMessage(
   userId: string,
   text: string,
@@ -582,16 +593,29 @@ function handleWsMessage(
         );
         return;
       }
-      processUserMessage(
-        userId,
-        parsed.text ?? "",
-        parsed.files ?? [],
-        parsed.sessionId ?? "default",
-        handler,
-        cfg,
-      ).catch((err) => {
-        console.error("[Web] processUserMessage error:", err);
-      });
+      {
+        const sessionKey = `${userId}:${parsed.sessionId ?? "default"}`;
+        const prev = sessionQueues.get(sessionKey) ?? Promise.resolve();
+        const task = prev.then(() =>
+          processUserMessage(
+            userId,
+            parsed.text ?? "",
+            parsed.files ?? [],
+            parsed.sessionId ?? "default",
+            handler,
+            cfg,
+          ),
+        );
+        const tracked = task.catch((err) => {
+          console.error("[Web] processUserMessage error:", err);
+        });
+        sessionQueues.set(sessionKey, tracked);
+        tracked.finally(() => {
+          if (sessionQueues.get(sessionKey) === tracked) {
+            sessionQueues.delete(sessionKey);
+          }
+        });
+      }
       break;
     }
     case "pong":
@@ -1669,6 +1693,73 @@ async function handleAdminChannelFeishu(
 }
 
 // ---------------------------------------------------------------------------
+// Analytics admin handlers
+// ---------------------------------------------------------------------------
+
+async function handleAdminAnalytics(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const user = adminAuth(req, res);
+  if (!user) return;
+
+  if (!analyticsSinkRef) {
+    jsonResponse(res, 503, { error: "analytics not initialized" });
+    return;
+  }
+
+  if (req.method === "GET") {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    const view = url.searchParams.get("view") ?? "counts";
+    const since = url.searchParams.get("since") ?? undefined;
+    const eventName = url.searchParams.get("event_name") ?? undefined;
+    const limit = parseInt(url.searchParams.get("limit") ?? "100", 10);
+    const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
+
+    if (view === "events") {
+      // List raw events
+      const result = analyticsSinkRef.queryEvents({ eventName, limit, offset, since });
+      jsonResponse(res, 200, {
+        events: result.events.map((e: { id: string; event_name: string; metadata: string; created_at: string }) => ({
+          ...e,
+          metadata: JSON.parse(e.metadata),
+        })),
+        total: result.total,
+      });
+      return;
+    }
+
+    if (view === "usage") {
+      // Aggregated usage summary
+      const summary = analyticsSinkRef.getUsageSummary(since);
+      // Also include cost tracker in-memory state
+      const { formatTotalCost, getModelUsage, getTotalInputTokens, getTotalOutputTokens, getTotalAPIDuration } = await import("../engine/cost-tracker.js");
+      const { getTotalCostUSD, getTotalToolDuration } = await import("../engine/bootstrap/state.js");
+      jsonResponse(res, 200, {
+        session: {
+          totalCostUSD: getTotalCostUSD(),
+          totalInputTokens: getTotalInputTokens(),
+          totalOutputTokens: getTotalOutputTokens(),
+          totalAPIDurationMs: getTotalAPIDuration(),
+          totalToolDurationMs: getTotalToolDuration(),
+          modelUsage: getModelUsage(),
+          formatted: formatTotalCost(),
+        },
+        historical: summary,
+      });
+      return;
+    }
+
+    // Default: event counts
+    const counts = analyticsSinkRef.getEventCounts(since);
+    jsonResponse(res, 200, { counts });
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
+}
+
+// ---------------------------------------------------------------------------
 // Memory admin handlers
 // ---------------------------------------------------------------------------
 
@@ -2618,6 +2709,8 @@ async function handleRequest(
     case "/api/admin/channels/whatsapp":
     case "/api/admin/channels/whatsapp/qr-poll":
       return handleAdminChannelWhatsapp(req, res);
+    case "/api/admin/analytics":
+      return handleAdminAnalytics(req, res);
     case "/api/admin/memory":
       return handleAdminMemory(req, res);
     case "/api/admin/memory/sync":
@@ -2864,6 +2957,7 @@ export const webPlugin: ChannelPlugin = {
       if (ctx.services.cronScheduler && !cronSchedulerRef) setCronScheduler(ctx.services.cronScheduler as NonNullable<typeof cronSchedulerRef>);
       if (ctx.services.channelManager) channelManagerRef = ctx.services.channelManager as import("./manager.js").ChannelManager;
       if (ctx.services.mcpManager && !mcpManagerRef) mcpManagerRef = ctx.services.mcpManager as import("../mcp-manager.js").MCPManager;
+      if (ctx.services.analyticsSink && !analyticsSinkRef) setAnalyticsSink(ctx.services.analyticsSink as import("../engine/services/analytics/sink.js").SQLiteAnalyticsSink);
     }
 
     const server = createServer((req, res) => {

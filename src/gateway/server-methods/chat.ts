@@ -110,6 +110,15 @@ export function createGatewayAgentEventForwarder(params: {
         sessionId: params.sessionId,
       });
     }
+    if (event.type === "context_collapse_stats") {
+      params.sendEvent(params.userId, {
+        type: "context_collapse",
+        collapsedSpans: event.collapsedSpans,
+        stagedSpans: event.stagedSpans,
+        totalErrors: event.totalErrors,
+        sessionId: params.sessionId,
+      });
+    }
   };
 }
 

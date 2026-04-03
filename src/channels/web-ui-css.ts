@@ -188,6 +188,12 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 #status::before{content:"";width:6px;height:6px;border-radius:50%;background:#16a34a}
 #status.disconnected{color:#dc2626;background:rgba(220,38,38,0.06)}
 #status.disconnected::before{background:#dc2626}
+.collapse-stats{
+  font-size:11px;font-weight:500;color:var(--fg-tertiary);
+  display:flex;align-items:center;gap:4px;
+  padding:3px 8px;border-radius:12px;background:var(--bg-hover);
+}
+.collapse-stats.has-errors{color:#d97706;background:rgba(217,119,6,0.08)}
 
 /* ─── Welcome State ─── */
 #welcome{

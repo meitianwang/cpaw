@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Pure permission type definitions extracted to break import cycles.
  *
@@ -6,6 +7,7 @@
  * to avoid circular dependencies.
  */
 
+import { feature } from 'bun:bundle'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
 
 // ============================================================================
@@ -31,7 +33,7 @@ export type PermissionMode = InternalPermissionMode
 // defaultMode, --permission-mode CLI flag, conversation recovery).
 export const INTERNAL_PERMISSION_MODES = [
   ...EXTERNAL_PERMISSION_MODES,
-  'auto' as const,
+  ...(feature('TRANSCRIPT_CLASSIFIER') ? (['auto'] as const) : ([] as const)),
 ] as const satisfies readonly PermissionMode[]
 
 export const PERMISSION_MODES = INTERNAL_PERMISSION_MODES

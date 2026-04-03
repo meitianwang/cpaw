@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * QuerySource — identifies the origin of a query.
  * Reconstructed from claude-code usage patterns.

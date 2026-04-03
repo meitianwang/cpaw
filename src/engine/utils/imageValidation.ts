@@ -1,12 +1,7 @@
-/**
- * Simplified image validation for Klaus — adapted from claude-code's utils/imageValidation.ts.
- * Removes analytics; keeps validation logic.
- */
-
-/**
- * Maximum base64-encoded size for images sent to the API (5MB).
- */
-const API_IMAGE_MAX_BASE64_SIZE = 5 * 1024 * 1024
+// @ts-nocheck
+import { API_IMAGE_MAX_BASE64_SIZE } from '../constants/apiLimits.js'
+import { logEvent } from '../services/analytics/index.js'
+import { formatFileSize } from './format.js'
 
 /**
  * Information about an oversized image.
@@ -14,12 +9,6 @@ const API_IMAGE_MAX_BASE64_SIZE = 5 * 1024 * 1024
 export type OversizedImage = {
   index: number
   size: number
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
 /**
@@ -47,7 +36,7 @@ export class ImageSizeError extends Error {
 }
 
 /**
- * Type guard to check if a block is a base64 image block.
+ * Type guard to check if a block is a base64 image block
  */
 function isBase64ImageBlock(
   block: unknown,
@@ -62,7 +51,14 @@ function isBase64ImageBlock(
 
 /**
  * Validates that all images in messages are within the API size limit.
- * Works with wrapped message format { type, message: { role, content } }.
+ * This is a safety net at the API boundary to catch any oversized images
+ * that may have slipped through upstream processing.
+ *
+ * Note: The API's 5MB limit applies to the base64-encoded string length,
+ * not the decoded raw bytes.
+ *
+ * Works with both UserMessage/AssistantMessage types (which have { type, message })
+ * and raw MessageParam types (which have { role, content }).
  *
  * @param messages - Array of messages to validate
  * @throws ImageSizeError if any image exceeds the API limit
@@ -75,6 +71,9 @@ export function validateImagesForAPI(messages: unknown[]): void {
     if (typeof msg !== 'object' || msg === null) continue
 
     const m = msg as Record<string, unknown>
+
+    // Handle wrapped message format { type: 'user', message: { role, content } }
+    // Only check user messages
     if (m.type !== 'user') continue
 
     const innerMessage = m.message as Record<string, unknown> | undefined
@@ -86,8 +85,14 @@ export function validateImagesForAPI(messages: unknown[]): void {
     for (const block of content) {
       if (isBase64ImageBlock(block)) {
         imageIndex++
+        // Check the base64-encoded string length directly (not decoded bytes)
+        // The API limit applies to the base64 payload size
         const base64Size = block.source.data.length
         if (base64Size > API_IMAGE_MAX_BASE64_SIZE) {
+          logEvent('tengu_image_api_validation_failed', {
+            base64_size_bytes: base64Size,
+            max_bytes: API_IMAGE_MAX_BASE64_SIZE,
+          })
           oversizedImages.push({ index: imageIndex, size: base64Size })
         }
       }

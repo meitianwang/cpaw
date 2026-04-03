@@ -11,7 +11,11 @@ import { ChannelManager } from "./channels/manager.js";
 import {
   getChannelNames,
   loadWebConfig,
+  CONFIG_DIR,
 } from "./config.js";
+import { join } from "node:path";
+import { attachAnalyticsSink } from "./engine/services/analytics/index.js";
+import { SQLiteAnalyticsSink } from "./engine/services/analytics/sink.js";
 import { t } from "./i18n.js";
 import type { InboundMessage } from "./message.js";
 import { formatDisplayText } from "./message.js";
@@ -32,6 +36,12 @@ import { parseWebSessionKey } from "./gateway/protocol.js";
 // ---------------------------------------------------------------------------
 
 async function start(): Promise<void> {
+  // Initialize analytics sink (SQLite) — must be early so queued events drain
+  const analyticsSink = new SQLiteAnalyticsSink(
+    join(CONFIG_DIR, "analytics.db"),
+  );
+  attachAnalyticsSink(analyticsSink);
+
   const gateway = getGatewayService();
   generateLocalToken();
 
@@ -76,6 +86,19 @@ async function start(): Promise<void> {
     `[Agent] Initialized (model=${defaultModel?.model ?? "none"}, maxSessions=${settingsStore.getNumber("max_sessions", 20)})`,
   );
 
+  // Initialize cost tracker with per-model pricing from SettingsStore
+  const { setModelPricing } = await import("./engine/cost-tracker.js");
+  for (const model of settingsStore.listModels()) {
+    if (model.cost) {
+      setModelPricing(model.model, {
+        input: model.cost.input,
+        output: model.cost.output,
+        cacheRead: model.cost.cacheRead,
+        cacheWrite: model.cost.cacheWrite,
+      });
+    }
+  }
+
   // Migrate config.yaml skills section to SettingsStore (one-time)
   const { decryptCred, encryptCred } = await import("./channels/channel-creds.js");
   const { migrateSkillsConfigIfNeeded } = await import("./migration/skills-config.js");
@@ -102,6 +125,7 @@ async function start(): Promise<void> {
       : loadTranscriptsConfig(),
   );
   messageStore.prune();
+  agentManager.setMessageStore(messageStore);
 
   // Build handler
   const handler = async (
@@ -177,6 +201,7 @@ async function start(): Promise<void> {
     webServices.agentManager = agentManager;
     if (memoryPool) webServices.memoryPool = memoryPool;
     webServices.mcpManager = mcpManager;
+    webServices.analyticsSink = analyticsSink;
   }
 
   // ---------------------------------------------------------------------------

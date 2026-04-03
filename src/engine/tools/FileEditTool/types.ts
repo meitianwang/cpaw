@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { z } from 'zod/v4'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
@@ -19,10 +20,14 @@ const inputSchema = lazySchema(() =>
 )
 type InputSchema = ReturnType<typeof inputSchema>
 
+// Parsed output — what call() receives. z.output not z.input: with
+// semanticBoolean the input side is unknown (preprocess accepts anything).
 export type FileEditInput = z.output<InputSchema>
 
+// Individual edit without file_path
 export type EditInput = Omit<FileEditInput, 'file_path'>
 
+// Runtime version where replace_all is always defined
 export type FileEdit = {
   old_string: string
   new_string: string

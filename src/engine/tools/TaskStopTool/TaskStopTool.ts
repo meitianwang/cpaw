@@ -1,8 +1,12 @@
+// @ts-nocheck
 import { z } from 'zod/v4'
+import type { TaskStateBase } from '../../Task.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import { stopTask } from '../../tasks/stopTask.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
 import { DESCRIPTION, TASK_STOP_TOOL_NAME } from './prompt.js'
+import { renderToolResultMessage, renderToolUseMessage } from './UI.js'
 
 const inputSchema = lazySchema(() =>
   z.strictObject({
@@ -21,6 +25,8 @@ const outputSchema = lazySchema(() =>
     message: z.string().describe('Status message about the operation'),
     task_id: z.string().describe('The ID of the task that was stopped'),
     task_type: z.string().describe('The type of the task that was stopped'),
+    // Optional: tool outputs are persisted to transcripts and replayed on --resume
+    // without re-validation, so sessions from before this field was added lack it.
     command: z
       .string()
       .optional()
@@ -34,9 +40,11 @@ export type Output = z.infer<OutputSchema>
 export const TaskStopTool = buildTool({
   name: TASK_STOP_TOOL_NAME,
   searchHint: 'kill a running background task',
+  // KillShell is the deprecated name - kept as alias for backward compatibility
+  // with existing transcripts and SDK users
   aliases: ['KillShell'],
   maxResultSizeChars: 100_000,
-  userFacingName: () => 'Stop Task',
+  userFacingName: () => (process.env.USER_TYPE === 'ant' ? '' : 'Stop Task'),
   get inputSchema(): InputSchema {
     return inputSchema()
   },
@@ -51,6 +59,7 @@ export const TaskStopTool = buildTool({
     return input.task_id ?? input.shell_id ?? ''
   },
   async validateInput({ task_id, shell_id }, { getAppState }) {
+    // Support both task_id and shell_id (deprecated KillShell compat)
     const id = task_id ?? shell_id
     if (!id) {
       return {
@@ -61,9 +70,7 @@ export const TaskStopTool = buildTool({
     }
 
     const appState = getAppState()
-    const task = (appState as any).tasks?.[id] as
-      | { status: string }
-      | undefined
+    const task = appState.tasks?.[id] as TaskStateBase | undefined
 
     if (!task) {
       return {
@@ -96,46 +103,29 @@ export const TaskStopTool = buildTool({
       content: jsonStringify(output),
     }
   },
+  renderToolUseMessage,
+  renderToolResultMessage,
   async call(
     { task_id, shell_id },
-    { getAppState, setAppState },
+    { getAppState, setAppState, abortController },
   ) {
+    // Support both task_id and shell_id (deprecated KillShell compat)
     const id = task_id ?? shell_id
     if (!id) {
       throw new Error('Missing required parameter: task_id')
     }
 
-    const appState = getAppState()
-    const task = (appState as any).tasks?.[id] as
-      | { status: string; type?: string; command?: string; description?: string }
-      | undefined
-
-    if (!task) {
-      throw new Error(`No task found with ID: ${id}`)
-    }
-
-    if (task.status !== 'running') {
-      throw new Error(`Task ${id} is not running (status: ${task.status})`)
-    }
-
-    // Mark the task as stopped in app state
-    setAppState(prev => ({
-      ...prev,
-      tasks: {
-        ...(prev as any).tasks,
-        [id]: { ...(prev as any).tasks[id], status: 'stopped' },
-      },
-    }))
-
-    const taskType = task.type ?? 'unknown'
-    const command = task.command ?? task.description
+    const result = await stopTask(id, {
+      getAppState,
+      setAppState,
+    })
 
     return {
       data: {
-        message: `Successfully stopped task: ${id} (${command ?? taskType})`,
-        task_id: id,
-        task_type: taskType,
-        command,
+        message: `Successfully stopped task: ${result.taskId} (${result.command})`,
+        task_id: result.taskId,
+        task_type: result.taskType,
+        command: result.command,
       },
     }
   },

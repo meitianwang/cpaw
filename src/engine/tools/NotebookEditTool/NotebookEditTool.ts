@@ -1,28 +1,32 @@
-/**
- * NotebookEditTool -- adapted from claude-code's NotebookEditTool.ts.
- * Removed: React/Ink rendering, analytics, feature flags, file history.
- */
+// @ts-nocheck
+import { feature } from 'bun:bundle'
 import { extname, isAbsolute, resolve } from 'path'
+import {
+  fileHistoryEnabled,
+  fileHistoryTrackEdit,
+} from '../../utils/fileHistory.js'
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef, type ToolUseContext } from '../../Tool.js'
-import type { NotebookCell, NotebookContent } from '../../utils/notebook.js'
+import type { NotebookCell, NotebookContent } from '../../types/notebook.js'
 import { getCwd } from '../../utils/cwd.js'
 import { isENOENT } from '../../utils/errors.js'
 import { getFileModificationTime, writeTextContent } from '../../utils/file.js'
 import { readFileSyncWithMetadata } from '../../utils/fileRead.js'
+import { safeParseJSON } from '../../utils/json.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { parseCellId } from '../../utils/notebook.js'
-import { jsonStringify } from '../../utils/slowOperations.js'
+import { checkWritePermissionForTool } from '../../utils/permissions/filesystem.js'
+import type { PermissionDecision } from '../../utils/permissions/PermissionResult.js'
+import { jsonParse, jsonStringify } from '../../utils/slowOperations.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from './constants.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
-
-function safeParseJSON(text: string): unknown | null {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
-}
+import {
+  getToolUseSummary,
+  renderToolResultMessage,
+  renderToolUseErrorMessage,
+  renderToolUseMessage,
+  renderToolUseRejectedMessage,
+} from './UI.js'
 
 export const inputSchema = lazySchema(() =>
   z.strictObject({
@@ -70,6 +74,7 @@ export const outputSchema = lazySchema(() =>
       .string()
       .optional()
       .describe('Error message if the operation failed'),
+    // Fields for attribution tracking
     notebook_path: z.string().describe('The path to the notebook file'),
     original_file: z
       .string()
@@ -97,16 +102,9 @@ export const NotebookEditTool = buildTool({
   userFacingName() {
     return 'Edit Notebook'
   },
-  getToolUseSummary(input: Record<string, unknown>): string | null {
-    const notebookPath = input.notebook_path
-    if (typeof notebookPath === 'string') {
-      const { basename } = require('path') as typeof import('path')
-      return basename(notebookPath)
-    }
-    return null
-  },
+  getToolUseSummary,
   getActivityDescription(input) {
-    const summary = this.getToolUseSummary?.(input)
+    const summary = getToolUseSummary(input)
     return summary ? `Editing notebook ${summary}` : 'Editing notebook'
   },
   get inputSchema(): InputSchema {
@@ -116,18 +114,22 @@ export const NotebookEditTool = buildTool({
     return outputSchema()
   },
   toAutoClassifierInput(input) {
-    const mode = input.edit_mode ?? 'replace'
-    return `${input.notebook_path} ${mode}: ${input.new_source}`
+    if (feature('TRANSCRIPT_CLASSIFIER')) {
+      const mode = input.edit_mode ?? 'replace'
+      return `${input.notebook_path} ${mode}: ${input.new_source}`
+    }
+    return ''
   },
   getPath(input): string {
     return input.notebook_path
   },
-  async checkPermissions() {
-    return {
-      behavior: 'allow' as const,
-      updatedInput: undefined,
-      decisionReason: { type: 'other' as const, reason: 'Klaus auto-allow' },
-    }
+  async checkPermissions(input, context): Promise<PermissionDecision> {
+    const appState = context.getAppState()
+    return checkWritePermissionForTool(
+      NotebookEditTool,
+      input,
+      appState.toolPermissionContext,
+    )
   },
   mapToolResultToToolResultBlockParam(
     { cell_id, edit_mode, new_source, error },
@@ -168,6 +170,10 @@ export const NotebookEditTool = buildTool({
         }
     }
   },
+  renderToolUseMessage,
+  renderToolUseRejectedMessage,
+  renderToolUseErrorMessage,
+  renderToolResultMessage,
   async validateInput(
     { notebook_path, cell_type, cell_id, edit_mode = 'replace' },
     toolUseContext: ToolUseContext,
@@ -175,6 +181,11 @@ export const NotebookEditTool = buildTool({
     const fullPath = isAbsolute(notebook_path)
       ? notebook_path
       : resolve(getCwd(), notebook_path)
+
+    // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
+    if (fullPath.startsWith('\\\\') || fullPath.startsWith('//')) {
+      return { result: true }
+    }
 
     if (extname(fullPath) !== '.ipynb') {
       return {
@@ -205,7 +216,9 @@ export const NotebookEditTool = buildTool({
       }
     }
 
-    // Require Read-before-Edit
+    // Require Read-before-Edit (matches FileEditTool/FileWriteTool). Without
+    // this, the model could edit a notebook it never saw, or edit against a
+    // stale view after an external change — silent data loss.
     const readTimestamp = toolUseContext.readFileState.get(fullPath)
     if (!readTimestamp) {
       return {
@@ -254,8 +267,11 @@ export const NotebookEditTool = buildTool({
         }
       }
     } else {
-      const cellIndex = notebook.cells.findIndex((cell: NotebookCell) => cell.id === cell_id)
+      // First try to find the cell by its actual ID
+      const cellIndex = notebook.cells.findIndex(cell => cell.id === cell_id)
+
       if (cellIndex === -1) {
+        // If not found, try to parse as a numeric index (cell-N format)
         const parsedCellIndex = parseCellId(cell_id)
         if (parsedCellIndex !== undefined) {
           if (!notebook.cells[parsedCellIndex]) {
@@ -285,19 +301,37 @@ export const NotebookEditTool = buildTool({
       cell_type,
       edit_mode: originalEditMode,
     },
-    { readFileState },
+    { readFileState, updateFileHistoryState },
+    _,
+    parentMessage,
   ) {
     const fullPath = isAbsolute(notebook_path)
       ? notebook_path
       : resolve(getCwd(), notebook_path)
 
+    if (fileHistoryEnabled()) {
+      await fileHistoryTrackEdit(
+        updateFileHistoryState,
+        fullPath,
+        parentMessage.uuid,
+      )
+    }
+
     try {
+      // readFileSyncWithMetadata gives content + encoding + line endings in
+      // one safeResolvePath + readFileSync pass, replacing the previous
+      // detectFileEncoding + readFile + detectLineEndings chain (each of
+      // which redid safeResolvePath and/or a 4KB readSync).
       const { content, encoding, lineEndings } =
         readFileSyncWithMetadata(fullPath)
-
+      // Must use non-memoized jsonParse here: safeParseJSON caches by content
+      // string and returns a shared object reference, but we mutate the
+      // notebook in place below (cells.splice, targetCell.source = ...).
+      // Using the memoized version poisons the cache for validateInput() and
+      // any subsequent call() with the same file content.
       let notebook: NotebookContent
       try {
-        notebook = JSON.parse(content) as NotebookContent
+        notebook = jsonParse(content) as NotebookContent
       } catch {
         return {
           data: {
@@ -316,25 +350,30 @@ export const NotebookEditTool = buildTool({
 
       let cellIndex
       if (!cell_id) {
-        cellIndex = 0
+        cellIndex = 0 // Default to inserting at the beginning if no cell_id is provided
       } else {
-        cellIndex = notebook.cells.findIndex((cell: NotebookCell) => cell.id === cell_id)
+        // First try to find the cell by its actual ID
+        cellIndex = notebook.cells.findIndex(cell => cell.id === cell_id)
+
+        // If not found, try to parse as a numeric index (cell-N format)
         if (cellIndex === -1) {
           const parsedCellIndex = parseCellId(cell_id)
           if (parsedCellIndex !== undefined) {
             cellIndex = parsedCellIndex
           }
         }
+
         if (originalEditMode === 'insert') {
-          cellIndex += 1
+          cellIndex += 1 // Insert after the cell with this ID
         }
       }
 
+      // Convert replace to insert if trying to replace one past the end
       let edit_mode = originalEditMode
       if (edit_mode === 'replace' && cellIndex === notebook.cells.length) {
         edit_mode = 'insert'
         if (!cell_type) {
-          cell_type = 'code'
+          cell_type = 'code' // Default to code if no cell_type specified
         }
       }
 
@@ -352,6 +391,7 @@ export const NotebookEditTool = buildTool({
       }
 
       if (edit_mode === 'delete') {
+        // Delete the specified cell
         notebook.cells.splice(cellIndex, 1)
       } else if (edit_mode === 'insert') {
         let new_cell: NotebookCell
@@ -372,11 +412,14 @@ export const NotebookEditTool = buildTool({
             outputs: [],
           }
         }
+        // Insert the new cell
         notebook.cells.splice(cellIndex, 0, new_cell)
       } else {
-        const targetCell = notebook.cells[cellIndex]!
+        // Find the specified cell
+        const targetCell = notebook.cells[cellIndex]! // validateInput ensures cell_number is in bounds
         targetCell.source = new_source
         if (targetCell.cell_type === 'code') {
+          // Reset execution count and clear outputs since cell was modified
           targetCell.execution_count = null
           targetCell.outputs = []
         }
@@ -384,59 +427,64 @@ export const NotebookEditTool = buildTool({
           targetCell.cell_type = cell_type
         }
       }
-
+      // Write back to file
       const IPYNB_INDENT = 1
-      const updatedContent = jsonStringify(notebook, undefined, IPYNB_INDENT)
+      const updatedContent = jsonStringify(notebook, null, IPYNB_INDENT)
       writeTextContent(fullPath, updatedContent, encoding, lineEndings)
-
+      // Update readFileState with post-write mtime (matches FileEditTool/
+      // FileWriteTool). offset:undefined breaks FileReadTool's dedup match —
+      // without this, Read→NotebookEdit→Read in the same millisecond would
+      // return the file_unchanged stub against stale in-context content.
       readFileState.set(fullPath, {
         content: updatedContent,
         timestamp: getFileModificationTime(fullPath),
         offset: undefined,
         limit: undefined,
       })
-
+      const data = {
+        new_source,
+        cell_type: cell_type ?? 'code',
+        language,
+        edit_mode: edit_mode ?? 'replace',
+        cell_id: new_cell_id || undefined,
+        error: '',
+        notebook_path: fullPath,
+        original_file: content,
+        updated_file: updatedContent,
+      }
       return {
-        data: {
-          new_source,
-          cell_type: cell_type ?? 'code',
-          language,
-          edit_mode: edit_mode ?? 'replace',
-          cell_id: new_cell_id || undefined,
-          error: '',
-          notebook_path: fullPath,
-          original_file: content,
-          updated_file: updatedContent,
-        },
+        data,
       }
     } catch (error) {
       if (error instanceof Error) {
-        return {
-          data: {
-            new_source,
-            cell_type: cell_type ?? 'code',
-            language: 'python',
-            edit_mode: 'replace',
-            error: error.message,
-            cell_id,
-            notebook_path: fullPath,
-            original_file: '',
-            updated_file: '',
-          },
-        }
-      }
-      return {
-        data: {
+        const data = {
           new_source,
           cell_type: cell_type ?? 'code',
           language: 'python',
           edit_mode: 'replace',
-          error: 'Unknown error occurred while editing notebook',
+          error: error.message,
           cell_id,
           notebook_path: fullPath,
           original_file: '',
           updated_file: '',
-        },
+        }
+        return {
+          data,
+        }
+      }
+      const data = {
+        new_source,
+        cell_type: cell_type ?? 'code',
+        language: 'python',
+        edit_mode: 'replace',
+        error: 'Unknown error occurred while editing notebook',
+        cell_id,
+        notebook_path: fullPath,
+        original_file: '',
+        updated_file: '',
+      }
+      return {
+        data,
       }
     }
   },

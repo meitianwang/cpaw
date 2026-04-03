@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Tool progress types — reconstructed from claude-code's build-time generated types.
  */

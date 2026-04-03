@@ -1,8 +1,15 @@
+// @ts-nocheck
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
-import type { PermissionResult } from '../../types/permissions.js'
+import type { PermissionResult } from '../../utils/permissions/PermissionResult.js'
+import { isOutputLineTruncated } from '../../utils/terminal.js'
 import { DESCRIPTION, PROMPT } from './prompt.js'
+import {
+  renderToolResultMessage,
+  renderToolUseMessage,
+  renderToolUseProgressMessage,
+} from './UI.js'
 
 // Allow any input object since MCP tools define their own schemas
 export const inputSchema = lazySchema(() => z.object({}).passthrough())
@@ -53,10 +60,13 @@ export const MCPTool = buildTool({
       message: 'MCPTool requires permission.',
     }
   },
+  renderToolUseMessage,
   // Overridden in mcpClient.ts
   userFacingName: () => 'mcp',
+  renderToolUseProgressMessage,
+  renderToolResultMessage,
   isResultTruncated(output: Output): boolean {
-    return output.includes('[... output truncated]')
+    return isOutputLineTruncated(output)
   },
   mapToolResultToToolResultBlockParam(content, toolUseID) {
     return {

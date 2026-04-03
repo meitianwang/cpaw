@@ -60,6 +60,13 @@ export type WsEvent =
       readonly sessionKey: string;
       readonly role: "user" | "assistant";
       readonly text: string;
+    }
+  | {
+      readonly type: "context_collapse";
+      readonly collapsedSpans: number;
+      readonly stagedSpans: number;
+      readonly totalErrors: number;
+      readonly sessionId?: string;
     };
 
 export type GatewayRpcResponseEnvelope = {
