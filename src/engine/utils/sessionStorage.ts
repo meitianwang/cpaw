@@ -1,6 +1,5 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
-import type { UUID } from 'crypto'
+type UUID = string
 import type { Dirent } from 'fs'
 // Sync fs primitives for readFileTailSync — separate from fs/promises
 // imports above. Named (not wildcard) per CLAUDE.md style; no collisions
@@ -739,7 +738,7 @@ class Project {
     // happens to be JSON-serialized into a message.
     const tailLines = tail.split('\n')
     if (!skipTitleRefresh) {
-      const titleLine = tailLines.findLast(l =>
+      const titleLine = tailLines.findLast((l: string) =>
         l.startsWith('{"type":"custom-title"'),
       )
       if (titleLine) {
@@ -753,7 +752,7 @@ class Project {
         }
       }
     }
-    const tagLine = tailLines.findLast(l => l.startsWith('{"type":"tag"'))
+    const tagLine = tailLines.findLast((l: string) => l.startsWith('{"type":"tag"'))
     if (tagLine) {
       const tailTag = extractLastJsonStringField(tagLine, 'tag')
       // Same: tagSession(id, null) writes `tag:""` to clear.
@@ -1062,7 +1061,7 @@ class Project {
           version: VERSION,
           gitBranch,
           slug,
-        }
+        } as TranscriptMessage
         await this.appendEntry(transcriptMessage)
         if (isChainParticipant(message)) {
           parentUuid = message.uuid
@@ -1222,10 +1221,11 @@ class Project {
       } else {
         // At this point, entry must be a TranscriptMessage (user/assistant/attachment/system)
         // All other entry types have been handled above
+        const transcriptEntry = entry as TranscriptMessage
         const isAgentSidechain =
-          entry.isSidechain && entry.agentId !== undefined
+          transcriptEntry.isSidechain && transcriptEntry.agentId !== undefined
         const targetFile = isAgentSidechain
-          ? getAgentTranscriptPath(asAgentId(entry.agentId!))
+          ? getAgentTranscriptPath(asAgentId(transcriptEntry.agentId!))
           : sessionFile
 
         // For message entries, check if UUID already exists in current session.
@@ -1240,7 +1240,7 @@ class Project {
         // persistence (session-ingress) uses a single Last-Uuid chain per
         // sessionId, so re-POSTing a UUID it already has 409s and eventually
         // exhausts retries → gracefulShutdownSync(1). See inc-4718.
-        const isNewUuid = !messageSet.has(entry.uuid)
+        const isNewUuid = !messageSet.has(transcriptEntry.uuid)
         if (isAgentSidechain || isNewUuid) {
           // Enqueue write — appendToFile handles ENOENT by creating directories
           void this.enqueueWrite(targetFile, entry)
@@ -1254,7 +1254,7 @@ class Project {
             // and --resume's buildConversationChain terminates at the dangling ref.
             // Same constraint for remote (inc-4718 above): sidechain persisting a
             // UUID the main thread hasn't written yet → 409 when main writes it.
-            messageSet.add(entry.uuid)
+            messageSet.add((entry as any).uuid as string)
 
             if (isTranscriptMessage(entry)) {
               await this.persistToRemote(sessionId, entry)
@@ -1894,8 +1894,8 @@ function applyPreservedSegmentRelinks(
       // (SDK subprocess restarted before next turn's qe:420 flush).
       logEvent('tengu_relink_walk_broken', {
         tailInTranscript: messages.has(lastSeg.tailUuid),
-        headInTranscript: messages.has(lastSeg.headUuid),
-        anchorInTranscript: messages.has(lastSeg.anchorUuid),
+        headInTranscript: messages.has(lastSeg.headUuid!),
+        anchorInTranscript: messages.has(lastSeg.anchorUuid!),
         walkSteps: walkSeen.size,
         transcriptSize: messages.size,
       })
@@ -1904,11 +1904,11 @@ function applyPreservedSegmentRelinks(
   }
 
   if (segIsLive) {
-    const head = messages.get(lastSeg.headUuid)
+    const head = messages.get(lastSeg.headUuid!)
     if (head) {
-      messages.set(lastSeg.headUuid, {
+      messages.set(lastSeg.headUuid!, {
         ...head,
-        parentUuid: lastSeg.anchorUuid,
+        parentUuid: lastSeg.anchorUuid ?? null,
       })
     }
     // Tail-splice: anchor's other children → tail. No-op if already pointing

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type Anthropic from '@anthropic-ai/sdk'
 import {
@@ -80,7 +79,7 @@ const FOREGROUND_529_RETRY_SOURCES = new Set<QuerySource>([
   // tree-shakes out of external builds (excluded-strings.txt).
   'auto_mode',
   ...(feature('BASH_CLASSIFIER') ? (['bash_classifier'] as const) : []),
-])
+] as QuerySource[])
 
 function shouldRetry529(querySource: QuerySource | undefined): boolean {
   // undefined → retry (conservative for untagged call paths)

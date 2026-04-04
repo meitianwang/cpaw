@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Zod schema for keybindings.json configuration.
  * Used for validation and JSON schema generation.
@@ -30,6 +29,8 @@ export const KEYBINDING_CONTEXTS = [
   'ModelPicker',
   'Select',
   'Plugin',
+  'Scroll',
+  'MessageActions',
 ] as const
 
 /**
@@ -56,6 +57,8 @@ export const KEYBINDING_CONTEXT_DESCRIPTIONS: Record<
   DiffDialog: 'When the diff dialog is open',
   ModelPicker: 'When the model picker is open',
   Select: 'When a select/list component is focused',
+  Scroll: 'When scrolling through content',
+  MessageActions: 'When message action buttons are visible',
   Plugin: 'When the plugin dialog is open',
 }
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type { BetaMessageStreamParams } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { readdir, readFile, stat } from 'fs/promises'
@@ -230,15 +229,15 @@ export async function getErrorLogByIndex(
  * @private
  */
 async function loadLogList(path: string): Promise<LogOption[]> {
-  let files: Awaited<ReturnType<typeof readdir>>
+  let files: any
   try {
-    files = await readdir(path, { withFileTypes: true })
+    files = await readdir(path, { withFileTypes: true }) as any
   } catch {
     logError(new Error(`No logs found at ${path}`))
     return []
   }
   const logData = await Promise.all(
-    files.map(async (file, i) => {
+    files.map(async (file: any, i: number) => {
       const fullPath = join(path, file.name)
       const content = await readFile(fullPath, { encoding: 'utf8' })
       const messages = jsonParse(content) as SerializedMessage[]

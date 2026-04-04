@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import type {
   BetaContentBlock,
   BetaContentBlockParam,
@@ -939,13 +939,13 @@ function getPreviousRequestIdFromMessages(
 }
 
 function isMedia(
-  block: BetaContentBlockParam,
+  block: { type: string },
 ): block is BetaImageBlockParam | BetaRequestDocumentBlock {
   return block.type === 'image' || block.type === 'document'
 }
 
 function isToolResult(
-  block: BetaContentBlockParam,
+  block: { type: string; content?: unknown },
 ): block is BetaToolResultBlockParam {
   return block.type === 'tool_result'
 }

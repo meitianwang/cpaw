@@ -1,4 +1,3 @@
-// @ts-nocheck
 // OAuth client for handling authentication flows with Claude services
 import axios from 'axios'
 import {
@@ -296,9 +295,9 @@ export async function fetchAndStoreUserRoles(
     oauthAccount: current.oauthAccount
       ? {
           ...current.oauthAccount,
-          organizationRole: data.organization_role,
-          workspaceRole: data.workspace_role,
-          organizationName: data.organization_name,
+          organizationRole: data.organization_role as string | undefined,
+          workspaceRole: data.workspace_role as string | undefined,
+          organizationName: data.organization_name as string | undefined,
         }
       : current.oauthAccount,
   }))
@@ -342,8 +341,8 @@ export async function createAndStoreApiKey(
   }
 }
 
-export function isOAuthTokenExpired(expiresAt: number | null): boolean {
-  if (expiresAt === null) {
+export function isOAuthTokenExpired(expiresAt: number | null | undefined): boolean {
+  if (expiresAt == null) {
     return false
   }
 
@@ -498,16 +497,16 @@ export async function populateOAuthAccountInfoIfNeeded(): Promise<boolean> {
         )
       }
       storeOAuthAccountInfo({
-        accountUuid: profile.account.uuid,
-        emailAddress: profile.account.email,
-        organizationUuid: profile.organization.uuid,
-        displayName: profile.account.display_name || undefined,
+        accountUuid: profile.account!.uuid,
+        emailAddress: profile.account!.email,
+        organizationUuid: profile.organization!.uuid,
+        displayName: profile.account!.display_name || undefined,
         hasExtraUsageEnabled:
-          profile.organization.has_extra_usage_enabled ?? false,
-        billingType: profile.organization.billing_type ?? undefined,
-        accountCreatedAt: profile.account.created_at,
+          profile.organization!.has_extra_usage_enabled ?? false,
+        billingType: profile.organization!.billing_type ?? undefined,
+        accountCreatedAt: profile.account!.created_at,
         subscriptionCreatedAt:
-          profile.organization.subscription_created_at ?? undefined,
+          profile.organization!.subscription_created_at ?? undefined,
       })
       return true
     }

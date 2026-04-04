@@ -1,5 +1,4 @@
-// @ts-nocheck
-import type { UUID } from 'crypto'
+type UUID = string
 import { logEvent } from '../services/analytics/index.js'
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../services/analytics/metadata.js'
 import { type Command, getCommandName, isCommandEnabled } from '../commands.js'

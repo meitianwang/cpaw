@@ -1,6 +1,6 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
-import type { UUID } from 'crypto'
+type UUID = string
 import { dirname } from 'path'
 import {
   getMainLoopModelOverride,

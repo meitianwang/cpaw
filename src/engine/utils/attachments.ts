@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import {
   logEvent,
@@ -63,7 +63,8 @@ import {
   getImagePasteIds,
   isValidImagePaste,
 } from '../types/textInputTypes.js'
-import { randomUUID, type UUID } from 'crypto'
+import { randomUUID } from 'crypto'
+type UUID = string
 import { getSettings_DEPRECATED } from './settings/settings.js'
 import { getSnippetForTwoFileDiff } from '../tools/FileEditTool/utils.js'
 import type {
@@ -808,7 +809,7 @@ export async function getAttachments(
                   input,
                   messages ?? [],
                   context,
-                ),
+                ) as Promise<unknown[]>,
               ),
             ]
           : []),
@@ -865,7 +866,7 @@ export async function getAttachments(
     ...(feature('BUDDY')
       ? [
           maybe('companion_intro', () =>
-            Promise.resolve(getCompanionIntroAttachment(messages)),
+            Promise.resolve(getCompanionIntroAttachment(messages) ?? []),
           ),
         ]
       : []),
@@ -1000,7 +1001,7 @@ export async function getAttachments(
     ...userAttachmentResults.flat(),
     ...threadAttachmentResults.flat(),
     ...mainThreadAttachmentResults.flat(),
-  ].filter(a => a !== undefined && a !== null)
+  ].filter(a => a !== undefined && a !== null) as Attachment[]
 }
 
 async function maybe<A>(label: string, f: () => Promise<A[]>): Promise<A[]> {
@@ -2370,7 +2371,7 @@ export function startRelevantMemoryPrefetch(
     return undefined
   }
 
-  const lastUserMessage = messages.findLast(m => m.type === 'user' && !m.isMeta)
+  const lastUserMessage = messages.findLast((m: Message) => m.type === 'user' && !m.isMeta)
   if (!lastUserMessage) {
     return undefined
   }

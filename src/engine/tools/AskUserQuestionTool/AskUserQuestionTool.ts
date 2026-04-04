@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle';
 
 import { getAllowedChannels, getQuestionPreviewFormat } from '../../bootstrap/state.js';

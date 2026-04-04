@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Stub: internal-only assistant session discovery.
  * Used by the assistant/bridge mode features.

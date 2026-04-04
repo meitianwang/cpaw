@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
 import { randomUUID } from 'crypto'
@@ -170,7 +170,7 @@ export type QueryEngineConfig = {
   snipReplay?: (
     yieldedSystemMsg: Message,
     store: Message[],
-  ) => { messages: Message[]; executed: boolean } | undefined
+  ) => { messages: Message[]; tokensFreed: number; boundaryMessage?: Message } | undefined
 }
 
 /**
@@ -707,7 +707,7 @@ export class QueryEngine {
           const tailUuid = message.compactMetadata?.preservedSegment?.tailUuid
           if (tailUuid) {
             const tailIdx = this.mutableMessages.findLastIndex(
-              m => m.uuid === tailUuid,
+              (m: Message) => m.uuid === tailUuid,
             )
             if (tailIdx !== -1) {
               await recordTranscript(this.mutableMessages.slice(0, tailIdx + 1))
@@ -908,7 +908,7 @@ export class QueryEngine {
             this.mutableMessages,
           )
           if (snipResult !== undefined) {
-            if (snipResult.executed) {
+            if (snipResult.tokensFreed > 0) {
               this.mutableMessages.length = 0
               this.mutableMessages.push(...snipResult.messages)
             }
@@ -948,8 +948,8 @@ export class QueryEngine {
               attempt: message.retryAttempt,
               max_retries: message.maxRetries,
               retry_delay_ms: message.retryInMs,
-              error_status: message.error.status ?? null,
-              error: categorizeRetryableAPIError(message.error),
+              error_status: typeof message.error === 'string' ? null : ((message.error as import('@anthropic-ai/sdk').APIError).status ?? null),
+              error: categorizeRetryableAPIError(message.error as import('@anthropic-ai/sdk').APIError),
               session_id: getSessionId(),
               uuid: message.uuid,
             }
@@ -1057,7 +1057,7 @@ export class QueryEngine {
     // isResultSuccessful handles both (user with all tool_result blocks is a
     // valid successful terminal state).
     const result = messages.findLast(
-      m => m.type === 'assistant' || m.type === 'user',
+      (m: Message) => m.type === 'assistant' || m.type === 'user',
     )
     // Capture for the error_during_execution diagnostic — isResultSuccessful
     // is a type predicate (message is Message), so inside the false branch

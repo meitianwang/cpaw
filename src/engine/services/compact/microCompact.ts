@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { QuerySource } from '../../constants/querySource.js'
@@ -372,7 +371,7 @@ async function cachedMicrocompactPath(
     // actual cache_deleted_input_tokens from the API instead of client-side estimates
     // Capture the baseline cumulative cache_deleted_input_tokens from the last
     // assistant message so we can compute a per-operation delta after the API call
-    const lastAsst = messages.findLast(m => m.type === 'assistant')
+    const lastAsst = messages.findLast((m: Message) => m.type === 'assistant')
     const baseline =
       lastAsst?.type === 'assistant'
         ? ((
@@ -432,7 +431,7 @@ export function evaluateTimeBasedTrigger(
   if (!config.enabled || !querySource || !isMainThreadSource(querySource)) {
     return null
   }
-  const lastAssistant = messages.findLast(m => m.type === 'assistant')
+  const lastAssistant = messages.findLast((m: Message) => m.type === 'assistant')
   if (!lastAssistant) {
     return null
   }

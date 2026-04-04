@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * GrowthBook stub — Klaus doesn't use GrowthBook/Statsig.
  * All feature flags return defaults. All functions are no-ops.
@@ -32,7 +31,7 @@ export function getApiBaseUrlHost(): string | undefined { return undefined }
 export const initializeGrowthBook = async () => {}
 export async function getFeatureValue_DEPRECATED<T>(_key: string, defaultValue: T): Promise<T> { return defaultValue }
 export function getFeatureValue_CACHED_MAY_BE_STALE<T>(_key: string, defaultValue: T): T { return defaultValue }
-export function getFeatureValue_CACHED_WITH_REFRESH<T>(_key: string, defaultValue: T): T { return defaultValue }
+export function getFeatureValue_CACHED_WITH_REFRESH<T>(_key: string, defaultValue: T, _refreshMs?: number): T { return defaultValue }
 export function checkStatsigFeatureGate_CACHED_MAY_BE_STALE(_gate: string): boolean { return false }
 export async function checkSecurityRestrictionGate(_gate: string): Promise<boolean> { return false }
 export async function checkGate_CACHED_OR_BLOCKING(_gate: string): Promise<boolean> { return false }

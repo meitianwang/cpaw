@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import type {
   ToolResultBlockParam,
@@ -30,7 +30,9 @@ import { findToolByName, type ToolUseContext } from './Tool.js'
 import { asSystemPrompt, type SystemPrompt } from './utils/systemPromptType.js'
 import type {
   AssistantMessage,
+  AnyMessage,
   AttachmentMessage,
+  HookResultMessage,
   Message,
   RequestStartEvent,
   StreamEvent,
@@ -223,6 +225,7 @@ export async function* query(
   | StreamEvent
   | RequestStartEvent
   | Message
+  | HookResultMessage
   | TombstoneMessage
   | ToolUseSummaryMessage,
   Terminal
@@ -246,6 +249,7 @@ async function* queryLoop(
   | StreamEvent
   | RequestStartEvent
   | Message
+  | HookResultMessage
   | TombstoneMessage
   | ToolUseSummaryMessage,
   Terminal
@@ -533,7 +537,7 @@ async function* queryLoop(
       }
 
       // Continue on with the current query call using the post compact messages
-      messagesForQuery = postCompactMessages
+      messagesForQuery = postCompactMessages as Message[]
     } else if (consecutiveFailures !== undefined) {
       // Autocompact failed — propagate failure count so the circuit breaker
       // can stop retrying on the next iteration.
@@ -955,12 +959,13 @@ async function* queryLoop(
       }
     } catch (error) {
       logError(error)
+      console.error('[Query] Error in query loop:', error instanceof Error ? error.stack : error)
       const errorMessage =
         error instanceof Error ? error.message : String(error)
       logEvent('tengu_query_error', {
         assistantMessages: assistantMessages.length,
         toolUses: assistantMessages.flatMap(_ =>
-          _.message.content.filter(content => content.type === 'tool_use'),
+          _.message?.content?.filter((content: any) => content.type === 'tool_use') ?? [],
         ).length,
 
         queryChainId: queryChainIdForAnalytics,
@@ -1151,7 +1156,7 @@ async function* queryLoop(
             yield msg
           }
           const next: State = {
-            messages: postCompactMessages,
+            messages: postCompactMessages as Message[],
             toolUseContext,
             autoCompactTracking: undefined,
             maxOutputTokensRecoveryCount,
@@ -1171,15 +1176,15 @@ async function* queryLoop(
         // so hooks have nothing meaningful to evaluate. Running stop hooks
         // on prompt-too-long creates a death spiral: error → hook blocking
         // → retry → error → … (the hook injects more tokens each cycle).
-        yield lastMessage
-        void executeStopFailureHooks(lastMessage, toolUseContext)
+        yield lastMessage!
+        void executeStopFailureHooks(lastMessage!, toolUseContext)
         return { reason: isWithheldMedia ? 'image_error' : 'prompt_too_long' }
       } else if (feature('CONTEXT_COLLAPSE') && isWithheld413) {
         // reactiveCompact compiled out but contextCollapse withheld and
         // couldn't recover (staged queue empty/stale). Surface. Same
         // early-return rationale — don't fall through to stop hooks.
-        yield lastMessage
-        void executeStopFailureHooks(lastMessage, toolUseContext)
+        yield lastMessage!
+        void executeStopFailureHooks(lastMessage!, toolUseContext)
         return { reason: 'prompt_too_long' }
       }
 
@@ -1622,7 +1627,7 @@ async function* queryLoop(
       const skillAttachments =
         await skillPrefetch.collectSkillDiscoveryPrefetch(pendingSkillPrefetch)
       for (const att of skillAttachments) {
-        const msg = createAttachmentMessage(att)
+        const msg = createAttachmentMessage(att as import('./utils/attachments.js').Attachment)
         yield msg
         toolResults.push(msg)
       }

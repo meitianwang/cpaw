@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import { prependBullets } from '../../constants/prompts.js'
 import { getAttributionTexts } from '../../utils/attribution.js'
@@ -198,7 +197,7 @@ function getSimpleSandboxSection(): string {
       }),
     },
     write: {
-      allowOnly: normalizeAllowOnly(fsWriteConfig.allowOnly),
+      allowOnly: normalizeAllowOnly(fsWriteConfig.allowOnly ?? []),
       denyWithinAllow: dedup(fsWriteConfig.denyWithinAllow),
     },
   }

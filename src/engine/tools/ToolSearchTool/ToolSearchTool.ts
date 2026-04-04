@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import memoize from 'lodash-es/memoize.js'
 import { z } from 'zod/v4'

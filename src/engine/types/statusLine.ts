@@ -1,2 +1,3 @@
-// @ts-nocheck
-export const StatusLineCommandInput = undefined
+export interface StatusLineCommandInput {
+  [key: string]: unknown
+}

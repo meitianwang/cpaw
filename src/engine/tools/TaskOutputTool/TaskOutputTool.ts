@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { z } from 'zod/v4';
 import type { TaskType } from '../../Task.js';
 import type { Tool } from '../../Tool.js';
@@ -153,7 +152,7 @@ export const TaskOutputTool: Tool<InputSchema, TaskOutputToolOutput> = buildTool
     return this.isReadOnly?.(_input) ?? false;
   },
   isEnabled() {
-    return "external" !== 'ant';
+    return ("external" as string) !== 'ant';
   },
   isReadOnly(_input) {
     return true;

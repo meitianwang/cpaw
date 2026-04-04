@@ -1,4 +1,3 @@
-// @ts-nocheck
 import chalk from 'chalk'
 import { logForDebugging } from '../../utils/debug.js'
 import { fileHistoryEnabled } from '../../utils/fileHistory.js'
@@ -444,13 +443,13 @@ const externalTips: Tip[] = [
   },
   {
     id: 'desktop-shortcut',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const blue = color('suggestion', ctx.theme)
       return `Continue your session in Claude Code Desktop with ${blue('/desktop')}`
     },
     cooldownSessions: 15,
     isRelevant: async () => {
-      if (!getDesktopUpsellConfig().enable_shortcut_tip) return false
+      if (!(getDesktopUpsellConfig() as any)?.enable_shortcut_tip) return false
       return (
         process.platform === 'darwin' ||
         (process.platform === 'win32' && process.arch === 'x64')
@@ -490,7 +489,7 @@ const externalTips: Tip[] = [
   },
   {
     id: 'frontend-design-plugin',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const blue = color('suggestion', ctx.theme)
       return `Working with HTML/CSS? Install the frontend-design plugin:\n${blue(`/plugin install frontend-design@${OFFICIAL_MARKETPLACE_NAME}`)}`
     },
@@ -502,7 +501,7 @@ const externalTips: Tip[] = [
   },
   {
     id: 'vercel-plugin',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const blue = color('suggestion', ctx.theme)
       return `Working with Vercel? Install the vercel plugin:\n${blue(`/plugin install vercel@${OFFICIAL_MARKETPLACE_NAME}`)}`
     },
@@ -515,7 +514,7 @@ const externalTips: Tip[] = [
   },
   {
     id: 'effort-high-nudge',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const blue = color('suggestion', ctx.theme)
       const cmd = blue('/effort high')
       const variant = getFeatureValue_CACHED_MAY_BE_STALE<
@@ -545,7 +544,7 @@ const externalTips: Tip[] = [
   },
   {
     id: 'subagent-fanout-nudge',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const blue = color('suggestion', ctx.theme)
       const variant = getFeatureValue_CACHED_MAY_BE_STALE<
         'off' | 'copy_a' | 'copy_b'
@@ -567,7 +566,7 @@ const externalTips: Tip[] = [
   },
   {
     id: 'loop-command-nudge',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const blue = color('suggestion', ctx.theme)
       const variant = getFeatureValue_CACHED_MAY_BE_STALE<
         'off' | 'copy_a' | 'copy_b'
@@ -590,7 +589,7 @@ const externalTips: Tip[] = [
   },
   {
     id: 'guest-passes',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const claude = color('claude', ctx.theme)
       const reward = getCachedReferrerReward()
       return reward
@@ -609,7 +608,7 @@ const externalTips: Tip[] = [
   },
   {
     id: 'overage-credit',
-    content: async ctx => {
+    content: async (ctx: TipContext) => {
       const claude = color('claude', ctx.theme)
       const info = getCachedOverageCreditGrant()
       const amount = info ? formatGrantAmount(info) : null
@@ -678,7 +677,7 @@ export async function getRelevantTips(context?: TipContext): Promise<Tip[]> {
 
   // Otherwise, filter built-in tips as before and combine with custom
   const tips = [...externalTips, ...internalOnlyTips]
-  const isRelevant = await Promise.all(tips.map(_ => _.isRelevant(context)))
+  const isRelevant = await Promise.all(tips.map(_ => _.isRelevant?.(context) ?? Promise.resolve(true)))
   const filtered = tips
     .filter((_, index) => isRelevant[index])
     .filter(_ => getSessionsSinceLastShown(_.id) >= _.cooldownSessions)

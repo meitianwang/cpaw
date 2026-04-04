@@ -1,11 +1,11 @@
-// @ts-nocheck
 import type { CoordinateMode, CuSubGates } from '@ant/computer-use-mcp/types'
 
 import { getDynamicConfig_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import { getSubscriptionType } from '../auth.js'
 import { isEnvTruthy } from '../envUtils.js'
 
-type ChicagoConfig = CuSubGates & {
+type ChicagoConfig = {
+  [key: string]: boolean | string | undefined
   enabled: boolean
   coordinateMode: CoordinateMode
 }
@@ -60,7 +60,7 @@ export function getChicagoEnabled(): boolean {
 
 export function getChicagoSubGates(): CuSubGates {
   const { enabled: _e, coordinateMode: _c, ...subGates } = readConfig()
-  return subGates
+  return subGates as CuSubGates
 }
 
 // Frozen at first read — setup.ts builds tool descriptions and executor.ts

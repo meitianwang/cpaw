@@ -1,4 +1,3 @@
-// @ts-nocheck
-export function processMailboxPermissionResponse() { return undefined }
-export function registerPermissionCallback() { return undefined }
-export function unregisterPermissionCallback() { return undefined }
+export function processMailboxPermissionResponse(..._args: any[]) { return undefined }
+export function registerPermissionCallback(..._args: any[]) { return undefined }
+export function unregisterPermissionCallback(..._args: any[]) { return undefined }

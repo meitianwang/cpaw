@@ -1,3 +1,11 @@
-// @ts-nocheck
-export const Continue = undefined
-export const Terminal = undefined
+export interface Continue {
+  reason: string
+  [key: string]: unknown
+}
+
+export interface Terminal {
+  reason: string
+  error?: unknown
+  turnCount?: number
+  [key: string]: unknown
+}

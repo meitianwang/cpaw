@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 /**
  * CCR upstreamproxy — container-side wiring.
  *
@@ -228,7 +228,7 @@ function setNonDumpable(): void {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ffi = require('bun:ffi') as typeof import('bun:ffi')
-    const lib = ffi.dlopen('libc.so.6', {
+    const lib: any = ffi.dlopen('libc.so.6', {
       prctl: {
         args: ['int', 'u64', 'u64', 'u64', 'u64'],
         returns: 'int',

@@ -1,2 +1,3 @@
-// @ts-nocheck
-export const useOptionalKeybindingContext = undefined
+export function useOptionalKeybindingContext(): any {
+  return undefined
+}

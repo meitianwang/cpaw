@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Anthropic } from '@anthropic-ai/sdk'
 import type { BetaMessageParam as MessageParam } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 // @aws-sdk/client-bedrock-runtime is imported dynamically in countTokensWithBedrock()
@@ -412,7 +411,7 @@ function roughTokenCountEstimationForBlock(
     return 2000
   }
   if (block.type === 'tool_result') {
-    return roughTokenCountEstimationForContent(block.content)
+    return roughTokenCountEstimationForContent(block.content as string | Anthropic.ContentBlockParam[] | undefined)
   }
   if (block.type === 'tool_use') {
     // input is the JSON the model generated — arbitrarily large (bash

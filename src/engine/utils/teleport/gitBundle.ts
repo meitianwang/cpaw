@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Git bundle creation + upload for CCR seed-bundle seeding.
  *

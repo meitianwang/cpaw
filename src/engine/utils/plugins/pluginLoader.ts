@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Plugin Loader Module
  *

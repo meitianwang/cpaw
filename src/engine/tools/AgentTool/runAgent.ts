@@ -1,6 +1,6 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
-import type { UUID } from 'crypto'
+type UUID = string
 import { randomUUID } from 'crypto'
 import uniqBy from 'lodash-es/uniqBy.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -605,7 +605,7 @@ export async function* runAgent({
       }
 
       const skill = getCommand(resolvedName, allSkills)
-      if (skill.type !== 'prompt') {
+      if (skill?.type !== 'prompt') {
         logForDebugging(
           `[Agent: ${agentDefinition.agentType}] Warning: Skill '${skillName}' is not a prompt-based skill`,
           { level: 'warn' },

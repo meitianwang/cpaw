@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Cross-App Access (XAA) / Enterprise Managed Authorization (SEP-990)
  *

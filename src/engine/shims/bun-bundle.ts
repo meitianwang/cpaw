@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Runtime shim for bun:bundle module.
  *

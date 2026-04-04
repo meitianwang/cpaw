@@ -1,6 +1,6 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
-import type { UUID } from 'crypto'
+type UUID = string
 import { relative } from 'path'
 import { getCwd } from './cwd.js'
 import { addInvokedSkill } from '../bootstrap/state.js'
@@ -230,7 +230,7 @@ export function deserializeMessagesWithInterruptDetection(
     // message so removeInterruptedMessage's splice(idx, 2) removes the
     // correct pair.
     const lastRelevantIdx = filteredMessages.findLastIndex(
-      m => m.type !== 'system' && m.type !== 'progress',
+      (m: Message) => m.type !== 'system' && m.type !== 'progress',
     )
     if (
       lastRelevantIdx !== -1 &&
@@ -283,7 +283,7 @@ function detectTurnInterruption(
   // auto-resume fire after retry exhaustion instead of reading the error as
   // a completed turn.
   const lastMessageIdx = messages.findLastIndex(
-    m =>
+    (m: Message) =>
       m.type !== 'system' &&
       m.type !== 'progress' &&
       !(m.type === 'assistant' && m.isApiErrorMessage),
@@ -495,7 +495,7 @@ export async function loadConversationForResume(
           const { listAllLiveSessions } = await import('./udsClient.js')
           const live = await listAllLiveSessions()
           skip = new Set(
-            live.flatMap(s =>
+            live.flatMap((s: any) =>
               s.kind && s.kind !== 'interactive' && s.sessionId
                 ? [s.sessionId]
                 : [],

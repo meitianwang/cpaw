@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { memoize } from 'lodash-es'
 import type { Command } from '../../commands.js'
 import {
@@ -211,7 +210,7 @@ export async function getSkillToolInfo(cwd: string): Promise<{
 // Returns the commands included in the SkillTool prompt.
 // All commands are always included (descriptions may be truncated to fit budget).
 // Used by analyzeContext to count skill tokens.
-export function getLimitedSkillToolCommands(cwd: string): Promise<Command[]> {
+export function getLimitedSkillToolCommands(cwd: string): Command[] {
   return getSkillToolCommands(cwd)
 }
 

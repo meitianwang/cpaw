@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Vim State Transition Table
  *

@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { toolMatchesName, type Tool, type Tools } from './Tool.js'
 import { AgentTool } from './tools/AgentTool/AgentTool.js'
@@ -59,18 +59,20 @@ import { ExitPlanModeV2Tool } from './tools/ExitPlanModeTool/ExitPlanModeV2Tool.
 import { TestingPermissionTool } from './tools/testing/TestingPermissionTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
 import { TungstenTool } from './tools/TungstenTool/TungstenTool.js'
-// Lazy require to break circular dependency: tools.ts -> TeamCreateTool/TeamDeleteTool -> ... -> tools.ts
-/* eslint-disable @typescript-eslint/no-require-imports */
-const getTeamCreateTool = () =>
-  require('./tools/TeamCreateTool/TeamCreateTool.js')
-    .TeamCreateTool as typeof import('./tools/TeamCreateTool/TeamCreateTool.js').TeamCreateTool
-const getTeamDeleteTool = () =>
-  require('./tools/TeamDeleteTool/TeamDeleteTool.js')
-    .TeamDeleteTool as typeof import('./tools/TeamDeleteTool/TeamDeleteTool.js').TeamDeleteTool
-const getSendMessageTool = () =>
-  require('./tools/SendMessageTool/SendMessageTool.js')
-    .SendMessageTool as typeof import('./tools/SendMessageTool/SendMessageTool.js').SendMessageTool
-/* eslint-enable @typescript-eslint/no-require-imports */
+// Lazy dynamic import to break circular dependency (converted from require for ESM compat)
+let _TeamCreateTool: any, _TeamDeleteTool: any, _SendMessageTool: any
+const getTeamCreateTool = () => _TeamCreateTool
+const getTeamDeleteTool = () => _TeamDeleteTool
+const getSendMessageTool = () => _SendMessageTool
+Promise.all([
+  import('./tools/TeamCreateTool/TeamCreateTool.js'),
+  import('./tools/TeamDeleteTool/TeamDeleteTool.js'),
+  import('./tools/SendMessageTool/SendMessageTool.js'),
+]).then(([tc, td, sm]) => {
+  _TeamCreateTool = tc.TeamCreateTool
+  _TeamDeleteTool = td.TeamDeleteTool
+  _SendMessageTool = sm.SendMessageTool
+})
 import { AskUserQuestionTool } from './tools/AskUserQuestionTool/AskUserQuestionTool.js'
 import { LSPTool } from './tools/LSPTool/LSPTool.js'
 import { ListMcpResourcesTool } from './tools/ListMcpResourcesTool/ListMcpResourcesTool.js'
@@ -147,14 +149,12 @@ import {
   isReplModeEnabled,
 } from './tools/REPLTool/constants.js'
 export { REPL_ONLY_TOOLS }
-/* eslint-disable @typescript-eslint/no-require-imports */
+let _PowerShellTool: any = null
+import('./tools/PowerShellTool/PowerShellTool.js').then(m => { _PowerShellTool = m.PowerShellTool }).catch(() => {})
 const getPowerShellTool = () => {
   if (!isPowerShellToolEnabled()) return null
-  return (
-    require('./tools/PowerShellTool/PowerShellTool.js') as typeof import('./tools/PowerShellTool/PowerShellTool.js')
-  ).PowerShellTool
+  return _PowerShellTool
 }
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Predefined tool presets that can be used with --tools flag

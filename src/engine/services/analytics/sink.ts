@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Analytics sink implementation
  *
@@ -124,7 +123,10 @@ import { dirname } from 'node:path'
 import { randomUUID } from 'crypto'
 
 export class SQLiteAnalyticsSink {
-  constructor(dbPath) {
+  private db: InstanceType<typeof Database>
+  private insertStmt: import('better-sqlite3').Statement<[string, string, string, string]>
+
+  constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true })
     this.db = new Database(dbPath)
     this.db.pragma('journal_mode = WAL')
@@ -146,7 +148,7 @@ export class SQLiteAnalyticsSink {
     )
   }
 
-  logEvent(eventName, metadata) {
+  logEvent(eventName: string, metadata: Record<string, unknown>) {
     try {
       this.insertStmt.run(
         randomUUID(),
@@ -159,11 +161,11 @@ export class SQLiteAnalyticsSink {
     }
   }
 
-  async logEventAsync(eventName, metadata) {
+  async logEventAsync(eventName: string, metadata: Record<string, unknown>) {
     this.logEvent(eventName, metadata)
   }
 
-  queryEvents(opts) {
+  queryEvents(opts: { eventName?: string; since?: string; limit?: number; offset?: number }) {
     const conditions = []
     const params = []
 
@@ -180,7 +182,7 @@ export class SQLiteAnalyticsSink {
     const limit = opts?.limit ?? 100
     const offset = opts?.offset ?? 0
 
-    const total = this.db.prepare(`SELECT COUNT(*) as count FROM events ${where}`).get(...params).count
+    const total = (this.db.prepare(`SELECT COUNT(*) as count FROM events ${where}`).get(...params) as any).count
 
     const events = this.db
       .prepare(
@@ -191,7 +193,7 @@ export class SQLiteAnalyticsSink {
     return { events, total }
   }
 
-  getEventCounts(since) {
+  getEventCounts(since?: string) {
     const where = since ? 'WHERE created_at >= ?' : ''
     const params = since ? [since] : []
     return this.db
@@ -201,7 +203,7 @@ export class SQLiteAnalyticsSink {
       .all(...params)
   }
 
-  getUsageSummary(since) {
+  getUsageSummary(since?: string) {
     const where = since ? "WHERE event_name = 'tengu_api_success' AND created_at >= ?" : "WHERE event_name = 'tengu_api_success'"
     const params = since ? [since] : []
     const rows = this.db
@@ -217,7 +219,7 @@ export class SQLiteAnalyticsSink {
 
     for (const row of rows) {
       try {
-        const meta = JSON.parse(row.metadata)
+        const meta = JSON.parse((row as any).metadata)
         totalInputTokens += meta.input_tokens ?? 0
         totalOutputTokens += meta.output_tokens ?? 0
         totalCacheReadTokens += meta.cache_read_input_tokens ?? 0

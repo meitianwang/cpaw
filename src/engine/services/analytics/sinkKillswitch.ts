@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getDynamicConfig_CACHED_MAY_BE_STALE } from './growthbook.js'
 
 // Mangled name: per-sink analytics killswitch

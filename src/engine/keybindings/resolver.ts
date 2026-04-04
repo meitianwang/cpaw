@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Key } from '../ink.js'
 import { getKeyName, matchesBinding } from './match.js'
 import { chordToString } from './parser.js'
@@ -72,7 +71,7 @@ export function getBindingDisplayText(
 ): string | undefined {
   // Find the last binding for this action in this context
   const binding = bindings.findLast(
-    b => b.action === action && b.context === context,
+    (b: ParsedBinding) => b.action === action && b.context === context,
   )
   return binding ? chordToString(binding.chord) : undefined
 }

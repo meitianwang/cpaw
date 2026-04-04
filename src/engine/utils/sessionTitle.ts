@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Session title generation via Haiku.
  *

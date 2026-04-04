@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Stub: internal-only module for protected namespace checking.
  * Always returns false in external builds.

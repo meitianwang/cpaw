@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   OUTPUT_FILE_TAG,
   STATUS_TAG,
@@ -305,5 +304,7 @@ function getStatusText(status: TaskStatus): string {
       return 'is running'
     case 'pending':
       return 'is pending'
+    default:
+      return status
   }
 }

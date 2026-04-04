@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import type {
   Base64ImageSource,
@@ -2177,7 +2177,7 @@ export async function reconnectMcpServerImpl(
         : Promise.resolve([]),
       supportsResources ? fetchResourcesForClient(client) : Promise.resolve([]),
     ])
-    const commands = [...mcpCommands, ...mcpSkills]
+    const commands = [...mcpCommands, ...mcpSkills] as Command[]
 
     // Check if we need to add resource tools
     const resourceTools: Tool[] = []
@@ -2354,7 +2354,7 @@ export async function getMcpToolsCommandsAndResources(
           ? fetchResourcesForClient(client)
           : Promise.resolve([]),
       ])
-      const commands = [...mcpCommands, ...mcpSkills]
+      const commands = [...mcpCommands, ...mcpSkills] as Command[]
 
       // If this server resources and we haven't added resource tools yet,
       // include our resource tools with this client's tools

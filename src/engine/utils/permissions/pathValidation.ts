@@ -1,4 +1,3 @@
-// @ts-nocheck
 import memoize from 'lodash-es/memoize.js'
 import { homedir } from 'os'
 import { dirname, isAbsolute, resolve } from 'path'
@@ -113,13 +112,13 @@ export function isPathInSandboxWriteAllowlist(resolvedPath: string): boolean {
   // their resolution to avoid N × config.length redundant syscalls per
   // command with N write targets (matching getResolvedWorkingDirPaths).
   const pathsToCheck = getPathsForPermissionCheck(resolvedPath)
-  const resolvedAllow = allowOnly.flatMap(getResolvedSandboxConfigPath)
-  const resolvedDeny = denyWithinAllow.flatMap(getResolvedSandboxConfigPath)
+  const resolvedAllow = allowOnly!.flatMap(getResolvedSandboxConfigPath)
+  const resolvedDeny = denyWithinAllow!.flatMap(getResolvedSandboxConfigPath)
   return pathsToCheck.every(p => {
     for (const denyPath of resolvedDeny) {
       if (pathInWorkingPath(p, denyPath)) return false
     }
-    return resolvedAllow.some(allowPath => pathInWorkingPath(p, allowPath))
+    return resolvedAllow.some((allowPath: string) => pathInWorkingPath(p, allowPath))
   })
 }
 

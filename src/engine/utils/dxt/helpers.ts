@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { McpbManifest } from '@anthropic-ai/mcpb'
 import { errorMessage } from '../errors.js'
 import { jsonParse } from '../slowOperations.js'
@@ -18,7 +17,7 @@ export async function validateManifest(
   const parseResult = McpbManifestSchema.safeParse(manifestJson)
 
   if (!parseResult.success) {
-    const errors = parseResult.error.flatten()
+    const errors = parseResult.error!.flatten()
     const errorMessages = [
       ...Object.entries(errors.fieldErrors).map(
         ([field, errs]) => `${field}: ${errs?.join(', ')}`,
@@ -31,7 +30,7 @@ export async function validateManifest(
     throw new Error(`Invalid manifest: ${errorMessages}`)
   }
 
-  return parseResult.data
+  return parseResult.data as McpbManifest
 }
 
 /**

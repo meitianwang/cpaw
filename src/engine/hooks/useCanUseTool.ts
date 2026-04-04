@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ToolPermissionContext, Tool as ToolType, ToolUseContext } from '../Tool.js'
 import type { AssistantMessage } from '../types/message.js'
 import type { PermissionDecision } from '../utils/permissions/PermissionResult.js'

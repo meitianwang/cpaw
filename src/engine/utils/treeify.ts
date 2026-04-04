@@ -1,4 +1,3 @@
-// @ts-nocheck
 import figures from 'figures'
 import { color } from '../components/design-system/color.js'
 import type { Theme, ThemeName } from './theme.js'

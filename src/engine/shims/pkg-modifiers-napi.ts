@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shim for modifiers-napi (unavailable native module).
  * No imports exist in the source — this file is a placeholder

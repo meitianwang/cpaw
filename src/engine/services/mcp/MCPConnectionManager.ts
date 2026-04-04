@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Command } from '../../commands.js'
 import type { Tool } from '../../Tool.js'
 import type { MCPServerConnection, ScopedMcpServerConfig, ServerResource } from './types.js'

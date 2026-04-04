@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { registerBundledSkill } from '../bundledSkills.js'
 
 // Prompt text contains `ps` commands as instructions for Claude to run,

@@ -1,5 +1,5 @@
-// @ts-nocheck
-import { createHash, type UUID } from 'crypto'
+import { createHash } from 'crypto'
+type UUID = string
 import { diffLines } from 'diff'
 import type { Stats } from 'fs'
 import {
@@ -365,7 +365,7 @@ export async function fileHistoryRewind(
   if (!captured) return
 
   const targetSnapshot = captured.snapshots.findLast(
-    snapshot => snapshot.messageId === messageId,
+    (snapshot: FileHistorySnapshot) => snapshot.messageId === messageId,
   )
   if (!targetSnapshot) {
     logError(new Error(`FileHistory: Snapshot for ${messageId} not found`))
@@ -421,7 +421,7 @@ export async function fileHistoryGetDiffStats(
   }
 
   const targetSnapshot = state.snapshots.findLast(
-    snapshot => snapshot.messageId === messageId,
+    (snapshot: FileHistorySnapshot) => snapshot.messageId === messageId,
   )
 
   if (!targetSnapshot) {
@@ -501,7 +501,7 @@ export async function fileHistoryHasAnyChanges(
   }
 
   const targetSnapshot = state.snapshots.findLast(
-    snapshot => snapshot.messageId === messageId,
+    (snapshot: FileHistorySnapshot) => snapshot.messageId === messageId,
   )
   if (!targetSnapshot) {
     return false

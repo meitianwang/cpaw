@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { queryHaiku } from '../../services/api/claude.js'
 import { logError } from '../log.js'
 import { extractTextContent } from '../messages.js'

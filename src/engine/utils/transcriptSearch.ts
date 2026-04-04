@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { RenderableMessage } from '../types/message.js'
 import {
   INTERRUPT_MESSAGE,
@@ -107,7 +106,7 @@ function computeSearchText(msg: RenderableMessage): string {
       // (collapseReadSearch.ts); their content is visible in transcript mode
       // via CollapsedReadSearchContent, so mirror it here for / search.
       if (msg.relevantMemories) {
-        raw = msg.relevantMemories.map(m => m.content).join('\n')
+        raw = msg.relevantMemories.map((m: { content: string }) => m.content).join('\n')
       }
       break
     }

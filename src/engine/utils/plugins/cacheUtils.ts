@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readdir, rm, stat, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { clearCommandsCache } from '../../commands.js'

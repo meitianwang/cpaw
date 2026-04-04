@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { open, stat } from 'fs/promises'
 import { CLAUDE_CODE_GUIDE_AGENT_TYPE } from '../../tools/AgentTool/built-in/claudeCodeGuideAgent.js'
 import { getSettingsFilePathForSource } from '../../utils/settings/settings.js'

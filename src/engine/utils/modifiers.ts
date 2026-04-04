@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 export type ModifierKey = 'shift' | 'command' | 'control' | 'option'
 
 let prewarmed = false

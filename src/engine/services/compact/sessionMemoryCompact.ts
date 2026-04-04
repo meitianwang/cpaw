@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * EXPERIMENT: Session memory compaction
  */
@@ -368,7 +367,7 @@ export function calculateMessagesToKeepIndex(
   // would let the loader's tail→head walk bypass inner preserved messages
   // and then prune them. Reactive compact already slices at the boundary
   // via getMessagesAfterCompactBoundary; this is the same invariant.
-  const idx = messages.findLastIndex(m => isCompactBoundaryMessage(m))
+  const idx = messages.findLastIndex((m: Message) => isCompactBoundaryMessage(m))
   const floor = idx === -1 ? 0 : idx + 1
   for (let i = startIndex - 1; i >= floor; i--) {
     const msg = messages[i]!
@@ -593,7 +592,7 @@ export async function trySessionMemoryCompaction(
       messages,
       sessionMemory,
       messagesToKeep,
-      hookResults,
+      hookResults as import('../../types/message.js').HookResultMessage[],
       transcriptPath,
       agentId,
     )

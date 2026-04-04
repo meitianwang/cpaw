@@ -1,4 +1,3 @@
-// @ts-nocheck
 import memoize from 'lodash-es/memoize.js'
 import { basename, dirname, join } from 'path'
 import { getInlinePlugins, getSessionId } from '../../bootstrap/state.js'

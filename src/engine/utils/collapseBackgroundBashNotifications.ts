@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   STATUS_TAG,
   SUMMARY_TAG,
@@ -16,6 +15,7 @@ function isCompletedBackgroundBash(
   msg: RenderableMessage,
 ): msg is NormalizedUserMessage {
   if (msg.type !== 'user') return false
+  if (!Array.isArray(msg.message.content)) return false
   const content = msg.message.content[0]
   if (content?.type !== 'text') return false
   if (!content.text.includes(`<${TASK_NOTIFICATION_TAG}`)) return false

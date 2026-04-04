@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomBytes } from 'crypto'
 import type { ControlOperator, ParseEntry } from 'shell-quote'
 import {

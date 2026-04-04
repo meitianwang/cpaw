@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { BROWSER_TOOLS } from '@ant/claude-for-chrome-mcp'
 import { BASE_CHROME_PROMPT } from '../../utils/claudeInChrome/prompt.js'
 import { shouldAutoEnableClaudeInChrome } from '../../utils/claudeInChrome/setup.js'

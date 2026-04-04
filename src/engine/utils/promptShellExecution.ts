@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { randomUUID } from 'crypto'
 import type { Tool, ToolUseContext } from '../Tool.js'
 import { BashTool } from '../tools/BashTool/BashTool.js'

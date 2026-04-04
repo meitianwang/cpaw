@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import { stat } from 'fs/promises'
 import { getClientType } from '../bootstrap/state.js'
@@ -266,7 +265,7 @@ async function getTranscriptStats(): Promise<{
     const buf = scan.postBoundaryBuf
     const entries = parseJSONL<Entry>(buf)
     const lastBoundaryIdx = entries.findLastIndex(
-      e =>
+      (e: Entry) =>
         e.type === 'system' &&
         'subtype' in e &&
         e.subtype === 'compact_boundary',
@@ -384,7 +383,7 @@ export async function getEnhancedPRAttribution(
   if (feature('COMMIT_ATTRIBUTION') && isInternal && attributionData) {
     const { buildPRTrailers } = await import('./attributionTrailer.js')
     const trailers = buildPRTrailers(attributionData, appState.attribution)
-    const result = `${summary}\n\n${trailers.join('\n')}`
+    const result = `${summary}\n\n${trailers}`
     logForDebugging(`PR Attribution: returning with trailers: ${result}`)
     return result
   }

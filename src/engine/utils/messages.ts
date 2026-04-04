@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type {
@@ -13,7 +13,8 @@ import type {
   ToolUseBlock,
   ToolUseBlockParam,
 } from '@anthropic-ai/sdk/resources/index.mjs'
-import { randomUUID, type UUID } from 'crypto'
+import { randomUUID } from 'crypto'
+type UUID = string
 import isObject from 'lodash-es/isObject.js'
 import last from 'lodash-es/last.js'
 import {
@@ -313,6 +314,7 @@ export function isSyntheticMessage(message: Message): boolean {
     message.type !== 'progress' &&
     message.type !== 'attachment' &&
     message.type !== 'system' &&
+    message.type !== 'hook_result' &&
     Array.isArray(message.message.content) &&
     message.message.content[0]?.type === 'text' &&
     SYNTHETIC_MESSAGES.has(message.message.content[0].text)
@@ -335,7 +337,7 @@ export function getLastAssistantMessage(
   // findLast exits early from the end — much faster than filter + last for
   // large message arrays (called on every REPL render via useFeedbackSurvey).
   return messages.findLast(
-    (msg): msg is AssistantMessage => msg.type === 'assistant',
+    (msg: Message): msg is AssistantMessage => msg.type === 'assistant',
   )
 }
 
@@ -691,7 +693,8 @@ export function isNotEmptyMessage(message: Message): boolean {
   if (
     message.type === 'progress' ||
     message.type === 'attachment' ||
-    message.type === 'system'
+    message.type === 'system' ||
+    message.type === 'hook_result'
   ) {
     return true
   }
@@ -819,6 +822,8 @@ export function normalizeMessages(messages: Message[]): NormalizedMessage[] {
           } as NormalizedMessage
         })
       }
+      default:
+        return []
     }
   })
 }
@@ -1051,8 +1056,8 @@ function getInProgressHookCount(
     messages,
     _ =>
       _.type === 'progress' &&
-      _.data.type === 'hook_progress' &&
-      _.data.hookEvent === hookEvent &&
+      (_.data as { type?: string }).type === 'hook_progress' &&
+      (_.data as { hookEvent?: string }).hookEvent === hookEvent &&
       _.parentToolUseID === toolUseID,
   )
 }
@@ -1224,8 +1229,8 @@ export function buildMessageLookups(
       }
 
       // Count in-progress hooks
-      if (msg.data.type === 'hook_progress') {
-        const hookEvent = msg.data.hookEvent
+      if ((msg.data as { type?: string }).type === 'hook_progress') {
+        const hookEvent = (msg.data as { hookEvent: HookEvent }).hookEvent
         let byHookEvent = inProgressHookCounts.get(toolUseID)
         if (!byHookEvent) {
           byHookEvent = new Map()
@@ -1856,7 +1861,7 @@ function smooshSystemReminderSiblings(
     if (srText.length === 0) return msg
 
     // Smoosh into the LAST tool_result (positionally adjacent in rendered prompt)
-    const lastTrIdx = kept.findLastIndex(b => b.type === 'tool_result')
+    const lastTrIdx = kept.findLastIndex((b: any) => b.type === 'tool_result')
     const lastTr = kept[lastTrIdx] as ToolResultBlockParam
     const smooshed = smooshIntoToolResult(lastTr, srText)
     if (smooshed === null) return msg // tool_ref constraint — leave alone
@@ -4233,7 +4238,7 @@ You have exited auto mode. The user may now want to interact more directly. You 
     case 'companion_intro': {
       return wrapMessagesInSystemReminder([
         createUserMessage({
-          content: companionIntroText(attachment.name, attachment.species),
+          content: companionIntroText!(attachment.name, attachment.species),
           isMeta: true,
         }),
       ])
@@ -4411,6 +4416,7 @@ export function createStopHookSummaryMessage(
   return {
     type: 'system',
     subtype: 'stop_hook_summary',
+    isMeta: false,
     hookCount,
     hookInfos,
     hookErrors,
@@ -4592,6 +4598,7 @@ export function createSystemAPIErrorMessage(
   return {
     type: 'system',
     subtype: 'api_error',
+    isMeta: false,
     level: 'error',
     cause: error.cause instanceof Error ? error.cause : undefined,
     error,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readFile } from 'fs/promises'
 import { join, relative, resolve } from 'path'
 import { z } from 'zod/v4'

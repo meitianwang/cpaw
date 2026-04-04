@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Side Question ("/btw") feature - allows asking quick questions without
  * interrupting the main agent context.
@@ -149,7 +148,7 @@ function extractSideQuestionResponse(messages: Message[]): string | null {
       m.type === 'system' && 'subtype' in m && m.subtype === 'api_error',
   )
   if (apiErr) {
-    return `(API error: ${formatAPIError(apiErr.error)})`
+    return `(API error: ${typeof apiErr.error === 'string' ? apiErr.error : formatAPIError(apiErr.error)})`
   }
 
   return null

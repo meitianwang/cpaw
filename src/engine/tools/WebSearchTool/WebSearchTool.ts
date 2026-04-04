@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type {
   BetaContentBlock,
   BetaWebSearchTool20250305,

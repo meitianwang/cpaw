@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shared spawn module for teammate creation.
  * Extracted from TeammateTool to allow reuse by AgentTool.
@@ -349,7 +348,7 @@ async function handleSpawnSplitPane(
       'installed' | 'use-tmux' | 'cancelled'
     >(resolve => {
       context.setToolJSX!({
-        jsx: React.createElement(It2SetupPrompt, {
+        jsx: React.createElement(It2SetupPrompt as any, {
           onDone: resolve,
           tmuxAvailable,
         }),

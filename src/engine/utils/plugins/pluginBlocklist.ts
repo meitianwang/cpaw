@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Plugin delisting detection.
  *

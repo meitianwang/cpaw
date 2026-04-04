@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { z } from 'zod/v4'
 import { setScheduledTasksEnabled } from '../../bootstrap/state.js'
 import type { ValidationResult } from '../../Tool.js'

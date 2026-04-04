@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createDisabledBypassPermissionsContext } from '../utils/permissions/permissionSetup.js'
 import { createStore } from './store.js'
 
@@ -34,14 +33,14 @@ export function useAppState(_selector: (s: AppState) => unknown): never {
 /**
  * Stub: useSetAppState is a React hook.
  */
-export function useSetAppState(): never {
+export function useSetAppState(): (updater: (prev: AppState) => AppState) => void {
   throw new Error('useSetAppState is a React hook and cannot be used in non-React context')
 }
 
 /**
  * Stub: useAppStateStore is a React hook.
  */
-export function useAppStateStore(): never {
+export function useAppStateStore(): AppStateStore {
   throw new Error('useAppStateStore is a React hook and cannot be used in non-React context')
 }
 

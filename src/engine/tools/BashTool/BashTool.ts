@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle';
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { copyFile, stat as fsStat, truncate as fsTruncate, link } from 'fs/promises';
@@ -490,7 +489,7 @@ export const BashTool = buildTool({
     if (input.command) {
       const sedInfo = parseSedEditCommand(input.command);
       if (sedInfo) {
-        return fileEditUserFacingName({
+        return (fileEditUserFacingName as ((...args: any[]) => any) | undefined)?.({
           file_path: sedInfo.filePath,
           old_string: 'x'
         });

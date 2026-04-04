@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   type ClaudeForChromeContext,
   createClaudeForChromeMcpServer,
@@ -216,7 +215,7 @@ export function createChromeContext(
         }
       },
     }),
-    trackEvent: (eventName, metadata) => {
+    trackEvent: (eventName: string, metadata: Record<string, unknown>) => {
       const safeMetadata: {
         [key: string]:
           | boolean

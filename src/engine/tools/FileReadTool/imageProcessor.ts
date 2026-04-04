@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Buffer } from 'buffer'
 import { isInBundledMode } from '../../utils/bundledMode.js'
 
@@ -45,7 +44,7 @@ export async function getImageProcessor(): Promise<SharpFunction> {
     try {
       // Use the native image processor module
       const imageProcessor = await import('image-processor-napi')
-      const sharp = imageProcessor.sharp || imageProcessor.default
+      const sharp = (imageProcessor.sharp || imageProcessor.default) as SharpFunction
       imageProcessorModule = { default: sharp }
       return sharp
     } catch {

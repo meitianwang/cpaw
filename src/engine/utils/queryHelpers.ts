@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
 import last from 'lodash-es/last.js'
 import {
@@ -118,12 +117,13 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
         }
       }
       return
-    case 'progress':
+    case 'progress': {
+      const progressData = message.data as any
       if (
-        message.data.type === 'agent_progress' ||
-        message.data.type === 'skill_progress'
+        progressData.type === 'agent_progress' ||
+        progressData.type === 'skill_progress'
       ) {
-        for (const _ of normalizeMessages([message.data.message])) {
+        for (const _ of normalizeMessages([progressData.message] as Message[])) {
           switch (_.type) {
             case 'assistant':
               // Skip empty messages (e.g., "(no content)") that shouldn't be output to SDK
@@ -156,8 +156,8 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
           }
         }
       } else if (
-        message.data.type === 'bash_progress' ||
-        message.data.type === 'powershell_progress'
+        progressData.type === 'bash_progress' ||
+        progressData.type === 'powershell_progress'
       ) {
         // Filter bash progress to send only one per minute
         // Only emit for Claude Code Remote for now
@@ -191,16 +191,17 @@ export function* normalizeMessage(message: Message): Generator<SDKMessage> {
             type: 'tool_progress',
             tool_use_id: message.toolUseID,
             tool_name:
-              message.data.type === 'bash_progress' ? 'Bash' : 'PowerShell',
+              progressData.type === 'bash_progress' ? 'Bash' : 'PowerShell',
             parent_tool_use_id: message.parentToolUseID,
-            elapsed_time_seconds: message.data.elapsedTimeSeconds,
-            task_id: message.data.taskId,
+            elapsed_time_seconds: progressData.elapsedTimeSeconds,
+            task_id: progressData.taskId,
             session_id: getSessionId(),
             uuid: message.uuid,
           }
         }
       }
       break
+    }
     case 'user':
       for (const _ of normalizeMessages([message])) {
         yield {

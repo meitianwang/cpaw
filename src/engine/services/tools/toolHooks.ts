@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
   logEvent,
@@ -11,6 +10,7 @@ import type { HookProgress } from '../../types/hooks.js'
 import type {
   AssistantMessage,
   AttachmentMessage,
+  Message,
   ProgressMessage,
 } from '../../types/message.js'
 import type { PermissionDecision } from '../../types/permissions.js'
@@ -34,7 +34,7 @@ import { isMcpTool } from '../mcp/utils.js'
 import type { McpServerType, MessageUpdateLazy } from './toolExecution.js'
 
 export type PostToolUseHooksResult<Output> =
-  | MessageUpdateLazy<AttachmentMessage | ProgressMessage<HookProgress>>
+  | MessageUpdateLazy<Message>
   | { updatedMCPToolOutput: Output }
 
 export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
@@ -68,7 +68,7 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
         // IMPORTANT: We emit a cancelled event per hook
         if (
           result.message?.type === 'attachment' &&
-          result.message.attachment.type === 'hook_cancelled'
+          result.message.attachment!.type === 'hook_cancelled'
         ) {
           logEvent('tengu_post_tool_hooks_cancelled', {
             toolName: sanitizeToolNameForAnalytics(tool.name),
@@ -97,7 +97,7 @@ export async function* runPostToolUseHooks<Input extends AnyObject, Output>(
           result.message &&
           !(
             result.message.type === 'attachment' &&
-            result.message.attachment.type === 'hook_blocking_error'
+            result.message.attachment!.type === 'hook_blocking_error'
           )
         ) {
           yield { message: result.message }
@@ -224,7 +224,7 @@ export async function* runPostToolUseFailureHooks<Input extends AnyObject>(
         // Check if we were aborted during hook execution
         if (
           result.message?.type === 'attachment' &&
-          result.message.attachment.type === 'hook_cancelled'
+          result.message.attachment!.type === 'hook_cancelled'
         ) {
           logEvent('tengu_post_tool_failure_hooks_cancelled', {
             toolName: sanitizeToolNameForAnalytics(tool.name),
@@ -249,10 +249,10 @@ export async function* runPostToolUseFailureHooks<Input extends AnyObject>(
           result.message &&
           !(
             result.message.type === 'attachment' &&
-            result.message.attachment.type === 'hook_blocking_error'
+            result.message.attachment!.type === 'hook_blocking_error'
           )
         ) {
-          yield { message: result.message }
+          yield { message: result.message as AttachmentMessage | ProgressMessage<HookProgress> }
         }
 
         if (result.blockingError) {
@@ -477,7 +477,7 @@ export async function* runPreToolUseHooks(
     )) {
       try {
         if (result.message) {
-          yield { type: 'message', message: { message: result.message } }
+          yield { type: 'message', message: { message: result.message as AttachmentMessage | ProgressMessage<HookProgress> } }
         }
         if (result.blockingError) {
           const denialMessage = getPreToolHookBlockingMessage(

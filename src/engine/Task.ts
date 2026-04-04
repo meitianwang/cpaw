@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomBytes } from 'crypto'
 import type { AppState } from './state/AppState.js'
 import type { AgentId } from './types/ids.js'
@@ -19,6 +18,7 @@ export type TaskStatus =
   | 'completed'
   | 'failed'
   | 'killed'
+  | 'cancelled'
 
 /**
  * True when a task is in a terminal state and will not transition further.

@@ -1,2 +1,4 @@
-// @ts-nocheck
-export const BridgePermissionCallbacks = undefined
+export interface BridgePermissionCallbacks {
+  askPermission?: (...args: unknown[]) => Promise<unknown>
+  [key: string]: unknown
+}

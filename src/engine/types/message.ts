@@ -1,10 +1,10 @@
-// @ts-nocheck
 /**
  * Message types for the engine — reconstructed from claude-code's build-time generated types.
  * These mirror the exact shapes used by query.ts, utils/messages.ts, and the tool execution pipeline.
  */
 
-import type { UUID } from 'crypto'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- shadows crypto.UUID with relaxed alias
+type UUID = string
 import type {
   ContentBlockParam,
   ToolResultBlockParam,
@@ -12,9 +12,15 @@ import type {
 import type {
   BetaContentBlock,
   BetaMessage,
+  BetaRawMessageStreamEvent,
   BetaUsage as Usage,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { PermissionMode } from './permissions.js'
+import type {
+  BranchAction,
+  CommitKind,
+  PrAction,
+} from '../tools/shared/gitOperationTracking.js'
 
 // Re-export Usage for convenience
 export type { Usage }
@@ -32,13 +38,14 @@ interface BaseMessage {
 // User Message
 // ============================================================================
 
-export type PartialCompactDirection = 'forward' | 'backward'
+export type PartialCompactDirection = 'forward' | 'backward' | 'from' | 'up_to'
 
 export type MessageOrigin =
   | { kind: 'human' }
   | { kind: 'channel'; server: string }
   | { kind: 'coordinator' }
   | { kind: 'cron' }
+  | { kind: 'task-notification' }
 
 export interface UserMessage extends BaseMessage {
   type: 'user'
@@ -62,8 +69,10 @@ export interface UserMessage extends BaseMessage {
   }
   imagePasteIds?: number[]
   sourceToolAssistantUUID?: UUID
+  sourceToolUseID?: string
   permissionMode?: PermissionMode
   origin?: MessageOrigin
+  planContent?: unknown
 }
 
 // ============================================================================
@@ -89,20 +98,64 @@ export interface AssistantMessage extends BaseMessage {
   errorDetails?: string
   isApiErrorMessage?: boolean
   isVirtual?: true
+  isMeta?: true
+  advisorModel?: string
+  research?: unknown
 }
 
-// Normalized versions for API consumption
-export interface NormalizedUserMessage {
-  role: 'user'
-  content: ContentBlockParam[]
+// Normalized versions — these carry full message fields plus array-only content.
+// normalizeMessages() preserves all original fields but ensures content is always an array.
+export interface NormalizedUserMessage extends BaseMessage {
+  type: 'user'
+  message: {
+    role: 'user'
+    content: ContentBlockParam[]
+  }
+  isMeta?: true
+  isVisibleInTranscriptOnly?: true
+  isVirtual?: true
+  isCompactSummary?: true
+  summarizeMetadata?: UserMessage['summarizeMetadata']
+  toolUseResult?: unknown
+  mcpMeta?: UserMessage['mcpMeta']
+  imagePasteIds?: number[]
+  sourceToolAssistantUUID?: UUID
+  sourceToolUseID?: string
+  permissionMode?: PermissionMode
+  origin?: MessageOrigin
 }
 
-export interface NormalizedAssistantMessage {
-  role: 'assistant'
-  content: BetaContentBlock[]
+export interface NormalizedAssistantMessage<
+  C extends BetaContentBlock = BetaContentBlock,
+> extends BaseMessage {
+  type: 'assistant'
+  message: Omit<BetaMessage, 'content'> & { content: C[] }
+  requestId?: string
+  apiError?: string
+  error?: SDKAssistantMessageError
+  errorDetails?: string
+  isApiErrorMessage?: boolean
+  isVirtual?: true
+  isMeta?: true
+  advisorModel?: string
+  research?: unknown
+  // The following fields exist on NormalizedUserMessage but may appear here
+  // when code uses NormalizedMessage union without proper narrowing.
+  isVisibleInTranscriptOnly?: true
+  isCompactSummary?: true
+  mcpMeta?: UserMessage['mcpMeta']
+  toolUseResult?: unknown
 }
 
-export type NormalizedMessage = NormalizedUserMessage | NormalizedAssistantMessage
+// NormalizedMessage is the full union used after normalizeMessages().
+// normalizeMessages() passes through progress, attachment, and system messages unchanged,
+// so consumers of NormalizedMessage[] need to handle all these types.
+export type NormalizedMessage =
+  | NormalizedUserMessage
+  | NormalizedAssistantMessage
+  | ProgressMessage
+  | AttachmentMessage
+  | SystemMessage
 
 // ============================================================================
 // Progress Message
@@ -122,20 +175,22 @@ export interface ProgressMessage<P = unknown> extends BaseMessage {
 // Re-export the full Attachment union from attachments.ts
 export type { Attachment } from '../utils/attachments.js'
 
-export interface AttachmentMessage extends BaseMessage {
+export interface AttachmentMessage<
+  A extends import('../utils/attachments.js').Attachment = import('../utils/attachments.js').Attachment,
+> extends BaseMessage {
   type: 'attachment'
-  attachment: import('../utils/attachments.js').Attachment
+  attachment: A
 }
 
 // ============================================================================
 // System Messages
 // ============================================================================
 
-export type SystemMessageLevel = 'info' | 'warning' | 'error'
+export type SystemMessageLevel = 'info' | 'warning' | 'error' | 'suggestion'
 
 interface SystemMessageBase extends BaseMessage {
   type: 'system'
-  isMeta: boolean
+  isMeta?: boolean
 }
 
 export interface StopHookInfo {
@@ -154,7 +209,9 @@ export interface SystemInformationalMessage extends SystemMessageBase {
 
 export interface SystemAPIErrorMessage extends SystemMessageBase {
   subtype: 'api_error'
-  error: string
+  error: string | import('@anthropic-ai/sdk').APIError
+  level?: SystemMessageLevel
+  cause?: Error
   retryInMs: number
   retryAttempt: number
   maxRetries: number
@@ -170,6 +227,8 @@ export interface SystemBridgeStatusMessage extends SystemMessageBase {
 export interface SystemMemorySavedMessage extends SystemMessageBase {
   subtype: 'memory_saved'
   writtenPaths: string[]
+  teamCount?: number
+  verb?: string
 }
 
 export interface SystemStopHookSummaryMessage extends SystemMessageBase {
@@ -201,21 +260,32 @@ export interface SystemLocalCommandMessage extends SystemMessageBase {
   level: SystemMessageLevel
 }
 
+export interface CompactMetadata {
+  trigger: 'manual' | 'auto'
+  preTokens: number
+  userContext?: string
+  messagesSummarized?: number
+  preCompactDiscoveredTools?: string[]
+  preservedSegment?: {
+    headUuid?: UUID
+    anchorUuid?: UUID
+    tailUuid: UUID
+    [key: string]: unknown
+  }
+}
+
 export interface SystemCompactBoundaryMessage extends SystemMessageBase {
   subtype: 'compact_boundary'
   content: string
   level: SystemMessageLevel
-  compactMetadata: {
-    trigger: 'manual' | 'auto'
-    preTokens: number
-    userContext?: string
-    messagesSummarized?: number
-  }
+  compactMetadata: CompactMetadata
   logicalParentUuid?: UUID
 }
 
 export interface SystemMicrocompactBoundaryMessage extends SystemMessageBase {
   subtype: 'microcompact_boundary'
+  content?: string
+  level?: SystemMessageLevel
   microcompactMetadata: {
     trigger: 'auto'
     preTokens: number
@@ -266,6 +336,17 @@ export interface SystemThinkingMessage extends SystemMessageBase {
   content: string
 }
 
+export interface SystemFileSnapshotMessage extends SystemMessageBase {
+  subtype: 'file_snapshot'
+  content: string
+  level: SystemMessageLevel
+  snapshotFiles: Array<{
+    key: string
+    path: string
+    content: string
+  }>
+}
+
 export type SystemMessage =
   | SystemInformationalMessage
   | SystemAPIErrorMessage
@@ -282,6 +363,7 @@ export type SystemMessage =
   | SystemAgentsKilledMessage
   | SystemApiMetricsMessage
   | SystemThinkingMessage
+  | SystemFileSnapshotMessage
 
 // ============================================================================
 // Tombstone & Summary Messages
@@ -306,6 +388,9 @@ export interface HookResultMessage extends BaseMessage {
   type: 'hook_result'
   hookName: string
   content: string
+  toolUseID?: string
+  data?: unknown
+  attachment?: import('../utils/attachments.js').Attachment
 }
 
 // ============================================================================
@@ -315,11 +400,45 @@ export interface HookResultMessage extends BaseMessage {
 export interface GroupedToolUseMessage {
   type: 'grouped_tool_use'
   messages: AssistantMessage[]
+  toolName?: string
+  displayMessage?: RenderableMessage
+  input?: unknown
+  results?: unknown[]
+  uuid?: UUID
+  timestamp?: string | number
 }
 
 export interface CollapsedReadSearchGroup {
-  type: 'collapsed_read_search_group'
+  type: 'collapsed_read_search' | 'collapsed_read_search_group'
   messages: AssistantMessage[]
+  displayMessage?: RenderableMessage
+  uuid?: UUID
+  timestamp?: number
+  searchCount: number
+  readCount: number
+  listCount: number
+  replCount: number
+  memorySearchCount: number
+  memoryReadCount: number
+  memoryWriteCount: number
+  readFilePaths: string[]
+  searchArgs: string[]
+  latestDisplayHint?: string
+  teamMemorySearchCount?: number
+  teamMemoryReadCount?: number
+  teamMemoryWriteCount?: number
+  mcpCallCount?: number
+  mcpServerNames?: string[]
+  bashCount?: number
+  gitOpBashCount?: number
+  commits?: { sha: string; kind: CommitKind }[]
+  pushes?: { branch: string }[]
+  branches?: { ref: string; action: BranchAction }[]
+  prs?: { number: number; url?: string; action: PrAction }[]
+  hookTotalMs?: number
+  hookCount?: number
+  hookInfos?: StopHookInfo[]
+  relevantMemories?: { path: string; content: string; mtimeMs: number }[]
 }
 
 // ============================================================================
@@ -343,7 +462,9 @@ export type Message =
   | AttachmentMessage
   | SystemMessage
   | HookResultMessage
-  | QueueOperationMessage
+
+/** Extended message type including hook results for contexts that handle all message types. */
+export type AnyMessage = Message | HookResultMessage
 
 export type RenderableMessage =
   | Message
@@ -351,15 +472,18 @@ export type RenderableMessage =
   | ToolUseSummaryMessage
   | GroupedToolUseMessage
   | CollapsedReadSearchGroup
+  | QueueOperationMessage
 
 // ============================================================================
 // Stream Events
 // ============================================================================
 
 export interface StreamEvent {
-  type: 'stream_request_start'
+  type: 'stream_event'
+  event: BetaRawMessageStreamEvent
+  ttftMs?: number
 }
 
 export interface RequestStartEvent {
-  type: 'request_start'
+  type: 'stream_request_start'
 }

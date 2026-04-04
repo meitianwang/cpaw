@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Core plugin operations (install, uninstall, enable, disable, update)
  *

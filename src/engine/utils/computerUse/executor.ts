@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CLI `ComputerExecutor` implementation. Wraps two native modules:
  *   - `@ant/computer-use-input` (Rust/enigo) — mouse, keyboard, frontmost app
@@ -65,7 +64,8 @@ function computeTargetDims(
 ): [number, number] {
   const physW = Math.round(logicalW * scaleFactor)
   const physH = Math.round(logicalH * scaleFactor)
-  return targetImageSize(physW, physH, API_RESIZE_PARAMS)
+  const result = targetImageSize(physW, physH, API_RESIZE_PARAMS)
+  return [result.width, result.height] as [number, number]
 }
 
 async function readClipboardViaPbpaste(): Promise<string> {

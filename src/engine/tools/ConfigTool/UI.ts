@@ -1,4 +1,3 @@
-// @ts-nocheck
-export function renderToolResultMessage() { return null }
-export function renderToolUseMessage() { return null }
-export function renderToolUseRejectedMessage() { return null }
+export function renderToolResultMessage(..._args: any[]) { return null }
+export function renderToolUseMessage(..._args: any[]) { return null }
+export function renderToolUseRejectedMessage(..._args: any[]) { return null }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import { createPatch } from 'diff'
@@ -458,7 +457,7 @@ export async function checkResponseForCacheBreak(
 
     // Calculate time since last call for TTL detection by finding the most recent
     // assistant message timestamp in the messages array (before the current response)
-    const lastAssistantMessage = messages.findLast(m => m.type === 'assistant')
+    const lastAssistantMessage = messages.findLast((m: Message) => m.type === 'assistant')
     const timeSinceLastAssistantMsg = lastAssistantMessage
       ? Date.now() - new Date(lastAssistantMessage.timestamp).getTime()
       : null

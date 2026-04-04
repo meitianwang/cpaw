@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Shim for color-diff-napi (unavailable native module).
  */

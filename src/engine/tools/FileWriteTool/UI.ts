@@ -1,8 +1,7 @@
-// @ts-nocheck
-export function getToolUseSummary() { return null }
-export function renderToolResultMessage() { return null }
-export function renderToolUseErrorMessage() { return null }
-export function renderToolUseMessage() { return null }
-export function renderToolUseRejectedMessage() { return null }
-export function isResultTruncated() { return false }
+export function getToolUseSummary(..._args: any[]) { return null }
+export function renderToolResultMessage(..._args: any[]) { return null }
+export function renderToolUseErrorMessage(..._args: any[]) { return null }
+export function renderToolUseMessage(..._args: any[]) { return null }
+export function renderToolUseRejectedMessage(..._args: any[]) { return null }
+export function isResultTruncated(..._args: any[]) { return false }
 export const userFacingName = undefined

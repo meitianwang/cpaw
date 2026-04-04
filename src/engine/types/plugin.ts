@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { LspServerConfig } from '../services/lsp/types.js'
 import type { McpServerConfig } from '../services/mcp/types.js'
 import type { BundledSkillDefinition } from '../skills/bundledSkills.js'

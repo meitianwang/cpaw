@@ -1,5 +1,5 @@
-// @ts-nocheck
-import { randomBytes, type UUID } from 'crypto'
+import { randomBytes } from 'crypto'
+type UUID = string
 import type { AgentId } from '../types/ids.js'
 
 const uuidRegex =

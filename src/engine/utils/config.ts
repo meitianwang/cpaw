@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import { randomBytes } from 'crypto'
 import { unwatchFile, watchFile } from 'fs'
@@ -1169,7 +1169,7 @@ function saveConfigWithLock<A extends object>(
     const startTime = Date.now()
     release = lockfile.lockSync(file, {
       lockfilePath: lockFilePath,
-      onCompromised: err => {
+      onCompromised: (err: Error) => {
         // Default onCompromised throws from a setTimeout callback, which
         // becomes an unhandled exception. Log instead -- the lock being
         // stolen (e.g. after a 10s event-loop stall) is recoverable.

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomUUID } from 'crypto'
 import { rm } from 'fs'
 import { appendFile, copyFile, mkdir } from 'fs/promises'
@@ -891,7 +890,7 @@ export async function handleSpeculationAccept(
     // regenerate this content in the follow-up query.
     if (!isComplete) {
       const lastNonAssistant = cleanMessages.findLastIndex(
-        m => m.type !== 'assistant',
+        (m: Message) => m.type !== 'assistant',
       )
       cleanMessages = cleanMessages.slice(0, lastNonAssistant + 1)
     }

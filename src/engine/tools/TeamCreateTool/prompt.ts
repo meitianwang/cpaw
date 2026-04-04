@@ -1,4 +1,3 @@
-// @ts-nocheck
 export function getPrompt(): string {
   return `
 # TeamCreate

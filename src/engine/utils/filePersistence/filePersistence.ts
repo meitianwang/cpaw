@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * File persistence orchestrator
  *
@@ -220,7 +219,7 @@ async function executeBYOCPersistence(
     if (result.success) {
       persistedFiles.push({
         filename: result.path,
-        file_id: result.fileId,
+        fileId: result.fileId,
       })
     } else {
       failedFiles.push({

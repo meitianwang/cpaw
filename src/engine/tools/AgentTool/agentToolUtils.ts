@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import { z } from 'zod/v4'
 import { clearInvokedSkillsForAgent } from '../../bootstrap/state.js'
@@ -363,7 +362,7 @@ export function finalizeAgentTool(
  */
 export function getLastToolUseName(message: MessageType): string | undefined {
   if (message.type !== 'assistant') return undefined
-  const block = message.message.content.findLast(b => b.type === 'tool_use')
+  const block = message.message.content.findLast((b: any) => b.type === 'tool_use')
   return block?.type === 'tool_use' ? block.name : undefined
 }
 

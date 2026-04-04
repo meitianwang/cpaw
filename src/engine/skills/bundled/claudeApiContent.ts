@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Content for the claude-api bundled skill.
 // Each .md file is inlined as a string at build time via Bun's text loader.
 

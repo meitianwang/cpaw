@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type {
   McpbManifest,
   McpbUserConfigurationOption,
@@ -392,12 +391,12 @@ export function validateUserConfig(
 
     // Number range validation
     if (fieldSchema.type === 'number' && typeof value === 'number') {
-      if (fieldSchema.min !== undefined && value < fieldSchema.min) {
+      if (fieldSchema.min != null && value < fieldSchema.min) {
         errors.push(
           `${fieldSchema.title || key} must be at least ${fieldSchema.min}`,
         )
       }
-      if (fieldSchema.max !== undefined && value > fieldSchema.max) {
+      if (fieldSchema.max != null && value > fieldSchema.max) {
         errors.push(
           `${fieldSchema.title || key} must be at most ${fieldSchema.max}`,
         )

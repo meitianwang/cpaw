@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Base64ImageSource } from '@anthropic-ai/sdk/resources/index.mjs'
 import { readdir, readFile as readFileAsync } from 'fs/promises'
 import * as path from 'path'
@@ -1157,9 +1156,9 @@ export async function readImageWithTokenBudget(
       // Fallback: heavily compressed version from the SAME buffer
       try {
         const sharpModule = await import('sharp')
-        const sharp =
+        const sharp: any =
           (
-            sharpModule as {
+            sharpModule as unknown as {
               default?: typeof sharpModule
             } & typeof sharpModule
           ).default || sharpModule

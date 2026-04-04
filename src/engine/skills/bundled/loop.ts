@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   CRON_CREATE_TOOL_NAME,
   CRON_DELETE_TOOL_NAME,

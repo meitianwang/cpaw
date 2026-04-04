@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * MDM (Mobile Device Management) profile enforcement for Claude Code managed settings.
  *

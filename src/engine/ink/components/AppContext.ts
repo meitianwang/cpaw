@@ -1,1 +1,4 @@
-// @ts-nocheck
+// Stub: AppContext — Klaus does not use Ink terminal UI
+export interface Props {
+  [key: string]: unknown
+}

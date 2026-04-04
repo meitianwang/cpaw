@@ -1,6 +1,7 @@
 // Stub: secure storage types for external builds
 
-export type SecureStorageData = Record<string, string | undefined>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SecureStorageData = Record<string, any>
 
 export interface SecureStorage {
   name: string

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Stub: internal-only snip projection module.
  * Guarded by feature('HISTORY_SNIP') at all import sites.

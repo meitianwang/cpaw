@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Type declaration for bun:bundle module.
  *

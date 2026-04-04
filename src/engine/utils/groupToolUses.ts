@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { BetaToolUseBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages/messages.mjs'
 import type { Tools } from '../Tool.js'
@@ -153,7 +152,6 @@ export function applyGrouping(
             displayMessage: firstMsg,
             uuid: `grouped-${firstMsg.uuid}`,
             timestamp: firstMsg.timestamp,
-            messageId: info.messageId,
           }
           result.push(groupedMessage)
         }
@@ -164,10 +162,10 @@ export function applyGrouping(
     // Skip user messages whose tool_results are all grouped
     if (msg.type === 'user') {
       const toolResults = msg.message.content.filter(
-        (c): c is ToolResultBlockParam => c.type === 'tool_result',
+        (c: any): c is ToolResultBlockParam => c.type === 'tool_result',
       )
       if (toolResults.length > 0) {
-        const allGrouped = toolResults.every(tr =>
+        const allGrouped = toolResults.every((tr: ToolResultBlockParam) =>
           groupedToolUseIds.has(tr.tool_use_id),
         )
         if (allGrouped) {

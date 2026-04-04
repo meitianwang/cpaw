@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createElement, type ReactNode } from 'react'
 import { ThemeProvider } from './components/design-system/ThemeProvider.js'
 import inkRender, {
@@ -27,7 +26,7 @@ export async function createRoot(options?: RenderOptions): Promise<Root> {
   const root = await inkCreateRoot(options)
   return {
     ...root,
-    render: node => root.render(withTheme(node)),
+    render: (node: any) => root.render(withTheme(node)),
   }
 }
 

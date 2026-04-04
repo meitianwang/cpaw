@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type Anthropic from '@anthropic-ai/sdk'
 import type {
   BetaTool,

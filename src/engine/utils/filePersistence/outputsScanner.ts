@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Outputs directory scanner for file persistence
  *
@@ -65,12 +64,12 @@ export async function findModifiedFiles(
   outputsDir: string,
 ): Promise<string[]> {
   // Use recursive flag to get all entries in one call
-  let entries: Awaited<ReturnType<typeof fs.readdir>>
+  let entries: any
   try {
     entries = await fs.readdir(outputsDir, {
       withFileTypes: true,
       recursive: true,
-    })
+    }) as any
   } catch {
     // Directory doesn't exist or is not accessible
     return []

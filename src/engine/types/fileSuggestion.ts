@@ -1,2 +1,3 @@
-// @ts-nocheck
-export const FileSuggestionCommandInput = undefined
+export interface FileSuggestionCommandInput {
+  [key: string]: unknown
+}

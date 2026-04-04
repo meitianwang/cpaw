@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 // Voice service: audio recording for push-to-talk voice input.
 //
 // Recording uses native audio capture (cpal) on macOS, Linux, and Windows
@@ -352,7 +352,7 @@ export async function startRecording(
       napi.stopNativeRecording()
       nativeRecordingActive = false
     }
-    const started = napi.startNativeRecording(
+    const started = await napi.startNativeRecording(
       (data: Buffer) => {
         onData(data)
       },

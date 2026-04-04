@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { saveGlobalConfig } from '../utils/config.js'
 
 /**

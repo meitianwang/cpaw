@@ -1,4 +1,3 @@
-// @ts-nocheck
 // CCR session polling for /ultraplan. Waits for an approved ExitPlanMode
 // tool_result, then extracts the plan text. Uses pollRemoteSessionEvents
 // (shared with RemoteAgentTask) for pagination + typed SDKMessage[].
@@ -95,14 +94,14 @@ export class ExitPlanModeScanner {
    * the remote is showing the approval dialog in the browser.
    */
   get hasPendingPlan(): boolean {
-    const id = this.exitPlanCalls.findLast(c => !this.rejectedIds.has(c))
+    const id = this.exitPlanCalls.findLast((c: string) => !this.rejectedIds.has(c))
     return id !== undefined && !this.results.has(id)
   }
 
   ingest(newEvents: SDKMessage[]): ScanResult {
     for (const m of newEvents) {
       if (m.type === 'assistant') {
-        for (const block of m.message.content) {
+        for (const block of (m.message as any).content) {
           if (block.type !== 'tool_use') continue
           const tu = block as ToolUseBlock
           if (tu.name === EXIT_PLAN_MODE_V2_TOOL_NAME) {
@@ -110,7 +109,7 @@ export class ExitPlanModeScanner {
           }
         }
       } else if (m.type === 'user') {
-        const content = m.message.content
+        const content = (m.message as any).content
         if (!Array.isArray(content)) continue
         for (const block of content) {
           if (block.type === 'tool_result') {
@@ -222,8 +221,8 @@ export async function pollForApprovedExitPlanMode(
       // Metadata fetch (session_status) is the needs_input signal —
       // threadstore doesn't persist result(success) turn-end events, so
       // idle status is the only authoritative "remote is waiting" marker.
-      const resp = await pollRemoteSessionEvents(sessionId, cursor)
-      newEvents = resp.newEvents
+      const resp = await pollRemoteSessionEvents(sessionId, cursor ?? undefined)
+      newEvents = resp.newEvents as SDKMessage[]
       cursor = resp.lastEventId
       sessionStatus = resp.sessionStatus
       failures = 0

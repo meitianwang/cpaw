@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import chalk from 'chalk'
 import {
@@ -336,8 +335,8 @@ const customPricing = new Map()
  * calculateUSDCost uses its own hardcoded pricing table.
  */
 export function setModelPricing(
-  model,
-  pricing,
+  model: string,
+  pricing: { input: number; output: number; cacheRead?: number; cacheWrite?: number },
 ) {
   customPricing.set(model, {
     input: pricing.input,

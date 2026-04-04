@@ -25,6 +25,21 @@ export interface OAuthProfileResponse {
   id: string
   email: string
   name?: string
+  account?: {
+    uuid: string
+    email: string
+    display_name?: string
+    created_at?: string
+  }
+  organization?: {
+    uuid: string
+    name?: string
+    organization_type?: string
+    rate_limit_tier?: RateLimitTier | null
+    has_extra_usage_enabled?: boolean
+    billing_type?: BillingType | null
+    subscription_created_at?: string
+  }
 }
 
 export interface OAuthTokenExchangeResponse {
@@ -51,4 +66,24 @@ export interface OAuthTokenExchangeResponse {
 export interface ReferralEligibilityResponse {
   isEligible: boolean
   referralCode?: string
+  eligible?: boolean
+  referrer_reward?: unknown
+  remaining_passes?: number
+}
+
+export type ReferralCampaign = 'claude_code_guest_pass' | string
+
+export interface ReferralRedemptionsResponse {
+  redemptions: unknown[]
+  total?: number
+}
+
+export interface ReferrerRewardInfo {
+  currency: string
+  amount_minor_units: number
+}
+
+export interface UserRolesResponse {
+  roles?: string[]
+  [key: string]: unknown
 }

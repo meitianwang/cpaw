@@ -1,6 +1,6 @@
-// @ts-nocheck
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import { randomUUID, type UUID } from 'crypto'
+import { randomUUID } from 'crypto'
+type UUID = string
 import { getSessionId } from '../../bootstrap/state.js'
 import {
   LOCAL_COMMAND_STDERR_TAG,
@@ -85,8 +85,8 @@ export function toSDKCompactMetadata(
     pre_tokens: meta.preTokens,
     ...(seg && {
       preserved_segment: {
-        head_uuid: seg.headUuid,
-        anchor_uuid: seg.anchorUuid,
+        head_uuid: seg.headUuid ?? '',
+        anchor_uuid: seg.anchorUuid ?? '',
         tail_uuid: seg.tailUuid,
       },
     }),

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Session Tracing for Claude Code using OpenTelemetry (BETA)
  *
@@ -387,7 +386,7 @@ export function endLLMRequestSpan(
     // Legacy fallback: find the most recent llm_request span
     // WARNING: This can cause mismatched responses when multiple requests are in flight
     llmSpanContext = Array.from(activeSpans.values())
-      .findLast(r => {
+      .findLast((r: WeakRef<any>) => {
         const ctx = r.deref()
         return (
           ctx?.attributes['span.type'] === 'llm_request' ||
@@ -581,7 +580,7 @@ export function endToolBlockedOnUserSpan(
 ): void {
   const blockedSpanContext = Array.from(activeSpans.values())
     .findLast(
-      r => r.deref()?.attributes['span.type'] === 'tool.blocked_on_user',
+      (r: WeakRef<any>) => r.deref()?.attributes['span.type'] === 'tool.blocked_on_user',
     )
     ?.deref()
 
@@ -664,7 +663,7 @@ export function endToolExecutionSpan(metadata?: {
   }
 
   const executionSpanContext = Array.from(activeSpans.values())
-    .findLast(r => r.deref()?.attributes['span.type'] === 'tool.execution')
+    .findLast((r: WeakRef<any>) => r.deref()?.attributes['span.type'] === 'tool.execution')
     ?.deref()
 
   if (!executionSpanContext) {

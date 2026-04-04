@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { DiagLogLevel, diag, trace } from '@opentelemetry/api'
 import { logs } from '@opentelemetry/api-logs'
 // OTLP/Prometheus exporters are dynamically imported inside the protocol

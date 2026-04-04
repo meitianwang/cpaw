@@ -1,4 +1,3 @@
-// @ts-nocheck
 import axios from 'axios'
 import { getOauthConfig, OAUTH_BETA_HEADER } from '../../constants/oauth.js'
 import type { OAuthProfileResponse } from './types.js'

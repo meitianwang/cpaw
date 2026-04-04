@@ -1,5 +1,5 @@
-// @ts-nocheck
-import { randomUUID, type UUID } from 'crypto'
+import { randomUUID } from 'crypto'
+type UUID = string
 import { validateUuid } from './uuid.js'
 
 export type ParsedSessionUrl = {

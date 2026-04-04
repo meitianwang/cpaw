@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Adapter: wraps Klaus legacy AgentTool (execute()) as an engine Tool (call()).
  * This allows legacy tools (memory, skills, moonshot, capabilities) to work
@@ -41,14 +40,14 @@ export function wrapLegacyTool(legacyTool: LegacyAgentTool) {
     maxResultSizeChars: 100_000,
 
     inputSchema,
-    inputJSONSchema: legacyTool.parameters,
+    inputJSONSchema: legacyTool.parameters as import('../Tool.js').ToolInputJSONSchema | undefined,
 
     async call(
-      args,
-      context,
-      _canUseTool,
-      _parentMessage,
-      _onProgress,
+      args: any,
+      context: any,
+      _canUseTool: any,
+      _parentMessage: any,
+      _onProgress: any,
     ) {
       const result = await legacyTool.execute(
         `legacy-${Date.now()}`,
@@ -84,18 +83,18 @@ export function wrapLegacyTool(legacyTool: LegacyAgentTool) {
     userFacingName: () => legacyTool.label || legacyTool.name,
     toAutoClassifierInput: () => '',
 
-    async checkPermissions(input) {
+    async checkPermissions(input: any) {
       return { behavior: 'allow', updatedInput: input }
     },
 
-    mapToolResultToToolResultBlockParam(content, toolUseID) {
+    mapToolResultToToolResultBlockParam(content: any, toolUseID: any) {
       return {
         type: 'tool_result',
         tool_use_id: toolUseID,
         content: content,
       }
     },
-  })
+  } as any)
 }
 
 /**

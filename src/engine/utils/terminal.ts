@@ -1,4 +1,3 @@
-// @ts-nocheck
 import chalk from 'chalk'
 import { ctrlOToExpand } from '../components/CtrlOToExpand.js'
 import { stringWidth } from '../ink/stringWidth.js'
@@ -105,7 +104,7 @@ export function renderTruncatedContent(
     aboveTheFold,
     estimatedRemaining > 0
       ? chalk.dim(
-          `… +${estimatedRemaining} lines${suppressExpandHint ? '' : ` ${ctrlOToExpand()}`}`,
+          `… +${estimatedRemaining} lines${suppressExpandHint ? '' : ` ${(ctrlOToExpand as (() => string) | undefined)?.() ?? ''}`}`,
         )
       : '',
   ]

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { roughTokenCountEstimationForMessages } from '../services/tokenEstimation.js'
 import type { AssistantMessage, Message } from '../types/message.js'
@@ -162,7 +161,7 @@ export function doesMostRecentAssistantMessageExceed200k(
 ): boolean {
   const THRESHOLD = 200_000
 
-  const lastAsst = messages.findLast(m => m.type === 'assistant')
+  const lastAsst = messages.findLast((m: Message) => m.type === 'assistant')
   if (!lastAsst) return false
   const usage = getTokenUsage(lastAsst)
   return usage ? getTokenCountFromUsage(usage) > THRESHOLD : false

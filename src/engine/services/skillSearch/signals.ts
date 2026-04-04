@@ -1,2 +1,5 @@
-// @ts-nocheck
-export const DiscoverySignal = undefined
+export interface DiscoverySignal {
+  query?: string
+  source?: string
+  [key: string]: unknown
+}

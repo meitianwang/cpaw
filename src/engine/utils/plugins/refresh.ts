@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Layer-3 refresh primitive: swap active plugin components in the running session.
  *

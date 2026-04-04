@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { TaskStateBase } from '../../Task.js'
 import type { AgentToolResult } from '../../tools/AgentTool/agentToolUtils.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'

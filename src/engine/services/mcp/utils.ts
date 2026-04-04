@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createHash } from 'crypto'
 import { join } from 'path'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'

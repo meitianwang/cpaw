@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { PluginError } from '../../types/plugin.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { errorMessage, toError } from '../../utils/errors.js'

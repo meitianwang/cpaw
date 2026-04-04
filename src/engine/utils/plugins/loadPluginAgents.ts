@@ -1,4 +1,3 @@
-// @ts-nocheck
 import memoize from 'lodash-es/memoize.js'
 import { basename } from 'path'
 import { isAutoMemoryEnabled } from '../../memdir/paths.js'

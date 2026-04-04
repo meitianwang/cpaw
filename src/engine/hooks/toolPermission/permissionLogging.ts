@@ -1,3 +1,2 @@
-// @ts-nocheck
-export function buildCodeEditToolAttributes() { return undefined }
-export function isCodeEditingTool() { return false }
+export function buildCodeEditToolAttributes(..._args: any[]) { return undefined }
+export function isCodeEditingTool(..._args: any[]) { return false }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Adapter layer that wraps @anthropic-ai/sandbox-runtime with Claude CLI-specific integrations.
  * This file provides the bridge between the external sandbox-runtime package and Claude CLI's
@@ -744,7 +743,7 @@ async function initialize(
   // Wrap the callback to enforce allowManagedDomainsOnly policy.
   // This ensures all code paths (REPL, print/SDK) are covered.
   const wrappedCallback: SandboxAskCallback | undefined = sandboxAskCallback
-    ? async (hostPattern: NetworkHostPattern) => {
+    ? (async (hostPattern: NetworkHostPattern) => {
         if (shouldAllowManagedSandboxDomainsOnly()) {
           logForDebugging(
             `[sandbox] Blocked network request to ${hostPattern.host} (allowManagedDomainsOnly)`,
@@ -752,7 +751,7 @@ async function initialize(
           return false
         }
         return sandboxAskCallback(hostPattern)
-      }
+      }) as SandboxAskCallback
     : undefined
 
   // Create the initialization promise synchronously (before any await) to prevent

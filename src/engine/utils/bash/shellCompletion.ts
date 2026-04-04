@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { SuggestionItem } from '../../components/PromptInput/PromptInputFooterSuggestions.js'
 import {
   type ParseEntry,
@@ -56,7 +55,7 @@ function getCompletionTypeFromPrefix(prefix: string): ShellCompletionType {
 function findLastStringToken(
   tokens: ParseEntry[],
 ): { token: string; index: number } | null {
-  const i = tokens.findLastIndex(t => typeof t === 'string')
+  const i = tokens.findLastIndex((t: ParseEntry) => typeof t === 'string')
   return i !== -1 ? { token: tokens[i] as string, index: i } : null
 }
 

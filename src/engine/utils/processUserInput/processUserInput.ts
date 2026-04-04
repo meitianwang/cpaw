@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type {
   Base64ImageSource,
@@ -242,22 +241,23 @@ export async function processUserInput({
 
     // TODO: Clean this up
     if (hookResult.message) {
-      switch (hookResult.message.attachment.type) {
+      const hookMsg = hookResult.message as import('../../types/message.js').AttachmentMessage
+      switch (hookMsg.attachment!.type) {
         case 'hook_success':
-          if (!hookResult.message.attachment.content) {
+          if (!(hookMsg.attachment as any)!.content) {
             // Skip if there is no content
             break
           }
           result.messages.push({
-            ...hookResult.message,
+            ...hookMsg,
             attachment: {
-              ...hookResult.message.attachment,
-              content: applyTruncation(hookResult.message.attachment.content),
+              ...hookMsg.attachment,
+              content: applyTruncation((hookMsg.attachment as any).content),
             },
-          })
+          } as any)
           break
         default:
-          result.messages.push(hookResult.message)
+          result.messages.push(hookMsg as any)
           break
       }
     }
@@ -591,9 +591,12 @@ async function processUserInputBase(
 
 // Adds image metadata texts as isMeta message to result
 function addImageMetadataMessage(
-  result: ProcessUserInputBaseResult,
+  result: ProcessUserInputBaseResult | undefined,
   imageMetadataTexts: string[],
 ): ProcessUserInputBaseResult {
+  if (!result) {
+    return { messages: [], shouldQuery: false }
+  }
   if (imageMetadataTexts.length > 0) {
     result.messages.push(
       createUserMessage({

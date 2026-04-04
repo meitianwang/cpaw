@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Universal empty module shim for unavailable internal packages.
  * Uses a Proxy to accept any named import without throwing.

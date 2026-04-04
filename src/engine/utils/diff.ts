@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { type StructuredPatchHunk, structuredPatch } from 'diff'
 import { logEvent } from '../services/analytics/index.js'
 import { getLocCounter } from '../bootstrap/state.js'

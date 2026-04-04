@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type {
   SDKAssistantMessage,
   SDKCompactBoundaryMessage,
@@ -32,8 +31,8 @@ import { createUserMessage } from '../utils/messages.js'
 function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
   return {
     type: 'assistant',
-    message: msg.message,
-    uuid: msg.uuid,
+    message: msg.message as AssistantMessage['message'],
+    uuid: msg.uuid as AssistantMessage['uuid'],
     requestId: undefined,
     timestamp: new Date().toISOString(),
     error: msg.error,
@@ -46,7 +45,7 @@ function convertAssistantMessage(msg: SDKAssistantMessage): AssistantMessage {
 function convertStreamEvent(msg: SDKPartialAssistantMessage): StreamEvent {
   return {
     type: 'stream_event',
-    event: msg.event,
+    event: msg.event as import('@anthropic-ai/sdk/resources/beta/messages/messages.mjs').BetaRawMessageStreamEvent,
   }
 }
 
@@ -175,14 +174,14 @@ export function convertSDKMessage(
       return { type: 'message', message: convertAssistantMessage(msg) }
 
     case 'user': {
-      const content = msg.message?.content
+      const content = (msg.message as { content?: import('@anthropic-ai/sdk/resources/messages.mjs').ContentBlockParam[] })?.content
       // Tool result messages from the remote server need to be converted so
       // they render and collapse like local tool results. Detect via content
       // shape (tool_result blocks) — parent_tool_use_id is NOT reliable: the
       // agent-side normalizeMessage() hardcodes it to null for top-level
       // tool results, so it can't distinguish tool results from prompt echoes.
       const isToolResult =
-        Array.isArray(content) && content.some(b => b.type === 'tool_result')
+        Array.isArray(content) && content.some((b: any) => b.type === 'tool_result')
       if (opts?.convertToolResults && isToolResult) {
         return {
           type: 'message',

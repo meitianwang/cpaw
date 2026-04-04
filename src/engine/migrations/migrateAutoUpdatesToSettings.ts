@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { logEvent } from '../services/analytics/index.js'
 import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
 import { logError } from '../utils/log.js'

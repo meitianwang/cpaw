@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Stub: File persistence types for external builds.
 
 export const DEFAULT_UPLOAD_CONCURRENCY = 5
@@ -8,19 +7,21 @@ export const OUTPUTS_SUBDIR = 'outputs'
 export type TurnStartTime = number
 
 export interface PersistedFile {
-  path: string
+  path?: string
+  filename?: string
   fileId?: string
 }
 
 export interface FailedPersistence {
-  path: string
+  path?: string
+  filename?: string
   error: string
 }
 
 export interface FilesPersistedEventData {
   files: PersistedFile[]
   failed: FailedPersistence[]
-  totalFiles: number
-  totalBytes: number
-  durationMs: number
+  totalFiles?: number
+  totalBytes?: number
+  durationMs?: number
 }

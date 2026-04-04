@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import { getShortcutDisplay } from '../keybindings/shortcutFormat.js'
 import { isExtractModeActive } from '../memdir/paths.js'
@@ -120,7 +120,7 @@ export async function* handleStopHooks(
     )
     const p = jobClassifierModule!
       .classifyAndWriteState(process.env.CLAUDE_JOB_DIR, turnAssistantMessages)
-      .catch(err => {
+      .catch((err: unknown) => {
         logForDebugging(`[job] classifier error: ${errorMessage(err)}`, {
           level: 'error',
         })
@@ -216,7 +216,7 @@ export async function* handleStopHooks(
         }
         // Track errors and output from attachments
         if (result.message.type === 'attachment') {
-          const attachment = result.message.attachment
+          const attachment = result.message.attachment!
           if (
             'hookEvent' in attachment &&
             (attachment.hookEvent === 'Stop' ||

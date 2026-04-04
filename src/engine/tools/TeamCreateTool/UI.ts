@@ -1,2 +1,1 @@
-// @ts-nocheck
-export function renderToolUseMessage() { return null }
+export function renderToolUseMessage(..._args: any[]) { return null }

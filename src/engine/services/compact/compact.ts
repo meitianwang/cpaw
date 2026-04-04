@@ -1,6 +1,6 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
-import type { UUID } from 'crypto'
+type UUID = string
 import uniqBy from 'lodash-es/uniqBy.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -328,7 +328,7 @@ export type RecompactionInfo = {
  * This ensures consistent ordering across all compaction paths.
  * Order: boundaryMarker, summaryMessages, messagesToKeep, attachments, hookResults
  */
-export function buildPostCompactMessages(result: CompactionResult): Message[] {
+export function buildPostCompactMessages(result: CompactionResult): (Message | HookResultMessage)[] {
   return [
     result.boundaryMarker,
     ...result.summaryMessages,
@@ -740,7 +740,7 @@ export async function compactConversation(
       boundaryMarker,
       summaryMessages,
       attachments: postCompactFileAttachments,
-      hookResults: hookMessages,
+      hookResults: hookMessages as import('../../types/message.js').HookResultMessage[],
       userDisplayMessage: combinedUserDisplayMessage || undefined,
       preCompactTokenCount,
       postCompactTokenCount: compactionCallTotalTokens,
@@ -1009,7 +1009,7 @@ export async function partialCompactConversation(
     // a logicalParentUuid pointing at one. Both directions skip them.
     const lastPreCompactUuid =
       direction === 'up_to'
-        ? allMessages.slice(0, pivotIndex).findLast(m => m.type !== 'progress')
+        ? allMessages.slice(0, pivotIndex).findLast((m: Message) => m.type !== 'progress')
             ?.uuid
         : messagesToKeep.at(-1)?.uuid
     const boundaryMarker = createCompactBoundaryMessage(
@@ -1089,7 +1089,7 @@ export async function partialCompactConversation(
       summaryMessages,
       messagesToKeep,
       attachments: postCompactFileAttachments,
-      hookResults: hookMessages,
+      hookResults: hookMessages as import('../../types/message.js').HookResultMessage[],
       userDisplayMessage: postCompactHookResult.userDisplayMessage,
       preCompactTokenCount,
       postCompactTokenCount,

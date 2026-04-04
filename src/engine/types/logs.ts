@@ -1,6 +1,6 @@
-// @ts-nocheck
-import type { UUID } from 'crypto'
 import type { FileHistorySnapshot } from '../utils/fileHistory.js'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- shadows crypto.UUID
+type UUID = string
 import type { ContentReplacementRecord } from '../utils/toolResultStorage.js'
 import type { AgentId } from './ids.js'
 import type { Message } from './message.js'

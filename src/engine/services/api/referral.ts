@@ -1,4 +1,3 @@
-// @ts-nocheck
 import axios from 'axios'
 import { getOauthConfig } from '../../constants/oauth.js'
 import {
@@ -120,7 +119,7 @@ export function checkCachedPassesEligibility(): {
   const needsRefresh = now - timestamp > CACHE_EXPIRATION_MS
 
   return {
-    eligible,
+    eligible: eligible ?? false,
     needsRefresh,
     hasCache: true,
   }
@@ -153,7 +152,7 @@ export function getCachedReferrerReward(): ReferrerRewardInfo | null {
   if (!orgId) return null
   const config = getGlobalConfig()
   const cachedEntry = config.passesEligibilityCache?.[orgId]
-  return cachedEntry?.referrer_reward ?? null
+  return (cachedEntry?.referrer_reward as ReferrerRewardInfo | undefined) ?? null
 }
 
 /**

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Voice keyterms for improving STT accuracy in the voice_stream endpoint.
 //
 // Provides domain-specific vocabulary hints (Deepgram "keywords") so the STT

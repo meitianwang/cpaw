@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomUUID } from 'crypto'
 import type { HookEvent } from '../../entrypoints/agentSdkTypes.js'
 import { queryModelWithoutStreaming } from '../../services/api/claude.js'

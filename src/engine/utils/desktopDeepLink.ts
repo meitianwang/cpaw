@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readdir } from 'fs/promises'
 import { join } from 'path'
 import { coerce as semverCoerce } from 'semver'
@@ -116,7 +115,7 @@ async function getDesktopVersion(): Promise<string | null> {
         .sort((a, b) => {
           const ca = semverCoerce(a)!
           const cb = semverCoerce(b)!
-          return ca.compare(cb)
+          return ca.compare(cb.version)
         })
       return versions.length > 0 ? versions[versions.length - 1]! : null
     } catch {

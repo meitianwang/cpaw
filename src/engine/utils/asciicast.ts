@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { appendFile, rename } from 'fs/promises'
 import { basename, dirname, join } from 'path'
 import { getOriginalCwd, getSessionId } from '../bootstrap/state.js'
@@ -205,9 +204,9 @@ export function installAsciicastRecorder(): void {
 
     // Pass through to the real stdout
     if (typeof encodingOrCb === 'function') {
-      return originalWrite(chunk, encodingOrCb)
+      return (originalWrite as Function).call(process.stdout, chunk, encodingOrCb)
     }
-    return originalWrite(chunk, encodingOrCb, cb)
+    return (originalWrite as Function).call(process.stdout, chunk, encodingOrCb, cb)
   } as typeof process.stdout.write
 
   // Handle terminal resize events

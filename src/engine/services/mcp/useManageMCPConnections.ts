@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import { basename } from 'path'
 import { useCallback, useEffect, useRef } from 'react'
@@ -187,12 +187,12 @@ export function useManageMCPConnections(
       // undefined → never sends → intercept has nothing pending → "yes tbxkq"
       // flows to Claude as normal chat. One gate, full disable.
       if (!isChannelPermissionRelayEnabled()) return
-      setAppState(prev => {
+      setAppState((prev: AppState) => {
         if (prev.channelPermissionCallbacks === callbacks) return prev
         return { ...prev, channelPermissionCallbacks: callbacks }
       })
       return () => {
-        setAppState(prev => {
+        setAppState((prev: AppState) => {
           if (prev.channelPermissionCallbacks === undefined) return prev
           return { ...prev, channelPermissionCallbacks: undefined }
         })
@@ -220,7 +220,7 @@ export function useManageMCPConnections(
     if (updates.length === 0) return
     pendingUpdatesRef.current = []
 
-    setAppState(prevState => {
+    setAppState((prevState: AppState) => {
       let mcp = prevState.mcp
 
       for (const update of updates) {
@@ -245,13 +245,13 @@ export function useManageMCPConnections(
 
         const prefix = getMcpPrefix(client.name)
         const existingClientIndex = mcp.clients.findIndex(
-          c => c.name === client.name,
+          (c: MCPServerConnection) => c.name === client.name,
         )
 
         const updatedClients =
           existingClientIndex === -1
             ? [...mcp.clients, client]
-            : mcp.clients.map(c => (c.name === client.name ? client : c))
+            : mcp.clients.map((c: MCPServerConnection) => (c.name === client.name ? client : c))
 
         const updatedTools =
           tools === undefined
@@ -684,11 +684,11 @@ export function useManageMCPConnections(
                     fetchCommandsForClient(client),
                     feature('MCP_SKILLS')
                       ? fetchMcpSkillsForClient!(client)
-                      : Promise.resolve([]),
+                      : Promise.resolve([] as Command[]),
                   ])
                   updateServer({
                     ...client,
-                    commands: [...mcpPrompts, ...mcpSkills],
+                    commands: [...mcpPrompts, ...mcpSkills as Command[]],
                   })
                   // MCP skills changed — invalidate skill-search index so
                   // next discovery rebuilds with the new set.
@@ -732,7 +732,7 @@ export function useManageMCPConnections(
                     updateServer({
                       ...client,
                       resources: newResources,
-                      commands: [...mcpPrompts, ...mcpSkills],
+                      commands: [...mcpPrompts, ...mcpSkills] as Command[],
                     })
                     // MCP skills changed — invalidate skill-search index so
                     // next discovery rebuilds with the new set.
@@ -780,7 +780,7 @@ export function useManageMCPConnections(
       // Add MCP errors to plugin errors for UI visibility (deduplicated)
       addErrorsToAppState(setAppState, mcpErrors)
 
-      setAppState(prevState => {
+      setAppState((prevState: AppState) => {
         // Disconnect MCP servers that are stale: plugin servers removed from
         // config, or any server whose config hash changed (edited .mcp.json).
         // Stale servers get re-added as 'pending' below since their name is
@@ -923,9 +923,9 @@ export function useManageMCPConnections(
 
         if (Object.keys(claudeaiConfigs).length > 0) {
           // Add claude.ai servers as pending immediately so they show up in UI
-          setAppState(prevState => {
+          setAppState((prevState: AppState) => {
             const existingServerNames = new Set(
-              prevState.mcp.clients.map(c => c.name),
+              prevState.mcp.clients.map((c: MCPServerConnection) => c.name),
             )
             const newClients = Object.entries(claudeaiConfigs)
               .filter(([name]) => !existingServerNames.has(name))
@@ -1048,7 +1048,7 @@ export function useManageMCPConnections(
     async (serverName: string) => {
       const client = store
         .getState()
-        .mcp.clients.find(c => c.name === serverName)
+        .mcp.clients.find((c: MCPServerConnection) => c.name === serverName)
       if (!client) {
         throw new Error(`MCP server ${serverName} not found`)
       }
@@ -1076,7 +1076,7 @@ export function useManageMCPConnections(
     async (serverName: string): Promise<void> => {
       const client = store
         .getState()
-        .mcp.clients.find(c => c.name === serverName)
+        .mcp.clients.find((c: MCPServerConnection) => c.name === serverName)
       if (!client) {
         throw new Error(`MCP server ${serverName} not found`)
       }

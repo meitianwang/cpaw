@@ -1,4 +1,3 @@
-// @ts-nocheck
 /* eslint-disable eslint-plugin-n/no-unsupported-features/node-builtins */
 /**
  * CONNECT-over-WebSocket relay for CCR upstreamproxy.
@@ -191,10 +190,10 @@ function startBunRelay(
     hostname: '127.0.0.1',
     port: 0,
     socket: {
-      open(sock) {
+      open(sock: any) {
         sock.data = { ...newConnState(), writeBuf: [] }
       },
-      data(sock, data) {
+      data(sock: any, data: any) {
         const st = sock.data
         const adapter: ClientSocket = {
           write: payload => {
@@ -213,7 +212,7 @@ function startBunRelay(
         }
         handleData(adapter, st, data, wsUrl, authHeader, wsAuthHeader)
       },
-      drain(sock) {
+      drain(sock: any) {
         const st = sock.data
         while (st.writeBuf.length > 0) {
           const chunk = st.writeBuf[0]!
@@ -225,10 +224,10 @@ function startBunRelay(
           st.writeBuf.shift()
         }
       },
-      close(sock) {
+      close(sock: any) {
         cleanupConn(sock.data)
       },
-      error(sock, err) {
+      error(sock: any, err: any) {
         logForDebugging(`[upstreamproxy] client socket error: ${err.message}`)
         cleanupConn(sock.data)
       },
@@ -237,7 +236,7 @@ function startBunRelay(
 
   return {
     port: server.port,
-    stop: () => server.stop(true),
+    stop: () => server.stop(),
   }
 }
 

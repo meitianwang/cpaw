@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Stub: internal-only AssistantSessionChooser component.
  * Dynamically imported in dialogLaunchers.tsx.

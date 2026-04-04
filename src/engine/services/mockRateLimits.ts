@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Mock rate limits for testing [ANT-ONLY]
 // This allows testing various rate limit scenarios without hitting actual limits
 //

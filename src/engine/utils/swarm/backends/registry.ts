@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { getIsNonInteractiveSession } from '../../../bootstrap/state.js'
 import { logForDebugging } from '../../../utils/debug.js'
 import { getPlatform } from '../../../utils/platform.js'

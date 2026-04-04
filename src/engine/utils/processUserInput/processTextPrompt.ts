@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources'
 import { randomUUID } from 'crypto'
 import { setPromptId } from '../../bootstrap/state.js'
@@ -48,7 +47,7 @@ export function processTextPrompt(
   const otelPromptText =
     typeof input === 'string'
       ? input
-      : input.findLast(block => block.type === 'text')?.text || ''
+      : (input.findLast((block: any) => block.type === 'text') as { text?: string } | undefined)?.text || ''
   if (otelPromptText) {
     void logOTelEvent('user_prompt', {
       prompt_length: String(otelPromptText.length),

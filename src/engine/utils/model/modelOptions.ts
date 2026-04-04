@@ -1,4 +1,3 @@
-// @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { getInitialMainLoopModel } from '../../bootstrap/state.js'
 import {
@@ -17,6 +16,7 @@ import { getSettings_DEPRECATED } from '../settings/settings.js'
 import { checkOpus1mAccess, checkSonnet1mAccess } from './check1mAccess.js'
 import { getAPIProvider } from './providers.js'
 import { isModelAllowed } from './modelAllowlist.js'
+import { getAntModels, type AntModel } from './antModels.js'
 import {
   getCanonicalName,
   getClaudeAiUserDefaultModelDescription,
@@ -272,7 +272,7 @@ function getOpusPlanOption(): ModelOption {
 function getModelOptionsBase(fastMode = false): ModelOption[] {
   if (process.env.USER_TYPE === 'ant') {
     // Build options from antModels config
-    const antModelOptions: ModelOption[] = getAntModels().map(m => ({
+    const antModelOptions: ModelOption[] = getAntModels().map((m: AntModel) => ({
       value: m.alias,
       label: m.label,
       description: m.description ?? `[ANT-ONLY] ${m.label} (${m.model})`,

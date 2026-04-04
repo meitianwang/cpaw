@@ -1,6 +1,6 @@
-// @ts-nocheck
 import type { BetaContentBlock } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
-import { createHash, randomUUID, type UUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
+type UUID = string
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import isPlainObject from 'lodash-es/isPlainObject.js'
 import mapValues from 'lodash-es/mapValues.js'

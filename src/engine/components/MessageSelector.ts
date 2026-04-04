@@ -1,2 +1,5 @@
-// @ts-nocheck
-export function selectableUserMessagesFilter() { return undefined }
+import type { Message } from '../types/message.js'
+
+export function selectableUserMessagesFilter(_msg?: Message): boolean {
+  return true
+}

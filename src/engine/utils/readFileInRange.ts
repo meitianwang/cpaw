@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ---------------------------------------------------------------------------
 // readFileInRange — line-oriented file reader with two code paths
 // ---------------------------------------------------------------------------
@@ -377,7 +376,7 @@ function readFileInRangeStreaming(
     })
 
     state.stream.once('open', streamOnOpen.bind(state))
-    state.stream.on('data', streamOnData.bind(state))
+    state.stream.on('data', streamOnData.bind(state) as (chunk: string | Buffer) => void)
     state.stream.once('end', streamOnEnd.bind(state))
     state.stream.once('error', reject)
   })

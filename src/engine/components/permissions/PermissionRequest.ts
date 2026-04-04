@@ -1,2 +1,3 @@
-// @ts-nocheck
-export const ToolUseConfirm = undefined
+export interface ToolUseConfirm {
+  [key: string]: unknown
+}

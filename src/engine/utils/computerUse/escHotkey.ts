@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { logForDebugging } from '../debug.js'
 import { releasePump, retainPump } from './drainRunLoop.js'
 import { requireComputerUseSwift } from './swiftLoader.js'

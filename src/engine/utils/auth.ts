@@ -1,4 +1,3 @@
-// @ts-nocheck
 import chalk from 'chalk'
 import { exec } from 'child_process'
 import { execa } from 'execa'
@@ -1270,9 +1269,9 @@ export const getClaudeAIOAuthTokens = memoize((): OAuthTokens | null => {
   if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
     // Return an inference-only token (unknown refresh and expiry)
     return {
-      accessToken: process.env.CLAUDE_CODE_OAUTH_TOKEN,
-      refreshToken: null,
-      expiresAt: null,
+      accessToken: process.env.CLAUDE_CODE_OAUTH_TOKEN!,
+      refreshToken: undefined,
+      expiresAt: undefined,
       scopes: ['user:inference'],
       subscriptionType: null,
       rateLimitTier: null,
@@ -1284,9 +1283,9 @@ export const getClaudeAIOAuthTokens = memoize((): OAuthTokens | null => {
   if (oauthTokenFromFd) {
     // Return an inference-only token (unknown refresh and expiry)
     return {
-      accessToken: oauthTokenFromFd,
-      refreshToken: null,
-      expiresAt: null,
+      accessToken: oauthTokenFromFd!,
+      refreshToken: undefined,
+      expiresAt: undefined,
       scopes: ['user:inference'],
       subscriptionType: null,
       rateLimitTier: null,
@@ -1446,14 +1445,14 @@ export function checkAndRefreshOAuthTokenIfNeeded(
   // Deduplicate concurrent non-retry, non-force calls
   if (retryCount === 0 && !force) {
     if (pendingRefreshCheck) {
-      return pendingRefreshCheck
+      return pendingRefreshCheck!
     }
 
     const promise = checkAndRefreshOAuthTokenIfNeededImpl(retryCount, force)
     pendingRefreshCheck = promise.finally(() => {
       pendingRefreshCheck = null
     })
-    return pendingRefreshCheck
+    return pendingRefreshCheck!
   }
 
   return checkAndRefreshOAuthTokenIfNeededImpl(retryCount, force)
@@ -1984,7 +1983,7 @@ export async function validateForceLoginOrg(): Promise<OrgValidationResult> {
     }
   }
 
-  const tokenOrgUuid = profile.organization.uuid
+  const tokenOrgUuid = profile.organization!.uuid
   if (tokenOrgUuid === requiredOrgUuid) {
     return { valid: true }
   }

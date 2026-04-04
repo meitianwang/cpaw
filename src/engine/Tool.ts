@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type {
   ToolResultBlockParam,
   ToolUseBlockParam,
@@ -7,10 +6,11 @@ import type {
   ElicitRequestURLParams,
   ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js'
-import type { UUID } from 'crypto'
+type UUID = string
 import type { z } from 'zod/v4'
 import type { Command } from './commands.js'
 import type { CanUseToolFn } from './hooks/useCanUseTool.js'
+export type { CanUseToolFn }
 import type { ThinkingConfig } from './utils/thinking.js'
 
 export type ToolInputJSONSchema = {
@@ -315,7 +315,7 @@ export function filterToolProgressMessages(
 ): ProgressMessage<ToolProgressData>[] {
   return progressMessagesForMessage.filter(
     (msg): msg is ProgressMessage<ToolProgressData> =>
-      msg.data?.type !== 'hook_progress',
+      (msg.data as { type?: string })?.type !== 'hook_progress',
   )
 }
 

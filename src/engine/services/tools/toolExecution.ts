@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { feature } from 'bun:bundle'
 import type {
   ContentBlockParam,
@@ -968,12 +967,13 @@ async function checkPermissionsAndCallTool(
 
     // Increment code-edit tool decision counter for headless mode
     if (isCodeEditingTool(tool.name)) {
-      void buildCodeEditToolAttributes(
+      const _buildResult = buildCodeEditToolAttributes(
         tool,
         processedInput,
         decision,
         source,
-      ).then(attributes => getCodeEditToolDecisionCounter()?.add(1, attributes))
+      ) as Promise<any> | undefined
+      void _buildResult?.then((attributes: any) => getCodeEditToolDecisionCounter()?.add(1, attributes))
     }
   }
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { logEvent } from '../services/analytics/index.js'
 import { isProSubscriber } from '../utils/auth.js'
 import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'

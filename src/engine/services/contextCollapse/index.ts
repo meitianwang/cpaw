@@ -35,3 +35,15 @@ export function getStats(): ContextCollapseStats {
 export function subscribe(_callback: () => void): () => void {
   return () => {}
 }
+
+export function applyCollapsesIfNeeded(..._args: unknown[]): { messages: any[] } {
+  return { messages: _args[0] as any[] }
+}
+
+export function isWithheldPromptTooLong(..._args: unknown[]): boolean {
+  return false
+}
+
+export function recoverFromOverflow(..._args: unknown[]): { committed: number; messages: any[] } {
+  return { committed: 0, messages: _args[0] as any[] }
+}

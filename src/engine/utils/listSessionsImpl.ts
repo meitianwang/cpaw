@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Standalone implementation of listSessions for the Agent SDK.
  *
@@ -130,7 +129,7 @@ export function parseSessionInfoFromLite(
   // Type-scope tag extraction to the {"type":"tag"} JSONL line to avoid
   // collision with tool_use inputs containing a `tag` parameter (git tag,
   // Docker tags, cloud resource tags). Mirrors sessionStorage.ts:608.
-  const tagLine = tail.split('\n').findLast(l => l.startsWith('{"type":"tag"'))
+  const tagLine = tail.split('\n').findLast((l: string) => l.startsWith('{"type":"tag"'))
   const tag = tagLine
     ? extractLastJsonStringField(tagLine, 'tag') || undefined
     : undefined

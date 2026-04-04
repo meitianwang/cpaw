@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { join } from 'path'
 import { getCwd } from '../cwd.js'
 import { logForDebugging } from '../debug.js'

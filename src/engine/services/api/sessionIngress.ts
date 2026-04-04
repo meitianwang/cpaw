@@ -1,6 +1,5 @@
-// @ts-nocheck
 import axios, { type AxiosError } from 'axios'
-import type { UUID } from 'crypto'
+type UUID = string
 import { getOauthConfig } from '../../constants/oauth.js'
 import type { Entry, TranscriptMessage } from '../../types/logs.js'
 import { logForDebugging } from '../../utils/debug.js'
@@ -233,7 +232,7 @@ export async function getSessionLogs(
     // Update our lastUuid to the last entry's UUID
     const lastEntry = logs.at(-1)
     if (lastEntry && 'uuid' in lastEntry && lastEntry.uuid) {
-      lastUuidMap.set(sessionId, lastEntry.uuid)
+      lastUuidMap.set(sessionId, lastEntry.uuid as string)
     }
   }
 
@@ -493,7 +492,7 @@ function findLastUuid(logs: Entry[] | null): UUID | undefined {
   if (!logs) {
     return undefined
   }
-  const entry = logs.findLast(e => 'uuid' in e && e.uuid)
+  const entry = logs.findLast((e: Entry) => 'uuid' in e && e.uuid)
   return entry && 'uuid' in entry ? (entry.uuid as UUID) : undefined
 }
 

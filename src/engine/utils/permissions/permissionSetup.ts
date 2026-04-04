@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import { relative } from 'path'
 import {
@@ -1007,6 +1007,7 @@ export async function initializeToolPermissionContext({
     ),
   )
   for (const result of validationResults) {
+    if (!result) continue
     if (result.resultType === 'success') {
       toolPermissionContext = applyPermissionUpdate(toolPermissionContext, {
         type: 'addDirectories',

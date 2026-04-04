@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { createRequire } from "node:module"; const require = createRequire(import.meta.url);
 import { feature } from 'bun:bundle'
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import uniqBy from 'lodash-es/uniqBy.js'
@@ -245,7 +245,7 @@ async function executeForkedSkill(
         const normalizedNew = normalizeMessages([message])
         for (const m of normalizedNew) {
           const hasToolContent = m.message.content.some(
-            c => c.type === 'tool_use' || c.type === 'tool_result',
+            (c: any) => c.type === 'tool_use' || c.type === 'tool_result',
           )
           if (hasToolContent) {
             onProgress({
@@ -636,7 +636,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     const { processPromptSlashCommand } = await import(
       'src/utils/processUserInput/processSlashCommand.js'
     )
-    const processedCommand = await processPromptSlashCommand(
+    const processedCommand: any = await processPromptSlashCommand(
       commandName,
       args || '', // Pass args if provided
       commands,
@@ -735,7 +735,7 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     // Tag user messages with sourceToolUseID so they stay transient until this tool resolves
     const newMessages = tagMessagesWithToolUseID(
       processedCommand.messages.filter(
-        (m): m is UserMessage | AttachmentMessage | SystemMessage => {
+        (m: Message): m is UserMessage | AttachmentMessage | SystemMessage => {
           if (m.type === 'progress') {
             return false
           }

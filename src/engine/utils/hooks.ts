@@ -1,4 +1,3 @@
-// @ts-nocheck
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 /**
  * Hooks are user-defined shell commands that can be executed at various points
@@ -147,7 +146,7 @@ import { createAttachmentMessage } from './attachments.js'
 import { all } from './generators.js'
 import { findToolByName, type Tools, type ToolUseContext } from '../Tool.js'
 import { execPromptHook } from './hooks/execPromptHook.js'
-import type { Message, AssistantMessage } from '../types/message.js'
+import type { Message, AnyMessage, AssistantMessage } from '../types/message.js'
 import { execAgentHook } from './hooks/execAgentHook.js'
 import { execHttpHook } from './hooks/execHttpHook.js'
 import type { ShellCommand } from './ShellCommand.js'
@@ -337,7 +336,7 @@ export interface HookBlockingError {
 export type ElicitationResponse = ElicitResult
 
 export interface HookResult {
-  message?: HookResultMessage
+  message?: AnyMessage
   systemMessage?: string
   blockingError?: HookBlockingError
   outcome: 'success' | 'blocking' | 'non_blocking_error' | 'cancelled'
@@ -358,7 +357,7 @@ export interface HookResult {
 }
 
 export type AggregatedHookResult = {
-  message?: HookResultMessage
+  message?: AnyMessage
   blockingError?: HookBlockingError
   preventContinuation?: boolean
   stopReason?: string
@@ -2240,7 +2239,7 @@ async function* executeHooks({
         )
         // Inject timing fields for hook visibility
         if (promptResult.message?.type === 'attachment') {
-          const att = promptResult.message.attachment
+          const att = promptResult.message.attachment!
           if (
             att.type === 'hook_success' ||
             att.type === 'hook_non_blocking_error'
@@ -2280,7 +2279,7 @@ async function* executeHooks({
         )
         // Inject timing fields for hook visibility
         if (agentResult.message?.type === 'attachment') {
-          const att = agentResult.message.attachment
+          const att = agentResult.message.attachment!
           if (
             att.type === 'hook_success' ||
             att.type === 'hook_non_blocking_error'

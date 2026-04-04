@@ -1,6 +1,5 @@
-// @ts-nocheck
-export const DBP = undefined
-export const DFE = undefined
-export const DISABLE_MOUSE_TRACKING = undefined
-export const EXIT_ALT_SCREEN = undefined
-export const SHOW_CURSOR = undefined
+export const DBP: string = '\x1b[?2004l'
+export const DFE: string = '\x1b[?1004l'
+export const DISABLE_MOUSE_TRACKING: string = '\x1b[?1000l\x1b[?1003l\x1b[?1006l'
+export const EXIT_ALT_SCREEN: string = '\x1b[?1049l'
+export const SHOW_CURSOR: string = '\x1b[?25h'

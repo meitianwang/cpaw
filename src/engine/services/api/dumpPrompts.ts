@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ClientOptions } from '@anthropic-ai/sdk'
 import { createHash } from 'crypto'
 import { promises as fs } from 'fs'
