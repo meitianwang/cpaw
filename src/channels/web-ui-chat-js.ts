@@ -378,6 +378,8 @@ export function getChatMainJs(): string {
       if (data.type === "file") { appendFileCard(data.name, data.url); return; }
       if (data.type === "stream") { handleStreamChunk(data.chunk); return; }
       if (data.type === "thinking") { showThinking(data.chunk); return; }
+      // Ignore known non-display events that should NOT clear thinking state
+      if (data.type === "session_runtime" || data.type === "ping" || data.type === "config_updated") return;
       if (!isStreaming) { removeThinking(); clearToolContainer(); }
       if (data.type === "message") {
         // If streaming was already finalized by "done" signal, skip to avoid duplicate
