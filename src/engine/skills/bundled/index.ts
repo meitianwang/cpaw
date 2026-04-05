@@ -8,7 +8,6 @@ import { registerKeybindingsSkill } from './keybindings.js'
 import { registerLoremIpsumSkill } from './loremIpsum.js'
 import { registerRememberSkill } from './remember.js'
 import { registerSimplifySkill } from './simplify.js'
-import { registerSkillifySkill } from './skillify.js'
 import { registerStuckSkill } from './stuck.js'
 import { registerUpdateConfigSkill } from './updateConfig.js'
 import { registerVerifySkill } from './verify.js'
@@ -26,7 +25,6 @@ export function initBundledSkills(): void {
   // Removed for Klaus: updateConfig (uses settings.json not SettingsStore),
   // keybindings (CLI-only), loremIpsum (testing), claudeApi (feature-gated below)
   registerVerifySkill()
-  registerSkillifySkill()
   registerRememberSkill()
   registerSimplifySkill()
   registerBatchSkill()
