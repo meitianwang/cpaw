@@ -621,25 +621,19 @@ export class AgentSessionManager {
 
     const baseUrl = modelRecord.baseUrl || providerDef?.defaultBaseUrl;
 
-    // Build system prompt (claude-code mechanism)
-    const promptRecord = this.store.getDefaultPrompt();
+    // Build system prompt section overrides from SettingsStore prompts table
+    const sectionOverrides: Record<string, string> = {};
+    for (const prompt of this.store.listPrompts()) {
+      if (prompt.content && prompt.content.trim()) {
+        sectionOverrides[prompt.id] = prompt.content;
+      }
+    }
+
     const rules = this.store.getEnabledRules();
     const skillRegistry = getSkillRegistry();
     const allSkills = skillRegistry.getSkills();
     const userPrefs = this.store.getUserSkillPreferences(userId);
     const resolvedSkills = allSkills.filter((s) => userPrefs.get(s.name) !== "off");
-
-    // Assemble claudeMd from: default prompt + rules + memory prompt
-    const claudeMdParts: string[] = [];
-    if (promptRecord?.content) {
-      claudeMdParts.push(`# Codebase and user instructions\n${promptRecord.content}`);
-    }
-    for (const rule of rules) {
-      claudeMdParts.push(rule.content);
-    }
-    if (this.memoryPool) {
-      claudeMdParts.push(buildMemoryPromptSection(this.memoryPool.citationsMode));
-    }
 
     // Build tools
     const tools = await this.buildTools(userId, apiKey);
@@ -652,11 +646,21 @@ export class AgentSessionManager {
       modelRecord.model,
       undefined, // additionalWorkingDirectories
       this.mcpManager?.mcpClients,
+      sectionOverrides,
     );
     const systemPrompt = asSystemPrompt(systemPromptParts);
 
     // Build userContext & systemContext dicts (aligned with claude-code's context.ts)
-    const claudeMd = claudeMdParts.length > 0 ? claudeMdParts.join("\n\n") : null;
+    // Rules and memory go into userContext (not mixed into system prompt sections)
+    const userContextParts: string[] = [];
+    const rulesContent = rules.map(r => r.content).filter(Boolean).join("\n\n");
+    if (rulesContent) {
+      userContextParts.push(rulesContent);
+    }
+    if (this.memoryPool) {
+      userContextParts.push(buildMemoryPromptSection(this.memoryPool.citationsMode));
+    }
+    const claudeMd = userContextParts.length > 0 ? userContextParts.join("\n\n") : null;
     const userContext: { [k: string]: string } = {
       ...(claudeMd && { claudeMd }),
       currentDate: `Today's date is ${new Date().toISOString().split("T")[0]}.`,

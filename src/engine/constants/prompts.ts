@@ -448,6 +448,7 @@ export async function getSystemPrompt(
   model: string,
   additionalWorkingDirectories?: string[],
   mcpClients?: MCPServerConnection[],
+  sectionOverrides?: Record<string, string>,
 ): Promise<string[]> {
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     return [
@@ -559,18 +560,26 @@ ${CYBER_RISK_INSTRUCTION}`,
   const resolvedDynamicSections =
     await resolveSystemPromptSections(dynamicSections)
 
+  // Helper: use override if key exists and has non-empty content, else fall back to default
+  const ov = (key: string, defaultFn: () => string | null): string | null => {
+    const val = sectionOverrides?.[key]
+    return val && val.trim() ? val : defaultFn()
+  }
+
   return [
     // --- Static content (cacheable) ---
-    getSimpleIntroSection(outputStyleConfig),
-    getSimpleSystemSection(),
-    outputStyleConfig === null ||
-    outputStyleConfig.keepCodingInstructions === true
-      ? getSimpleDoingTasksSection()
-      : null,
-    getActionsSection(),
-    getUsingYourToolsSection(enabledTools),
-    getSimpleToneAndStyleSection(),
-    getOutputEfficiencySection(),
+    ov('intro', () => getSimpleIntroSection(outputStyleConfig)),
+    ov('system', () => getSimpleSystemSection()),
+    ov('doing_tasks', () =>
+      outputStyleConfig === null ||
+      outputStyleConfig.keepCodingInstructions === true
+        ? getSimpleDoingTasksSection()
+        : null,
+    ),
+    ov('actions', () => getActionsSection()),
+    getUsingYourToolsSection(enabledTools), // NOT overridable — dynamic tool list
+    ov('tone_style', () => getSimpleToneAndStyleSection()),
+    ov('output_efficiency', () => getOutputEfficiencySection()),
     // === BOUNDARY MARKER - DO NOT MOVE OR REMOVE ===
     ...(shouldUseGlobalCacheScope() ? [SYSTEM_PROMPT_DYNAMIC_BOUNDARY] : []),
     // --- Dynamic content (registry-managed) ---
