@@ -1448,6 +1448,7 @@ async function handleUserSkills(
           description: cmd.description ?? "",
           source: cmd.source ?? cmd.loadedFrom ?? "unknown",
           enabled: true,
+          eligible: true,
           userInvocable: cmd.userInvocable !== false,
         }));
       jsonResponse(res, 200, { skills });
