@@ -11,7 +11,7 @@ import { refreshAccessToken } from "./auth/oauth.js";
 import type { OAuthProviderAuth } from "./auth/oauth.js";
 import type { MemoryManagerPool } from "./memory/pool.js";
 import { createMemorySearchTool, createMemoryGetTool, buildMemoryPromptSection } from "./memory/tools.js";
-import { getSystemPrompt } from "./engine/constants/prompts.js";
+import { getSystemPrompt, getSimpleIntroSection, getSimpleSystemSection, getSimpleDoingTasksSection, getActionsSection, getSimpleToneAndStyleSection, getOutputEfficiencySection } from "./engine/constants/prompts.js";
 import { clearSystemPromptSections } from "./engine/constants/systemPromptSections.js";
 import { createMemorySaveTool } from "./memory/memory-write.js";
 import { ToolLoopDetector } from "./tool-loop-detector.js";
@@ -114,6 +114,33 @@ export class AgentSessionManager {
     setProjectRoot(cwd);
     // Enable engine config reading (must be called before any getGlobalConfig)
     enableConfigs();
+    // Seed default prompt sections from engine hardcoded content
+    this.seedPromptSections();
+  }
+
+  private seedPromptSections(): void {
+    const existing = new Set(this.store.listPrompts().map((p: any) => p.id));
+    const defaults: { id: string; name: string; content: string }[] = [
+      { id: "intro", name: "Identity & Role", content: getSimpleIntroSection(null) },
+      { id: "system", name: "System Rules", content: getSimpleSystemSection() },
+      { id: "doing_tasks", name: "Coding Standards", content: getSimpleDoingTasksSection() },
+      { id: "actions", name: "Action Safety", content: getActionsSection() },
+      { id: "tone_style", name: "Tone & Style", content: getSimpleToneAndStyleSection() },
+      { id: "output_efficiency", name: "Output Efficiency", content: getOutputEfficiencySection() },
+    ];
+    const now = Date.now();
+    for (const def of defaults) {
+      if (!existing.has(def.id)) {
+        this.store.upsertPrompt({
+          id: def.id,
+          name: def.name,
+          content: def.content,
+          isDefault: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
   }
 
   setMemoryPool(pool: MemoryManagerPool | null): void {
