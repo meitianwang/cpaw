@@ -26,7 +26,6 @@ export function initBundledSkills(): void {
   // Removed for Klaus: updateConfig (uses settings.json not SettingsStore),
   // keybindings (CLI-only), loremIpsum (testing), claudeApi (feature-gated below)
   registerVerifySkill()
-  registerDebugSkill()
   registerSkillifySkill()
   registerRememberSkill()
   registerSimplifySkill()
