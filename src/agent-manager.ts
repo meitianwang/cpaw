@@ -169,12 +169,9 @@ export class AgentSessionManager {
       setAdditionalDirectoriesForClaudeMd([
         join(homedir(), '.klaus', 'users', userId),
       ]);
-      // Clear skill cache and set per-user skill filter
-      const { clearCommandsCache, setCommandFilter } = await import("./engine/commands.js");
+      // Clear skill cache (user's skill directory may differ)
+      const { clearCommandsCache } = await import("./engine/commands.js");
       clearCommandsCache();
-      // Filter disabled skills from getCommands() — affects both system prompt listing and SkillTool
-      const disabledSkills = this.getDisabledSkills(userId);
-      setCommandFilter((cmd: any) => !disabledSkills.has(cmd.name));
 
       // Build query params
       const { systemPrompt, userContext, systemContext, apiKey, baseUrl, model, fallbackModel, maxContextTokens, thinkingConfig, tools, toolSchemas } =
@@ -645,12 +642,14 @@ export class AgentSessionManager {
     // Git status snapshot (matches claude-code's getGitStatus in context.ts)
     const gitStatus = await getGitStatusSnapshot(process.cwd());
 
+    const disabledSkills = this.getDisabledSkills(userId);
     const systemPromptParts = await getSystemPrompt(
       tools,
       modelRecord.model,
       undefined, // additionalWorkingDirectories
       this.mcpManager?.mcpClients,
       sectionOverrides,
+      disabledSkills,
     );
     const systemPrompt = asSystemPrompt(systemPromptParts);
 

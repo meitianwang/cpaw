@@ -449,6 +449,7 @@ export async function getSystemPrompt(
   additionalWorkingDirectories?: string[],
   mcpClients?: MCPServerConnection[],
   sectionOverrides?: Record<string, string>,
+  disabledSkills?: Set<string>,
 ): Promise<string[]> {
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     return [
@@ -457,11 +458,15 @@ export async function getSystemPrompt(
   }
 
   const cwd = getCwd()
-  const [skillToolCommands, outputStyleConfig, envInfo] = await Promise.all([
+  const [rawSkillToolCommands, outputStyleConfig, envInfo] = await Promise.all([
     getSkillToolCommands(cwd),
     getOutputStyleConfig(),
     computeSimpleEnvInfo(model, additionalWorkingDirectories),
   ])
+  // Filter out per-user disabled skills
+  const skillToolCommands = disabledSkills?.size
+    ? rawSkillToolCommands.filter(cmd => !disabledSkills.has(cmd.name))
+    : rawSkillToolCommands
 
   const settings = getInitialSettings()
   const enabledTools = new Set(tools.map(_ => _.name))
