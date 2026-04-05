@@ -1449,6 +1449,8 @@ async function handleUserSkills(
           source: cmd.source ?? cmd.loadedFrom ?? "unknown",
           enabled: true,
           eligible: true,
+          always: cmd.loadedFrom === "bundled",  // bundled skills always on, no toggle
+          userEnabled: cmd.loadedFrom === "bundled" ? true : undefined,
           userInvocable: cmd.userInvocable !== false,
         }));
       jsonResponse(res, 200, { skills });
