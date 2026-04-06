@@ -1292,26 +1292,41 @@ tr.clickable:hover { background: var(--card-bg); }
   var pfCancel = document.getElementById("pf-cancel");
   var editingPromptId = null;
 
+  function renderPromptRow(p, editing) {
+    var badge = p.isDefault ? "<span class='badge badge-green'>" + tt("default_badge") + "</span>" : "";
+    if (editing) {
+      return "<tr data-prompt-row='" + esc(p.id) + "'>"
+        + "<td><span class='code-text'>" + esc(p.id) + "</span></td>"
+        + "<td><input class='f-input f-input-sm' data-field='name' value='" + esc(p.name || "") + "' style='width:100%'></td>"
+        + "<td><textarea class='f-textarea' data-field='content' rows='4' style='width:100%;font-size:13px'>" + esc(p.content || "") + "</textarea></td>"
+        + "<td>" + badge + "</td>"
+        + "<td><div class='actions'>"
+        + "<button class='btn btn-sm btn-primary' data-saveprompt='" + esc(p.id) + "'>" + tt("btn_save") + "</button>"
+        + "<button class='btn btn-sm btn-ghost' data-cancelprompt='" + esc(p.id) + "'>" + tt("btn_cancel") + "</button>"
+        + "</div></td></tr>";
+    }
+    var preview = p.content.length > 80 ? p.content.slice(0, 80) + "..." : p.content;
+    return "<tr data-prompt-row='" + esc(p.id) + "'>"
+      + "<td><span class='code-text'>" + esc(p.id) + "</span></td>"
+      + "<td>" + esc(p.name) + "</td>"
+      + "<td class='stat-muted'>" + esc(preview) + "</td>"
+      + "<td>" + badge + "</td>"
+      + "<td><div class='actions'>"
+      + (p.isDefault ? "" : "<button class='btn btn-sm btn-ghost' data-setdefaultprompt='" + esc(p.id) + "'>" + tt("lbl_set_default") + "</button>")
+      + "<button class='btn btn-sm btn-ghost' data-editprompt='" + esc(p.id) + "'>Edit</button>"
+      + "<button class='btn btn-sm btn-danger' data-delprompt='" + esc(p.id) + "'>" + tt("delete") + "</button>"
+      + "</div></td></tr>";
+  }
+
+  var promptsCache = [];
+
   function loadPrompts() {
     api("prompts", "GET").then(function(d) {
-      var prompts = d.prompts || [];
-      if (!prompts.length) { promptsWrap.innerHTML = ""; promptsEmpty.style.display = "block"; return; }
+      promptsCache = d.prompts || [];
+      if (!promptsCache.length) { promptsWrap.innerHTML = ""; promptsEmpty.style.display = "block"; return; }
       promptsEmpty.style.display = "none";
       var h = "<table><thead><tr><th>ID</th><th>" + tt("lbl_prompt_name") + "</th><th>" + tt("lbl_prompt_content") + "</th><th>Status</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
-      prompts.forEach(function(p) {
-        var badge = p.isDefault ? "<span class='badge badge-green'>" + tt("default_badge") + "</span>" : "";
-        var preview = p.content.length > 80 ? p.content.slice(0, 80) + "..." : p.content;
-        h += "<tr>"
-          + "<td><span class='code-text'>" + esc(p.id) + "</span></td>"
-          + "<td>" + esc(p.name) + "</td>"
-          + "<td class='stat-muted'>" + esc(preview) + "</td>"
-          + "<td>" + badge + "</td>"
-          + "<td><div class='actions'>"
-          + (p.isDefault ? "" : "<button class='btn btn-sm btn-ghost' data-setdefaultprompt='" + esc(p.id) + "'>" + tt("lbl_set_default") + "</button>")
-          + "<button class='btn btn-sm btn-ghost' data-editprompt='" + esc(p.id) + "'>Edit</button>"
-          + "<button class='btn btn-sm btn-danger' data-delprompt='" + esc(p.id) + "'>" + tt("delete") + "</button>"
-          + "</div></td></tr>";
-      });
+      promptsCache.forEach(function(p) { h += renderPromptRow(p, false); });
       h += "</tbody></table>";
       promptsWrap.innerHTML = h;
     });
@@ -1351,15 +1366,24 @@ tr.clickable:hover { background: var(--card-bg); }
       api("prompts?id=" + encodeURIComponent(btn.dataset.setdefaultprompt), "PATCH", { is_default: true }).then(function() { loadPrompts(); });
     } else if (btn.dataset.editprompt) {
       var pid = btn.dataset.editprompt;
-      api("prompts", "GET").then(function(d) {
-        var p = (d.prompts || []).find(function(x) { return x.id === pid; });
-        if (!p) return;
-        editingPromptId = pid;
-        pfId.value = p.id; pfId.disabled = true;
-        pfName.value = p.name || ""; pfContent.value = p.content || "";
-        pfDefault.checked = p.isDefault;
-        promptForm.style.display = "block";
-      });
+      var p = promptsCache.find(function(x) { return x.id === pid; });
+      if (!p) return;
+      editingPromptId = pid;
+      var row = btn.closest("tr");
+      if (row) row.outerHTML = renderPromptRow(p, true);
+    } else if (btn.dataset.saveprompt) {
+      var sid = btn.dataset.saveprompt;
+      var srow = btn.closest("tr");
+      var nameVal = srow.querySelector("[data-field='name']").value.trim();
+      var contentVal = srow.querySelector("[data-field='content']").value.trim();
+      if (!contentVal) return;
+      btn.disabled = true;
+      api("prompts?id=" + encodeURIComponent(sid), "PATCH", { id: sid, name: nameVal || sid, content: contentVal })
+        .then(function() { editingPromptId = null; showToast(tt("saved")); loadPrompts(); })
+        .catch(function() { showToast(tt("failed")); btn.disabled = false; });
+    } else if (btn.dataset.cancelprompt) {
+      editingPromptId = null;
+      loadPrompts();
     }
   });
 
@@ -1378,29 +1402,45 @@ tr.clickable:hover { background: var(--card-bg); }
   var rfCancel = document.getElementById("rf-cancel");
   var editingRuleId = null;
 
+  function renderRuleRow(r, editing) {
+    var badge = r.enabled
+      ? "<span class='badge badge-green'>" + tt("enabled_badge") + "</span>"
+      : "<span class='badge badge-gray'>" + tt("disabled_badge") + "</span>";
+    if (editing) {
+      return "<tr data-rule-row='" + esc(r.id) + "'>"
+        + "<td><span class='code-text'>" + esc(r.id) + "</span></td>"
+        + "<td><input class='f-input f-input-sm' data-field='name' value='" + esc(r.name || "") + "' style='width:100%'></td>"
+        + "<td><textarea class='f-textarea' data-field='content' rows='3' style='width:100%;font-size:13px'>" + esc(r.content || "") + "</textarea></td>"
+        + "<td>" + badge + "</td>"
+        + "<td><input class='f-input f-input-sm' data-field='order' type='number' value='" + (r.sortOrder || 0) + "' style='width:60px'></td>"
+        + "<td><div class='actions'>"
+        + "<button class='btn btn-sm btn-primary' data-saverule='" + esc(r.id) + "'>" + tt("btn_save") + "</button>"
+        + "<button class='btn btn-sm btn-ghost' data-cancelrule='" + esc(r.id) + "'>" + tt("btn_cancel") + "</button>"
+        + "</div></td></tr>";
+    }
+    var preview = r.content.length > 60 ? r.content.slice(0, 60) + "..." : r.content;
+    return "<tr data-rule-row='" + esc(r.id) + "'>"
+      + "<td><span class='code-text'>" + esc(r.id) + "</span></td>"
+      + "<td>" + esc(r.name) + "</td>"
+      + "<td class='stat-muted'>" + esc(preview) + "</td>"
+      + "<td>" + badge + "</td>"
+      + "<td class='stat-muted'>" + r.sortOrder + "</td>"
+      + "<td><div class='actions'>"
+      + "<button class='btn btn-sm btn-ghost' data-togglerule='" + esc(r.id) + "' data-enabled='" + (r.enabled ? "1" : "0") + "'>" + (r.enabled ? "Disable" : "Enable") + "</button>"
+      + "<button class='btn btn-sm btn-ghost' data-editrule='" + esc(r.id) + "'>Edit</button>"
+      + "<button class='btn btn-sm btn-danger' data-delrule='" + esc(r.id) + "'>" + tt("delete") + "</button>"
+      + "</div></td></tr>";
+  }
+
+  var rulesCache = [];
+
   function loadRules() {
     api("rules", "GET").then(function(d) {
-      var rules = d.rules || [];
-      if (!rules.length) { rulesWrap.innerHTML = ""; rulesEmpty.style.display = "block"; return; }
+      rulesCache = d.rules || [];
+      if (!rulesCache.length) { rulesWrap.innerHTML = ""; rulesEmpty.style.display = "block"; return; }
       rulesEmpty.style.display = "none";
       var h = "<table><thead><tr><th>ID</th><th>" + tt("lbl_rule_name") + "</th><th>" + tt("lbl_rule_content") + "</th><th>Status</th><th>" + tt("lbl_rule_order") + "</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
-      rules.forEach(function(r) {
-        var badge = r.enabled
-          ? "<span class='badge badge-green'>" + tt("enabled_badge") + "</span>"
-          : "<span class='badge badge-gray'>" + tt("disabled_badge") + "</span>";
-        var preview = r.content.length > 60 ? r.content.slice(0, 60) + "..." : r.content;
-        h += "<tr>"
-          + "<td><span class='code-text'>" + esc(r.id) + "</span></td>"
-          + "<td>" + esc(r.name) + "</td>"
-          + "<td class='stat-muted'>" + esc(preview) + "</td>"
-          + "<td>" + badge + "</td>"
-          + "<td class='stat-muted'>" + r.sortOrder + "</td>"
-          + "<td><div class='actions'>"
-          + "<button class='btn btn-sm btn-ghost' data-togglerule='" + esc(r.id) + "' data-enabled='" + (r.enabled ? "1" : "0") + "'>" + (r.enabled ? "Disable" : "Enable") + "</button>"
-          + "<button class='btn btn-sm btn-ghost' data-editrule='" + esc(r.id) + "'>Edit</button>"
-          + "<button class='btn btn-sm btn-danger' data-delrule='" + esc(r.id) + "'>" + tt("delete") + "</button>"
-          + "</div></td></tr>";
-      });
+      rulesCache.forEach(function(r) { h += renderRuleRow(r, false); });
       h += "</tbody></table>";
       rulesWrap.innerHTML = h;
     });
@@ -1441,15 +1481,25 @@ tr.clickable:hover { background: var(--card-bg); }
       api("rules?id=" + encodeURIComponent(btn.dataset.togglerule), "PATCH", { enabled: !enabled }).then(function() { loadRules(); });
     } else if (btn.dataset.editrule) {
       var rid = btn.dataset.editrule;
-      api("rules", "GET").then(function(d) {
-        var r = (d.rules || []).find(function(x) { return x.id === rid; });
-        if (!r) return;
-        editingRuleId = rid;
-        rfId.value = r.id; rfId.disabled = true;
-        rfName.value = r.name || ""; rfContent.value = r.content || "";
-        rfOrder.value = r.sortOrder || 0;
-        ruleForm.style.display = "block";
-      });
+      var r = rulesCache.find(function(x) { return x.id === rid; });
+      if (!r) return;
+      editingRuleId = rid;
+      var row = btn.closest("tr");
+      if (row) row.outerHTML = renderRuleRow(r, true);
+    } else if (btn.dataset.saverule) {
+      var sid = btn.dataset.saverule;
+      var srow = btn.closest("tr");
+      var nameVal = srow.querySelector("[data-field='name']").value.trim();
+      var contentVal = srow.querySelector("[data-field='content']").value.trim();
+      var orderVal = parseInt(srow.querySelector("[data-field='order']").value, 10) || 0;
+      if (!contentVal) return;
+      btn.disabled = true;
+      api("rules?id=" + encodeURIComponent(sid), "PATCH", { id: sid, name: nameVal || sid, content: contentVal, sort_order: orderVal })
+        .then(function() { editingRuleId = null; showToast(tt("saved")); loadRules(); })
+        .catch(function() { showToast(tt("failed")); btn.disabled = false; });
+    } else if (btn.dataset.cancelrule) {
+      editingRuleId = null;
+      loadRules();
     }
   });
 
