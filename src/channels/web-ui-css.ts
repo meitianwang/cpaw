@@ -693,6 +693,19 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 .sk-toggle input:checked+.sk-slider{background:var(--accent)}
 .sk-toggle input:checked+.sk-slider:before{transform:translateX(16px)}
 .sk-empty{text-align:center;padding:48px 24px;color:var(--fg-tertiary);font-size:14px}
+.sk-card-actions{display:flex;gap:6px;margin-top:auto;align-items:center}
+.sk-install-market-btn{padding:5px 14px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:var(--font);border:1px solid var(--accent);background:var(--accent);color:var(--bg);transition:all .15s}
+.sk-install-market-btn:hover{opacity:0.85}
+.sk-install-market-btn:disabled{opacity:0.5;cursor:default}
+.sk-install-market-btn.installed{background:transparent;color:var(--fg-tertiary);border-color:var(--border);cursor:default}
+.sk-install-market-btn.installed:hover{opacity:1}
+.sk-uninstall-btn{padding:5px 10px;border-radius:8px;font-size:12px;cursor:pointer;font-family:var(--font);border:1px solid var(--border);background:transparent;color:var(--fg-tertiary);transition:all .15s}
+.sk-uninstall-btn:hover{color:#ef4444;border-color:#ef4444}
+.sk-dropzone{border:2px dashed var(--border);border-radius:12px;padding:40px 24px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.sk-dropzone:hover{border-color:var(--fg-tertiary)}
+.sk-dropzone.drag-over{border-color:var(--accent);background:var(--bg-hover)}
+.sk-upload-hints{margin-top:12px;font-size:12px;color:var(--fg-tertiary);line-height:1.6}
+#sk-upload-status{padding:10px 14px;border-radius:8px;font-size:13px;background:var(--bg-hover)}
 @media(max-width:640px){.s-form-grid{grid-template-columns:1fr}.sk-grid{grid-template-columns:1fr}}
 
 /* ─── Channel grid & modal ─── */

@@ -3,6 +3,7 @@
  *
  * Directory layout:
  *   ~/.klaus/users/{userId}/
+ *     ├── .claude/skills/  # per-user installed skills
  *     ├── memory/          # memory markdown files
  *     ├── memory.db        # memory vector index
  *     ├── transcripts/     # JSONL chat transcripts
@@ -11,8 +12,9 @@
  *     └── workspace/       # coding tools workdir
  */
 
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { CONFIG_DIR } from "./config.js";
 
 const USERS_BASE = join(CONFIG_DIR, "users");
@@ -41,6 +43,14 @@ export function getUserWorkspaceDir(userId: string): string {
   return join(USERS_BASE, userId, "workspace");
 }
 
+export function getUserSkillsDir(userId: string): string {
+  return join(USERS_BASE, userId, ".claude", "skills");
+}
+
+/** Global skills marketplace — bundled with the project, deployed with the code. */
+const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+export const SKILLS_MARKET_DIR = join(PROJECT_ROOT, "skills-market");
+
 /** Tracks users whose directories have already been created this process. */
 const ensuredUsers = new Set<string>();
 
@@ -53,6 +63,7 @@ export async function ensureUserDirs(userId: string): Promise<void> {
     mkdir(getUserSessionsDir(userId), { recursive: true }),
     mkdir(getUserUploadsDir(userId), { recursive: true }),
     mkdir(getUserWorkspaceDir(userId), { recursive: true }),
+    mkdir(getUserSkillsDir(userId), { recursive: true }),
   ]);
   ensuredUsers.add(userId);
 }

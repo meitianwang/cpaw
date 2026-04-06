@@ -8,7 +8,7 @@ export function getSettingsJs(): string {
   function switchSettingsTab(id) {
     sNavItems.forEach(function(n) { n.classList.toggle("active", n.getAttribute("data-stab") === id); });
     sTabPanels.forEach(function(p) { p.classList.toggle("active", p.id === "stab-" + id); });
-    if (id === "skills") loadSettingsSkills();
+    if (id === "skills") loadAllSkillData();
     if (id === "mcp" && isAdmin) loadMcpServers();
     if (id === "cron" && isAdmin) loadCronTasks();
     if (id === "channels") loadSettingsChannels();
@@ -643,104 +643,142 @@ export function getSettingsJs(): string {
   var skGrid = document.getElementById("sk-grid");
   var skEmpty = document.getElementById("sk-empty");
   var skSearch = document.getElementById("sk-search");
-  var skAllData = [];
-  var skFilter = "all";
+  var skInstalledData = [];
+  var skMarketData = [];
+  var skFilter = "market";
 
   function esc(s) { if (s == null) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
-  function renderSkillCards(skills) {
-    var filtered = skills.filter(function(s) {
-      if (skFilter === "enabled") return s.userEnabled || s.always;
-      if (skFilter === "disabled") return !s.userEnabled && !s.always;
-      if (skFilter === "builtin") return s.always;
-      return true;
-    });
+  function renderSkillCards() {
+    var items;
+    if (skFilter === "market") {
+      items = skMarketData;
+    } else if (skFilter === "installed") {
+      items = skInstalledData;
+    } else if (skFilter === "enabled") {
+      items = skInstalledData.filter(function(s) { return s.userEnabled; });
+    } else {
+      items = skInstalledData.filter(function(s) { return !s.userEnabled; });
+    }
     var query = (skSearch.value || "").toLowerCase().trim();
     if (query) {
-      filtered = filtered.filter(function(s) {
+      items = items.filter(function(s) {
         return s.name.toLowerCase().indexOf(query) >= 0 || (s.description || "").toLowerCase().indexOf(query) >= 0;
       });
     }
-    if (filtered.length === 0) {
+    if (items.length === 0) {
       skGrid.innerHTML = "";
       skEmpty.style.display = "";
       return;
     }
     skEmpty.style.display = "none";
-    skGrid.innerHTML = filtered.map(function(s) {
-      var emoji = s.emoji ? esc(s.emoji) : "🧩";
-      var srcBadge = '<span class="s-badge s-badge-gray">' + esc(s.source) + '</span>';
-      var eligBadge = !s.eligible && !s.always ? ' <span class="s-badge s-badge-red">missing deps</span>' : '';
-      var toggle = s.always ? '' : '<label class="sk-toggle"><input type="checkbox" class="sk-toggle-input" data-skill="' + esc(s.name) + '"' + (s.userEnabled ? ' checked' : '') + '><span class="sk-slider"></span></label>';
-      var missingHtml = '';
-      if (s.missing && s.missing.bins && s.missing.bins.length > 0) {
-        missingHtml += '<div style="font-size:12px;color:var(--fg-tertiary);margin-top:4px">Missing: <b>' + esc(s.missing.bins.join(', ')) + '</b></div>';
-      }
-      if (s.missing && s.missing.env && s.missing.env.length > 0) {
-        missingHtml += '<div style="font-size:12px;color:var(--fg-tertiary);margin-top:2px">Missing env: <b>' + esc(s.missing.env.join(', ')) + '</b></div>';
-      }
-      var installHtml = '';
-      if (s.install && s.install.length > 0 && s.missing && s.missing.bins && s.missing.bins.length > 0) {
-        installHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' + s.install.map(function(inst) {
-          return '<button class="s-btn s-btn-primary sk-install-btn" data-skill="' + esc(s.name) + '" data-spec="' + esc(encodeURIComponent(JSON.stringify(inst))) + '">' + esc(inst.label) + '</button>';
-        }).join('') + '</div>';
-      }
-      return '<div class="sk-card">' +
-        '<div class="sk-card-head">' +
-          '<div class="sk-card-info"><div class="sk-card-emoji">' + emoji + '</div><div class="sk-card-name">' + esc(s.name) + '</div></div>' +
-          toggle +
-        '</div>' +
-        '<div class="sk-card-desc">' + esc(s.description || '') + '</div>' +
-        missingHtml + installHtml +
-        '<div class="sk-card-badges">' + srcBadge + (s.always ? ' <span class="s-badge s-badge-green">always-on</span>' : '') + eligBadge + '</div>' +
-      '</div>';
-    }).join("");
-    // Bind toggles
-    skGrid.querySelectorAll(".sk-toggle-input").forEach(function(el) {
-      el.addEventListener("change", function() {
-        var name = el.getAttribute("data-skill");
-        fetch("/api/skills", { method: "PATCH", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ name: name, enabled: el.checked }) }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function() {
-          showSettingsToast(tt(el.checked ? "settings_skills_on" : "settings_skills_off"));
-          loadSettingsSkills();
-        }).catch(function(e) {
-          showSettingsToast("Error: " + (e.message || e));
-          loadSettingsSkills();
+    if (skFilter === "market") {
+      // Market cards: name, description, install button
+      skGrid.innerHTML = items.map(function(s) {
+        var btnClass = s.installed ? "sk-install-market-btn installed" : "sk-install-market-btn";
+        var btnText = s.installed ? tt("settings_skills_installed_badge") : tt("settings_skills_install");
+        return '<div class="sk-card">' +
+          '<div class="sk-card-head">' +
+            '<div class="sk-card-info"><div class="sk-card-emoji">\u{1F9E9}</div><div class="sk-card-name">' + esc(s.name) + '</div></div>' +
+          '</div>' +
+          '<div class="sk-card-desc">' + esc(s.description || '') + '</div>' +
+          '<div class="sk-card-actions">' +
+            '<button class="' + btnClass + '" data-skill="' + esc(s.dirName || s.name) + '"' + (s.installed ? ' disabled' : '') + '>' + btnText + '</button>' +
+          '</div>' +
+        '</div>';
+      }).join("");
+      // Bind install buttons
+      skGrid.querySelectorAll(".sk-install-market-btn:not(.installed)").forEach(function(el) {
+        el.addEventListener("click", function() {
+          var name = el.getAttribute("data-skill");
+          el.disabled = true;
+          el.textContent = tt("settings_skills_uploading");
+          fetch("/api/skills/install", { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ name: name }) }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function() {
+            showSettingsToast(tt("settings_skills_installed_toast"));
+            loadAllSkillData();
+          }).catch(function(e) {
+            showSettingsToast("Error: " + (e.message || e));
+            loadAllSkillData();
+          });
         });
       });
-    });
-    // Bind install buttons
-    skGrid.querySelectorAll(".sk-install-btn").forEach(function(el) {
-      el.addEventListener("click", function() {
-        var spec = JSON.parse(decodeURIComponent(el.dataset.spec));
-        el.disabled = true;
-        el.textContent = "Installing...";
-        fetch("/api/skills/install", { method: "POST", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ spec: spec }) }).then(function(r) { if (!r.ok && r.status !== 500) throw new Error("HTTP " + r.status); return r.json(); }).then(function(r) {
-          showSettingsToast(r.ok ? "Installed!" : "Failed: " + r.message);
-          loadSettingsSkills();
-        }).catch(function(e) {
-          showSettingsToast("Error: " + (e.message || e));
-          loadSettingsSkills();
+    } else {
+      // Installed/enabled/disabled cards: toggle + uninstall
+      skGrid.innerHTML = items.map(function(s) {
+        var srcBadge = '<span class="s-badge s-badge-gray">' + esc(s.source) + '</span>';
+        var toggle = '<label class="sk-toggle"><input type="checkbox" class="sk-toggle-input" data-skill="' + esc(s.name) + '"' + (s.userEnabled ? ' checked' : '') + '><span class="sk-slider"></span></label>';
+        var uninstallBtn = s.installed ? '<button class="sk-uninstall-btn" data-skill="' + esc(s.name) + '">' + tt("settings_skills_uninstall") + '</button>' : '';
+        return '<div class="sk-card">' +
+          '<div class="sk-card-head">' +
+            '<div class="sk-card-info"><div class="sk-card-emoji">\u{1F9E9}</div><div class="sk-card-name">' + esc(s.name) + '</div></div>' +
+            toggle +
+          '</div>' +
+          '<div class="sk-card-desc">' + esc(s.description || '') + '</div>' +
+          '<div class="sk-card-actions">' + uninstallBtn + '</div>' +
+          '<div class="sk-card-badges">' + srcBadge + '</div>' +
+        '</div>';
+      }).join("");
+      // Bind toggles
+      skGrid.querySelectorAll(".sk-toggle-input").forEach(function(el) {
+        el.addEventListener("change", function() {
+          var name = el.getAttribute("data-skill");
+          fetch("/api/skills", { method: "PATCH", credentials: "same-origin", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ name: name, enabled: el.checked }) }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function() {
+            showSettingsToast(tt(el.checked ? "settings_skills_on" : "settings_skills_off"));
+            loadInstalledSkills();
+          }).catch(function(e) {
+            showSettingsToast("Error: " + (e.message || e));
+            loadInstalledSkills();
+          });
         });
       });
+      // Bind uninstall buttons
+      skGrid.querySelectorAll(".sk-uninstall-btn").forEach(function(el) {
+        el.addEventListener("click", function() {
+          var name = el.getAttribute("data-skill");
+          if (!confirm(tt("settings_skills_uninstall") + ": " + name + "?")) return;
+          el.disabled = true;
+          fetch("/api/skills/installed/" + encodeURIComponent(name), { method: "DELETE", credentials: "same-origin" }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function() {
+            showSettingsToast(tt("settings_skills_uninstalled_toast"));
+            loadAllSkillData();
+          }).catch(function(e) {
+            showSettingsToast("Error: " + (e.message || e));
+            loadAllSkillData();
+          });
+        });
+      });
+    }
+  }
+
+  function loadMarketSkills() {
+    return fetch("/api/skills/market", { credentials: "same-origin" }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function(data) {
+      skMarketData = data.skills || [];
+    }).catch(function(e) { console.error("Failed to load market skills:", e); });
+  }
+
+  function loadInstalledSkills() {
+    return fetch("/api/skills", { credentials: "same-origin" }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function(data) {
+      skInstalledData = (data.skills || []).filter(function(s) { return !s.always; });
+    }).catch(function(e) { console.error("Failed to load skills:", e); });
+  }
+
+  function loadAllSkillData() {
+    Promise.all([loadMarketSkills(), loadInstalledSkills()]).then(function() {
+      updateSkillTabCounts();
+      renderSkillCards();
     });
   }
 
-  function loadSettingsSkills() {
-    fetch("/api/skills", { credentials: "same-origin" }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function(data) {
-      skAllData = data.skills || [];
-      // Update tab counts
-      var allCount = skAllData.length;
-      var builtinCount = skAllData.filter(function(s) { return s.always; }).length;
-      var enabledCount = skAllData.filter(function(s) { return s.userEnabled || s.always; }).length;
-      var disabledCount = skAllData.filter(function(s) { return !s.userEnabled && !s.always; }).length;
-      document.querySelectorAll(".sk-tab").forEach(function(t) {
-        var f = t.getAttribute("data-sk-filter");
-        var count = f === "all" ? allCount : f === "builtin" ? builtinCount : f === "enabled" ? enabledCount : disabledCount;
-        if (!t.getAttribute("data-label")) t.setAttribute("data-label", t.textContent.replace(/ \d+$/, "").trim());
-        t.textContent = t.getAttribute("data-label") + " " + count;
-      });
-      renderSkillCards(skAllData);
-    }).catch(function(e) { console.error("Failed to load skills:", e); });
+  function updateSkillTabCounts() {
+    var marketCount = skMarketData.length;
+    var installedCount = skInstalledData.length;
+    var enabledCount = skInstalledData.filter(function(s) { return s.userEnabled; }).length;
+    var disabledCount = skInstalledData.filter(function(s) { return !s.userEnabled; }).length;
+    document.querySelectorAll(".sk-tab").forEach(function(t) {
+      var f = t.getAttribute("data-sk-filter");
+      var count = f === "market" ? marketCount : f === "installed" ? installedCount : f === "enabled" ? enabledCount : disabledCount;
+      if (!t.getAttribute("data-label")) t.setAttribute("data-label", t.textContent.replace(/ \d+$/, "").trim());
+      t.textContent = t.getAttribute("data-label") + " " + count;
+    });
   }
 
   // Tab filter buttons
@@ -749,12 +787,62 @@ export function getSettingsJs(): string {
       document.querySelectorAll(".sk-tab").forEach(function(b) { b.classList.remove("active"); });
       t.classList.add("active");
       skFilter = t.getAttribute("data-sk-filter");
-      renderSkillCards(skAllData);
+      renderSkillCards();
     });
   });
 
   // Search
-  skSearch.addEventListener("input", function() { renderSkillCards(skAllData); });
+  skSearch.addEventListener("input", function() { renderSkillCards(); });
+
+  // Upload modal
+  var skUploadModal = document.getElementById("sk-upload-modal");
+  var skDropzone = document.getElementById("sk-dropzone");
+  var skFileInput = document.getElementById("sk-file-input");
+  var skUploadStatus = document.getElementById("sk-upload-status");
+
+  document.getElementById("sk-upload-btn").addEventListener("click", function() {
+    skUploadModal.classList.add("show");
+    skUploadStatus.style.display = "none";
+  });
+  document.getElementById("sk-upload-close").addEventListener("click", function() {
+    skUploadModal.classList.remove("show");
+  });
+  skUploadModal.addEventListener("click", function(e) {
+    if (e.target === skUploadModal) skUploadModal.classList.remove("show");
+  });
+
+  skDropzone.addEventListener("click", function() { skFileInput.click(); });
+  skDropzone.addEventListener("dragover", function(e) { e.preventDefault(); skDropzone.classList.add("drag-over"); });
+  skDropzone.addEventListener("dragleave", function() { skDropzone.classList.remove("drag-over"); });
+  skDropzone.addEventListener("drop", function(e) {
+    e.preventDefault();
+    skDropzone.classList.remove("drag-over");
+    if (e.dataTransfer.files.length > 0) uploadSkillFile(e.dataTransfer.files[0]);
+  });
+  skFileInput.addEventListener("change", function() {
+    if (skFileInput.files.length > 0) uploadSkillFile(skFileInput.files[0]);
+    skFileInput.value = "";
+  });
+
+  function uploadSkillFile(file) {
+    skUploadStatus.style.display = "";
+    skUploadStatus.textContent = tt("settings_skills_uploading");
+    fetch("/api/skills/install?name=" + encodeURIComponent(file.name), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.ok) {
+        skUploadStatus.textContent = tt("settings_skills_installed_toast") + ": " + data.name;
+        loadAllSkillData();
+      } else {
+        skUploadStatus.textContent = "Error: " + (data.error || "unknown");
+      }
+    }).catch(function(e) {
+      skUploadStatus.textContent = "Error: " + (e.message || e);
+    });
+  }
 
 `;
 }

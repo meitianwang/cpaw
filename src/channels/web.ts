@@ -25,6 +25,9 @@
  *   GET  /api/admin/history   → View any session's history (admin only)
  *   GET/PATCH /api/admin/settings → All settings: general, web, session, transcripts, cron (admin only)
  *   GET/POST/PATCH/DELETE /api/admin/cron/tasks → Cron task CRUD (admin only)
+ *   GET  /api/skills/market    → Browse skills marketplace
+ *   POST /api/skills/install   → Install skill (from market or upload)
+ *   DELETE /api/skills/installed/:name → Uninstall user skill
  *   GET  /api/health          → Health check (no auth)
  */
 
@@ -48,7 +51,7 @@ import {
   CONFIG_FILE,
   CONFIG_DIR,
 } from "../config.js";
-import { getUserUploadsDir } from "../user-dirs.js";
+import { getUserUploadsDir, getUserSkillsDir, SKILLS_MARKET_DIR } from "../user-dirs.js";
 import type {
   CronTask,
   CronTaskStatus,
@@ -1441,10 +1444,19 @@ async function handleUserSkills(
       const { getCommands } = await import("../engine/commands.js");
       const { homedir } = await import("os");
       const { join } = await import("path");
+      const { readdir } = await import("node:fs/promises");
       // Use ~/.klaus as cwd to avoid scanning Klaus project's .claude/skills/
       const allCommands = await getCommands(join(homedir(), '.klaus'));
       // Read per-user skill preferences
       const userSkillPrefs = settingsStoreRef.getByPrefix(`user.${auth.user.id}.skill.`);
+      // Check which skills are installed in user directory
+      let userInstalledNames: Set<string>;
+      try {
+        const entries = await readdir(getUserSkillsDir(auth.user.id));
+        userInstalledNames = new Set(entries);
+      } catch {
+        userInstalledNames = new Set();
+      }
       const skills = allCommands
         .filter((cmd: any) => cmd.type === "prompt")
         .map((cmd: any) => {
@@ -1462,6 +1474,7 @@ async function handleUserSkills(
             always: isBundled,
             userEnabled,
             userInvocable: cmd.userInvocable !== false,
+            installed: userInstalledNames.has(cmd.name),
           };
         });
       jsonResponse(res, 200, { skills });
@@ -1540,29 +1553,256 @@ async function handleUserSettings(
   jsonResponse(res, 405, { error: "method not allowed" });
 }
 
-async function handleAdminSkillsInstall(
+// ---------------------------------------------------------------------------
+// Skills: marketplace listing (user-facing)
+// ---------------------------------------------------------------------------
+
+const SKILL_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+const MAX_SKILL_UPLOAD_SIZE = 5 * 1024 * 1024; // 5 MB
+
+/** Parse SKILL.md frontmatter (name, description) without importing engine internals. */
+function parseSkillFrontmatter(content: string): { name?: string; description?: string } {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return {};
+  const fm: Record<string, string> = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const idx = line.indexOf(":");
+    if (idx > 0) {
+      const key = line.slice(0, idx).trim();
+      const val = line.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
+      if (key && val) fm[key] = val;
+    }
+  }
+  return { name: fm.name, description: fm.description };
+}
+
+async function handleSkillsMarket(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  if (!adminAuth(req, res)) return;
-
-  if (req.method === "POST") {
-    try {
-      const parsed = await readJsonBody(req, 4096);
-      const spec = parsed.spec as Record<string, unknown> | undefined;
-      if (!spec || typeof spec !== "object") {
-        jsonResponse(res, 400, { error: "spec required" });
-        return;
-      }
-      // Skill installer removed — engine manages skills internally
-      jsonResponse(res, 501, { error: "Skill installer not available — engine manages skills" });
-    } catch (err) {
-      gatewayErrorResponse(res, err);
-    }
+  const auth = authenticateRequest(req);
+  if (auth.kind === "invalid") {
+    jsonResponse(res, 401, { error: "unauthorized" });
     return;
   }
 
-  jsonResponse(res, 405, { error: "method not allowed" });
+  if (req.method !== "GET") {
+    jsonResponse(res, 405, { error: "method not allowed" });
+    return;
+  }
+
+  const { readdir, readFile } = await import("node:fs/promises");
+
+  try {
+    const entries = await readdir(SKILLS_MARKET_DIR, { withFileTypes: true });
+    const userSkillsDir = getUserSkillsDir(auth.user.id);
+
+    // Check which skills are installed by the user
+    let installedNames: Set<string>;
+    try {
+      const userEntries = await readdir(userSkillsDir);
+      installedNames = new Set(userEntries);
+    } catch {
+      installedNames = new Set();
+    }
+
+    const skills: Record<string, unknown>[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillDir = join(SKILLS_MARKET_DIR, entry.name);
+      try {
+        const skillMd = await readFile(join(skillDir, "SKILL.md"), "utf-8");
+        const fm = parseSkillFrontmatter(skillMd);
+        skills.push({
+          name: fm.name || entry.name,
+          dirName: entry.name,
+          description: fm.description || "",
+          installed: installedNames.has(entry.name),
+        });
+      } catch {
+        // Skip directories without SKILL.md
+      }
+    }
+    jsonResponse(res, 200, { skills });
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Skills: install (from market or upload)
+// ---------------------------------------------------------------------------
+
+async function handleSkillsInstall(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const auth = authenticateRequest(req);
+  if (auth.kind === "invalid") {
+    jsonResponse(res, 401, { error: "unauthorized" });
+    return;
+  }
+  if (!settingsStoreRef) { jsonResponse(res, 503, { error: "not ready" }); return; }
+  if (req.method !== "POST") {
+    jsonResponse(res, 405, { error: "method not allowed" });
+    return;
+  }
+
+  const contentType = req.headers["content-type"] ?? "";
+  const userId = auth.user.id;
+
+  try {
+    if (contentType.startsWith("application/json")) {
+      // Mode 1: Install from market
+      const parsed = await readJsonBody(req, 4096);
+      const name = typeof parsed.name === "string" ? parsed.name : "";
+      if (!name || !SKILL_NAME_RE.test(name) || name.length > 64) {
+        jsonResponse(res, 400, { error: "invalid skill name" });
+        return;
+      }
+      const srcDir = join(SKILLS_MARKET_DIR, name);
+      const { stat } = await import("node:fs/promises");
+      try {
+        const s = await stat(join(srcDir, "SKILL.md"));
+        if (!s.isFile()) throw new Error("not a file");
+      } catch {
+        jsonResponse(res, 404, { error: "skill not found in market" });
+        return;
+      }
+      // Recursive copy to user's skills dir
+      const destDir = join(getUserSkillsDir(userId), name);
+      const { cp, mkdir: mkdirP } = await import("node:fs/promises");
+      await mkdirP(destDir, { recursive: true });
+      await cp(srcDir, destDir, { recursive: true });
+      // Auto-enable
+      settingsStoreRef.set(`user.${userId}.skill.${name}`, "on");
+      // Clear engine cache
+      const { clearCommandsCache } = await import("../engine/commands.js");
+      clearCommandsCache();
+      jsonResponse(res, 200, { ok: true, name });
+    } else {
+      // Mode 2: Upload install (.zip or .md)
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const fileName = url.searchParams.get("name") ?? "upload";
+      const data = await readBody(req, MAX_SKILL_UPLOAD_SIZE);
+      const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+
+      let skillName: string;
+      const userSkillsDir = getUserSkillsDir(userId);
+
+      if (ext === "zip") {
+        // Unzip and find SKILL.md
+        const { unzipFile } = await import("../engine/utils/dxt/zip.js");
+        const files = await unzipFile(data);
+        // Find SKILL.md — could be at root or in a subdirectory
+        let skillMdPath: string | null = null;
+        let skillMdContent: string | null = null;
+        for (const [path, content] of Object.entries(files)) {
+          const parts = path.split("/");
+          const base = parts[parts.length - 1];
+          if (base === "SKILL.md") {
+            skillMdPath = path;
+            skillMdContent = new TextDecoder().decode(content);
+            break;
+          }
+        }
+        if (!skillMdPath || !skillMdContent) {
+          jsonResponse(res, 400, { error: "no SKILL.md found in zip" });
+          return;
+        }
+        const fm = parseSkillFrontmatter(skillMdContent);
+        // Determine skill name: from frontmatter, or from subdirectory name, or filename
+        const pathParts = skillMdPath.split("/");
+        const dirName = pathParts.length > 1 ? pathParts[0] : null;
+        skillName = fm.name || dirName || fileName.replace(/\.zip$/i, "");
+        skillName = skillName.replace(/[^a-zA-Z0-9_-]/g, "_");
+        if (!skillName) { jsonResponse(res, 400, { error: "cannot determine skill name" }); return; }
+
+        // Write all files preserving structure relative to skill root
+        const { mkdir: mkdirP, writeFile } = await import("node:fs/promises");
+        const destDir = join(userSkillsDir, skillName);
+        const prefix = dirName ? dirName + "/" : "";
+        for (const [path, content] of Object.entries(files)) {
+          // Skip directories (entries ending with /)
+          if (path.endsWith("/")) continue;
+          const relativePath = prefix && path.startsWith(prefix)
+            ? path.slice(prefix.length)
+            : path;
+          const destPath = join(destDir, relativePath);
+          await mkdirP(join(destPath, ".."), { recursive: true });
+          await writeFile(destPath, content);
+        }
+      } else {
+        // Treat as single SKILL.md
+        const content = data.toString("utf-8");
+        const fm = parseSkillFrontmatter(content);
+        skillName = fm.name || fileName.replace(/\.md$/i, "");
+        skillName = skillName.replace(/[^a-zA-Z0-9_-]/g, "_");
+        if (!skillName) { jsonResponse(res, 400, { error: "cannot determine skill name" }); return; }
+        const { mkdir: mkdirP, writeFile } = await import("node:fs/promises");
+        const destDir = join(userSkillsDir, skillName);
+        await mkdirP(destDir, { recursive: true });
+        await writeFile(join(destDir, "SKILL.md"), content);
+      }
+
+      // Auto-enable
+      settingsStoreRef.set(`user.${userId}.skill.${skillName}`, "on");
+      const { clearCommandsCache } = await import("../engine/commands.js");
+      clearCommandsCache();
+      jsonResponse(res, 200, { ok: true, name: skillName });
+    }
+  } catch (err) {
+    gatewayErrorResponse(res, err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Skills: uninstall user-installed skill
+// ---------------------------------------------------------------------------
+
+async function handleSkillUninstall(
+  req: IncomingMessage,
+  res: ServerResponse,
+  skillName: string,
+): Promise<void> {
+  const auth = authenticateRequest(req);
+  if (auth.kind === "invalid") {
+    jsonResponse(res, 401, { error: "unauthorized" });
+    return;
+  }
+  if (!settingsStoreRef) { jsonResponse(res, 503, { error: "not ready" }); return; }
+  if (req.method !== "DELETE") {
+    jsonResponse(res, 405, { error: "method not allowed" });
+    return;
+  }
+
+  if (!skillName || !SKILL_NAME_RE.test(skillName) || skillName.length > 64) {
+    jsonResponse(res, 400, { error: "invalid skill name" });
+    return;
+  }
+
+  const userId = auth.user.id;
+  const skillDir = join(getUserSkillsDir(userId), skillName);
+
+  try {
+    const { stat } = await import("node:fs/promises");
+    const s = await stat(skillDir);
+    if (!s.isDirectory()) {
+      jsonResponse(res, 404, { error: "skill not installed" });
+      return;
+    }
+  } catch {
+    jsonResponse(res, 404, { error: "skill not installed" });
+    return;
+  }
+
+  const { rm } = await import("node:fs/promises");
+  await rm(skillDir, { recursive: true, force: true });
+  // Clear the preference (setting to empty so it won't affect future installs)
+  settingsStoreRef.set(`user.${userId}.skill.${skillName}`, "");
+  const { clearCommandsCache } = await import("../engine/commands.js");
+  clearCommandsCache();
+  jsonResponse(res, 200, { ok: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -2538,8 +2778,10 @@ async function handleRequest(
     // User skills preferences
     case "/api/skills":
       return handleUserSkills(req, res);
+    case "/api/skills/market":
+      return handleSkillsMarket(req, res);
     case "/api/skills/install":
-      return handleAdminSkillsInstall(req, res);
+      return handleSkillsInstall(req, res);
 
     // Admin routes
     case "/api/admin/invites":
@@ -2739,6 +2981,11 @@ async function handleRequest(
       res.end("ok");
       return;
     default:
+      // Skill uninstall: /api/skills/installed/<name>
+      if (url.pathname.startsWith("/api/skills/installed/")) {
+        const skillName = decodeURIComponent(url.pathname.slice("/api/skills/installed/".length));
+        return handleSkillUninstall(req, res, skillName);
+      }
       // File download: /api/files/<token>
       if (url.pathname.startsWith("/api/files/") && req.method === "GET") {
         return handleFileDownload(

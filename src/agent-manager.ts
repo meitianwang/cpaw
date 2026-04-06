@@ -19,6 +19,8 @@ import { getAllBaseTools, assembleToolPool } from "./engine/tools.js";
 import { wrapLegacyTools, type LegacyAgentTool } from "./engine/utils/legacyToolAdapter.js";
 import type { MCPManager } from "./mcp-manager.js";
 // SkillTool removed from engine — define type locally
+import { dirname } from "path";
+import { fileURLToPath } from "url";
 import { extractUserId, ensureUserDirs } from "./user-dirs.js";
 import { initContextCollapse, resetContextCollapse } from "./engine/services/contextCollapse/index.js";
 import type { ContextCollapseStats } from "./engine/services/contextCollapse/index.js";
@@ -166,7 +168,11 @@ export class AgentSessionManager {
       const userId = extractUserId(sessionKey);
 
       // Per-user global state values (will be restored before each async yield)
-      const userAdditionalDirs = [join(homedir(), '.klaus', 'users', userId)];
+      const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+      const userAdditionalDirs = [
+        join(homedir(), '.klaus', 'users', userId),
+        join(projectRoot, 'builtin-skills'),
+      ];
       const userMemoryPath = join(homedir(), '.klaus', 'users', userId, 'memory');
 
       // Set per-user skill directory so engine scans user's skills

@@ -513,22 +513,44 @@ export function getChatBodyHtml(): string {
             </div>
           </div>
 
-          <!-- Cron tab -->
+          <!-- Skills tab -->
           <div class="settings-tab-panel" id="stab-skills">
             <div class="settings-section">
               <div class="settings-section-header">
                 <div class="settings-section-header-title" data-i18n="settings_skills">Skills</div>
+                <button class="s-btn s-btn-primary" id="sk-upload-btn" data-i18n="settings_skills_upload_btn">+ Install Skill</button>
               </div>
-              <div class="settings-section-desc" data-i18n="settings_skills_desc">Enable skills to extend Klaus with specialized capabilities and tools.</div>
+              <div class="settings-section-desc" data-i18n="settings_skills_desc">Install and manage skills to extend Klaus with specialized capabilities.</div>
               <div class="sk-tabs">
-                <button class="sk-tab active" data-sk-filter="all">全部</button>
-                <button class="sk-tab" data-sk-filter="builtin">内置</button>
-                <button class="sk-tab" data-sk-filter="enabled">已启用</button>
-                <button class="sk-tab" data-sk-filter="disabled">未启用</button>
+                <button class="sk-tab active" data-sk-filter="market" data-i18n="settings_skills_market">Marketplace</button>
+                <button class="sk-tab" data-sk-filter="installed" data-i18n="settings_skills_installed">Installed</button>
+                <button class="sk-tab" data-sk-filter="enabled" data-i18n="settings_skills_enabled">Enabled</button>
+                <button class="sk-tab" data-sk-filter="disabled" data-i18n="settings_skills_disabled">Disabled</button>
               </div>
               <input class="s-form-input sk-search" id="sk-search" placeholder="Search skills..." data-i18n-placeholder="settings_skills_search">
               <div class="sk-grid" id="sk-grid"></div>
               <div class="sk-empty" id="sk-empty" style="display:none" data-i18n="settings_skills_empty">No skills found.</div>
+            </div>
+            <!-- Upload modal -->
+            <div class="ch-modal-overlay" id="sk-upload-modal">
+              <div class="ch-modal">
+                <div class="ch-modal-header">
+                  <div style="font-weight:600" data-i18n="settings_skills_upload_title">Install Skill</div>
+                  <button class="ch-modal-close" id="sk-upload-close">&times;</button>
+                </div>
+                <div class="ch-modal-body">
+                  <div class="sk-dropzone" id="sk-dropzone">
+                    <div style="font-size:32px;margin-bottom:12px;opacity:0.4">\u{1F4E6}</div>
+                    <div data-i18n="settings_skills_upload_desc">Drop a .zip or SKILL.md file, or click to browse</div>
+                    <input type="file" id="sk-file-input" accept=".zip,.md" style="display:none">
+                  </div>
+                  <div class="sk-upload-hints">
+                    <div>\u2022 .zip containing SKILL.md</div>
+                    <div>\u2022 single SKILL.md file</div>
+                  </div>
+                  <div id="sk-upload-status" style="display:none"></div>
+                </div>
+              </div>
             </div>
           </div>
 
