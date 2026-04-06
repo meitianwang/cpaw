@@ -163,13 +163,19 @@ export function getMessagesJs(): string {
     var text = input.value.trim();
     var hasFiles = pendingFiles.length > 0;
     sendBtn.disabled = busy || uploading || (!text && !hasFiles);
+    input.readOnly = busy;
+    if (busy) input.blur();
   }
 
   var thinkingScrollTimer = null;
+  var thinkingStartTime = 0;
 
   function showThinking(chunk) {
     var el = document.getElementById("thinking-container");
     if (!el) {
+      if (isStreaming) { finalizeStreamingMessage(""); }
+      finalizeToolContainer();
+      thinkingStartTime = Date.now();
       el = document.createElement("div");
       el.className = "thinking-indicator";
       el.id = "thinking-container";
@@ -181,9 +187,7 @@ export function getMessagesJs(): string {
       var contentEl = el.querySelector(".thinking-content");
       if (contentEl) {
         contentEl.style.display = "block";
-        // Append text node instead of replacing textContent to avoid full reflow
         contentEl.appendChild(document.createTextNode(chunk));
-        // Throttle scrollBottom to avoid layout thrashing
         if (!thinkingScrollTimer) {
           thinkingScrollTimer = setTimeout(function() { thinkingScrollTimer = null; scrollBottom(); }, 150);
         }
@@ -195,6 +199,26 @@ export function getMessagesJs(): string {
     var el = document.getElementById("thinking-container");
     if (el) el.remove();
     if (thinkingScrollTimer) { clearTimeout(thinkingScrollTimer); thinkingScrollTimer = null; }
+    thinkingStartTime = 0;
+  }
+
+  function finalizeThinking() {
+    var el = document.getElementById("thinking-container");
+    if (!el) return;
+    if (thinkingScrollTimer) { clearTimeout(thinkingScrollTimer); thinkingScrollTimer = null; }
+    el.removeAttribute("id");
+    var contentEl = el.querySelector(".thinking-content");
+    var rawText = contentEl ? contentEl.textContent.trim() : "";
+    if (!rawText) { el.remove(); thinkingStartTime = 0; return; }
+    var elapsed = thinkingStartTime ? Math.round((Date.now() - thinkingStartTime) / 1000) : 0;
+    thinkingStartTime = 0;
+    var durationText = elapsed > 0 ? tt("thought") + tt("thought_duration").replace("{s}", elapsed) : tt("thought");
+    var chevron = '<svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+    el.className = "thinking-done";
+    el.innerHTML = '<div class="thinking-toggle"><span>' + durationText + '</span>' + chevron + '</div><div class="thinking-detail">' + renderMd(rawText) + '</div>';
+    el.querySelector(".thinking-toggle").onclick = function() {
+      el.classList.toggle("expanded");
+    };
   }
 
   var activeTools = new Map();
@@ -215,21 +239,32 @@ export function getMessagesJs(): string {
 
   function getOrCreateToolContainer() {
     if (toolContainer && document.contains(toolContainer)) return toolContainer;
+    if (isStreaming) { finalizeStreamingMessage(""); }
+    finalizeThinking();
     toolContainer = document.createElement("div");
     toolContainer.className = "tool-container";
     toolContainer.id = "active-tools";
-    var thinking = document.getElementById("thinking-container");
-    if (thinking) {
-      msgs.insertBefore(toolContainer, thinking);
-    } else {
-      msgs.appendChild(toolContainer);
-    }
+    msgs.appendChild(toolContainer);
     return toolContainer;
   }
 
   function clearToolContainer() {
     var tc = document.getElementById("active-tools");
     if (tc) tc.remove();
+    toolContainer = null;
+    activeTools.clear();
+    agentContainers.clear();
+  }
+
+  function finalizeToolContainer() {
+    var tc = document.getElementById("active-tools");
+    if (!tc) return;
+    tc.removeAttribute("id");
+    tc.querySelectorAll(".tool-item:not(.done):not(.error)").forEach(function(item) {
+      item.classList.add("done");
+      var dot = item.querySelector(".tool-dot");
+      if (dot) dot.remove();
+    });
     toolContainer = null;
     activeTools.clear();
     agentContainers.clear();
@@ -373,8 +408,8 @@ export function getMessagesJs(): string {
 
   function handleStreamChunk(chunk) {
     if (!isStreaming) {
-      removeThinking();
-      clearToolContainer();
+      finalizeThinking();
+      finalizeToolContainer();
       createStreamingMessage();
       isStreaming = true;
     }
@@ -411,21 +446,25 @@ export function getMessagesJs(): string {
   function finalizeStreamingMessage(fullText) {
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
     if (streamBuffer) { flushStreamBuffer(); }
+    var hadContent = streamFullText.length > 0;
     streamBuffer = "";
     streamFullText = "";
     isStreaming = false;
     var el = document.getElementById("streaming-msg");
     if (el) {
-      if (fullText) {
+      if (!hadContent && !fullText) {
+        el.remove();
+      } else if (fullText) {
         var msgEl = el.querySelector(".msg");
         if (msgEl) { msgEl.className = "msg assistant"; msgEl.innerHTML = renderMd(fullText); postProcessMsg(msgEl); }
+        el.removeAttribute("id");
       } else {
         var cursor = el.querySelector(".cursor");
         if (cursor) cursor.remove();
         var msgEl2 = el.querySelector(".msg");
         if (msgEl2) msgEl2.classList.remove("streaming");
+        el.removeAttribute("id");
       }
-      el.removeAttribute("id");
     }
     scrollBottom();
   }

@@ -307,13 +307,36 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 .thinking-dots span:nth-child(3){animation-delay:0.32s}
 @keyframes thinking-bounce{0%,80%,100%{opacity:0.3;transform:scale(0.8)}40%{opacity:1;transform:scale(1)}}
 .thinking-content{
-  margin-top:6px;padding:8px 12px;border-radius:8px;
-  background:var(--bg-secondary);color:var(--fg-secondary);
-  font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word;
-  max-height:200px;overflow-y:auto;opacity:0.8;
+  flex-basis:100%;
+  margin:4px 0 0 2px;padding:4px 16px;
+  border-left:2px solid var(--border);
+  color:var(--fg-secondary);
+  font-size:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;
+  max-height:200px;overflow-y:auto;
 }
 .thinking-indicator{flex-wrap:wrap}
 
+.thinking-done{max-width:720px;width:100%;margin:8px auto 4px;padding:0}
+.thinking-toggle{
+  display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  color:var(--fg-tertiary);font-size:13px;font-weight:500;
+  padding:6px 0;user-select:none;
+}
+.thinking-toggle:hover{color:var(--fg-secondary)}
+.thinking-chevron{transition:transform .2s ease;flex-shrink:0}
+.thinking-done.expanded .thinking-chevron{transform:rotate(180deg)}
+.thinking-detail{
+  max-height:0;overflow:hidden;
+  border-left:2px solid var(--border);margin:0 0 0 2px;padding:0 16px;
+  font-size:14px;line-height:1.6;color:var(--fg-secondary);
+  transition:max-height .3s ease,padding .3s ease,margin-top .3s ease;
+}
+.thinking-detail p{margin:0 0 8px}
+.thinking-detail p:last-child{margin-bottom:0}
+.thinking-detail ul,.thinking-detail ol{margin:0 0 8px;padding-left:20px}
+.thinking-done.expanded .thinking-detail{
+  max-height:400px;overflow-y:auto;padding:4px 16px;margin-top:4px;
+}
 
 /* ─── Streaming cursor ─── */
 .msg.streaming .cursor{

@@ -452,7 +452,7 @@ export function getChatMainJs(): string {
         }
         if (data.event === "done") {
           if (isStreaming) { finalizeStreamingMessage(""); }
-          removeThinking(); clearToolContainer();
+          finalizeThinking(); finalizeToolContainer();
           busy = false; updateBtn();
           return;
         }
@@ -482,7 +482,7 @@ export function getChatMainJs(): string {
       if (data.type === "thinking") { showThinking(data.chunk); return; }
       // Ignore known non-display events that should NOT clear thinking state
       if (data.type === "session_runtime" || data.type === "ping" || data.type === "config_updated") return;
-      if (!isStreaming) { removeThinking(); clearToolContainer(); }
+      if (!isStreaming) { finalizeThinking(); finalizeToolContainer(); }
       if (data.type === "message") {
         // If streaming was already finalized by "done" signal, skip to avoid duplicate
         if (isStreaming) { finalizeStreamingMessage(data.text); }
