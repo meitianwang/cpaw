@@ -222,7 +222,7 @@ export class AgentSessionManager {
       // them manually before query() runs, otherwise the model never sees the
       // available skills list in its first turn.
       const { getAttachmentMessages } = await import("./engine/utils/attachments.js");
-      const { toArray } = await import("./engine/utils/array.js");
+      const { toArray } = await import("./engine/utils/generators.js");
       const attachmentMessages = await toArray(
         getAttachmentMessages(
           text,
