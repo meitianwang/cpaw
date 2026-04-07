@@ -38,10 +38,30 @@ interface TranscriptSessionLine {
   readonly createdAt: number;
 }
 
+/** A structured content block for rich assistant messages. */
+export interface TranscriptThinkingBlock {
+  readonly type: "thinking";
+  readonly text: string;
+  readonly durationSec?: number;
+}
+
+export interface TranscriptToolBlock {
+  readonly type: "tool";
+  readonly toolName: string;
+  readonly toolUseId: string;
+  readonly display?: string;
+  readonly isError?: boolean;
+}
+
+export type TranscriptContentBlock =
+  | { readonly type: "text"; readonly text: string }
+  | TranscriptThinkingBlock
+  | TranscriptToolBlock;
+
 interface TranscriptMessage {
   readonly type: "message";
   readonly role: "user" | "assistant";
-  readonly content: string;
+  readonly content: string | readonly TranscriptContentBlock[];
   readonly ts: number;
 }
 
@@ -157,12 +177,12 @@ function parseMessages(raw: string): TranscriptMessage[] {
       if (
         parsed.type === "message" &&
         (parsed.role === "user" || parsed.role === "assistant") &&
-        typeof parsed.content === "string"
+        (typeof parsed.content === "string" || Array.isArray(parsed.content))
       ) {
         messages.push({
           type: "message",
           role: parsed.role,
-          content: parsed.content,
+          content: parsed.content as string | TranscriptContentBlock[],
           ts: typeof parsed.ts === "number" ? parsed.ts : 0,
         });
       }
@@ -241,7 +261,7 @@ export class MessageStore {
   async append(
     sessionKey: string,
     role: "user" | "assistant",
-    content: string,
+    content: string | readonly TranscriptContentBlock[],
   ): Promise<void> {
     const line: TranscriptMessage = {
       type: "message",

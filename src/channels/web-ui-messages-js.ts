@@ -533,7 +533,36 @@ export function getMessagesJs(): string {
     return html;
   }
 
-  function appendMsg(role, text) {
+  function renderThinkingBlock(block) {
+    var durationText = block.durationSec > 0
+      ? tt("thought") + tt("thought_duration").replace("{s}", block.durationSec)
+      : tt("thought");
+    var chevron = '<svg class="thinking-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+    var el = document.createElement("div");
+    el.className = "thinking-done";
+    el.innerHTML = '<div class="thinking-toggle"><span>' + durationText + '</span>' + chevron + '</div><div class="thinking-detail">' + renderMd(block.text) + '</div>';
+    el.querySelector(".thinking-toggle").onclick = function() { el.classList.toggle("expanded"); };
+    return el;
+  }
+
+  function renderToolBlock(block) {
+    var nameMap = { Bash: "terminal", Read: "file", Write: "file-plus", Edit: "edit", Glob: "search", Grep: "search", WebFetch: "globe", WebSearch: "globe", Agent: "agent", NotebookEdit: "edit" };
+    var iconKey = nameMap[block.toolName] || "tool";
+    var icon = toolIcons[iconKey] || toolIcons.tool;
+    var el = document.createElement("div");
+    el.className = "tool-item" + (block.isError ? " error" : " done");
+    el.innerHTML = icon + '<span class="tool-label">' + escHtml(block.toolName) + '</span>';
+    if (block.isError) {
+      var errSpan = document.createElement("span");
+      errSpan.className = "tool-secondary";
+      errSpan.style.color = "#dc2626";
+      errSpan.textContent = tt("error");
+      el.appendChild(errSpan);
+    }
+    return el;
+  }
+
+  function appendMsg(role, content) {
     hideWelcome();
     var wrap = document.createElement("div");
     wrap.className = "msg-group " + role;
@@ -545,16 +574,38 @@ export function getMessagesJs(): string {
       wrap.appendChild(label);
     }
 
-    var el = document.createElement("div");
-    el.className = "msg " + role;
-    if (role === "user") {
-      el.innerHTML = renderUserHistory(text);
+    // Structured content blocks (thinking, tool, text)
+    if (role === "assistant" && Array.isArray(content)) {
+      var toolGroup = null;
+      content.forEach(function(block) {
+        if (block.type === "thinking") {
+          if (toolGroup) { wrap.appendChild(toolGroup); toolGroup = null; }
+          wrap.appendChild(renderThinkingBlock(block));
+        } else if (block.type === "tool") {
+          if (!toolGroup) { toolGroup = document.createElement("div"); toolGroup.className = "tool-container"; }
+          toolGroup.appendChild(renderToolBlock(block));
+        } else if (block.type === "text") {
+          if (toolGroup) { wrap.appendChild(toolGroup); toolGroup = null; }
+          var el = document.createElement("div");
+          el.className = "msg assistant";
+          el.innerHTML = renderMd(block.text);
+          postProcessMsg(el);
+          wrap.appendChild(el);
+        }
+      });
+      if (toolGroup) wrap.appendChild(toolGroup);
     } else {
-      el.innerHTML = renderMd(text);
-      postProcessMsg(el);
+      var el = document.createElement("div");
+      el.className = "msg " + role;
+      if (role === "user") {
+        el.innerHTML = renderUserHistory(content);
+      } else {
+        el.innerHTML = renderMd(content);
+        postProcessMsg(el);
+      }
+      wrap.appendChild(el);
     }
 
-    wrap.appendChild(el);
     msgs.appendChild(wrap);
     scrollBottom();
   }
@@ -664,6 +715,7 @@ export function getMessagesJs(): string {
               for (var j = attrs.length - 1; j >= 0; j--) {
                 var name = attrs[j].name;
                 if (node.tagName === "A" && (name === "href" || name === "target" || name === "rel")) continue;
+                if (node.tagName === "CODE" && name === "class" && /^language-/.test(attrs[j].value)) continue;
                 node.removeAttribute(name);
               }
               if (node.tagName === "A") {

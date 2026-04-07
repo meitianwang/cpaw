@@ -3,7 +3,7 @@ import type { EngineEvent } from "../agent-manager.js";
 import type { MediaFile } from "../message.js";
 import type { CronTask } from "../types.js";
 import type { Handler } from "../types.js";
-import type { MessageStore } from "../message-store.js";
+import type { MessageStore, TranscriptContentBlock } from "../message-store.js";
 import type {
   McpServerRecord,
   PromptRecord,
@@ -97,6 +97,7 @@ type RpcRequestContext = {
 class GatewayService {
   private readonly clients = new Map<string, Set<GatewayPushClient>>();
   private readonly pendingOAuth = new Map<string, PendingOAuth>();
+  private readonly pendingContentBlocks = new Map<string, TranscriptContentBlock[]>();
   private readonly sessionRuntime = new GatewaySessionRuntimeRegistry();
   private messageStore: MessageStore | null = null;
   private settingsStore: SettingsStore | null = null;
@@ -293,17 +294,29 @@ class GatewayService {
     sessionId: string;
   }): (event: EngineEvent) => void {
     const sessionKey = buildWebSessionKey(params.userId, params.sessionId);
-    return createGatewayAgentEventForwarder({
+    const contentBlocks: TranscriptContentBlock[] = [];
+    this.pendingContentBlocks.set(sessionKey, contentBlocks);
+    let thinkingBuf = "";
+    let thinkingStart = 0;
+    const handler = createGatewayAgentEventForwarder({
       userId: params.userId,
       sessionId: params.sessionId,
       sendEvent: this.sendEvent.bind(this),
       onTextChunk: () => {
         this.publishSessionRuntimeUpdate(this.sessionRuntime.recordText(sessionKey));
       },
-      onThinkingChunk: () => {
+      onThinkingChunk: (chunk) => {
+        if (!thinkingBuf) thinkingStart = Date.now();
+        thinkingBuf += chunk;
         this.publishSessionRuntimeUpdate(this.sessionRuntime.recordThinking(sessionKey));
       },
       onToolStart: ({ toolName, toolCallId }) => {
+        // Flush accumulated thinking
+        if (thinkingBuf) {
+          contentBlocks.push({ type: "thinking", text: thinkingBuf, durationSec: Math.round((Date.now() - thinkingStart) / 1000) });
+          thinkingBuf = "";
+        }
+        contentBlocks.push({ type: "tool", toolName, toolUseId: toolCallId });
         const update = this.sessionRuntime.recordToolStart(sessionKey, toolName);
         this.publishSessionRuntimeUpdate(update);
         const runtime = update?.runtime ?? this.sessionRuntime.get(sessionKey);
@@ -325,6 +338,14 @@ class GatewayService {
         }
       },
       onToolEnd: ({ toolName, toolCallId, isError }) => {
+        // Update the tool block with result status
+        const toolBlock = contentBlocks.find(
+          (b): b is TranscriptContentBlock & { type: "tool" } =>
+            b.type === "tool" && (b as any).toolUseId === toolCallId,
+        );
+        if (toolBlock) {
+          (toolBlock as any).isError = isError;
+        }
         const update = this.sessionRuntime.recordToolEnd(sessionKey);
         this.publishSessionRuntimeUpdate(update);
         const runtime = update?.runtime ?? this.sessionRuntime.get(sessionKey);
@@ -346,15 +367,31 @@ class GatewayService {
         }
       },
     });
+    // Flush any remaining thinking when handler completes (done via contentBlocks reference)
+    const origHandler = handler;
+    const wrappedHandler = (event: EngineEvent) => {
+      origHandler(event);
+      if (event.type === "done" && thinkingBuf) {
+        contentBlocks.push({ type: "thinking", text: thinkingBuf, durationSec: Math.round((Date.now() - thinkingStart) / 1000) });
+        thinkingBuf = "";
+      }
+    };
+    return wrappedHandler;
   }
 
   async processInboundMessage(params: ProcessInboundMessageParams): Promise<string | null> {
+    const sessionKey = buildWebSessionKey(params.userId, params.sessionId);
     return processGatewayInboundMessage({
       ...params,
       sendEvent: this.sendEvent.bind(this),
       appendTranscript: this.messageStore
-        ? (sessionKey, role, text) => this.messageStore!.append(sessionKey, role, text)
+        ? (sk, role, content) => this.messageStore!.append(sk, role, content)
         : undefined,
+      getContentBlocks: () => {
+        const blocks = this.pendingContentBlocks.get(sessionKey) ?? [];
+        this.pendingContentBlocks.delete(sessionKey);
+        return blocks;
+      },
       onUserMessage: (sessionKey, display) =>
         this.publishSessionEvent(
           createSessionEvent({

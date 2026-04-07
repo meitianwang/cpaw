@@ -1,4 +1,5 @@
 import type { EngineEvent } from "../../agent-manager.js";
+import type { TranscriptContentBlock } from "../../message-store.js";
 import { formatDisplayText, type InboundMessage, type MediaFile } from "../../message.js";
 import type { Handler } from "../../types.js";
 import { buildWebSessionKey, type WsEvent } from "../protocol.js";
@@ -190,7 +191,7 @@ export function createGatewayAgentEventForwarder(params: {
 
 async function appendGatewayUserTranscript(params: {
   message: InboundMessage;
-  append: (sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>;
+  append: (sessionKey: string, role: "user" | "assistant", content: string | readonly TranscriptContentBlock[]) => Promise<void>;
 }): Promise<void> {
   const display = formatDisplayText(params.message);
   if (!display) {
@@ -202,12 +203,23 @@ async function appendGatewayUserTranscript(params: {
 async function appendGatewayAssistantTranscript(params: {
   sessionKey: string;
   reply: string;
-  append: (sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>;
+  contentBlocks: TranscriptContentBlock[];
+  append: (sessionKey: string, role: "user" | "assistant", content: string | readonly TranscriptContentBlock[]) => Promise<void>;
 }): Promise<void> {
   if (!params.reply) {
     return;
   }
-  await params.append(params.sessionKey, "assistant", params.reply);
+  // If we have structured blocks (thinking/tools), save them; otherwise save plain text
+  if (params.contentBlocks.length > 0) {
+    // Ensure final text is included
+    const hasText = params.contentBlocks.some(b => b.type === "text");
+    const blocks: TranscriptContentBlock[] = hasText
+      ? [...params.contentBlocks]
+      : [...params.contentBlocks, { type: "text", text: params.reply }];
+    await params.append(params.sessionKey, "assistant", blocks);
+  } else {
+    await params.append(params.sessionKey, "assistant", params.reply);
+  }
 }
 
 export async function processGatewayInboundMessage(params: {
@@ -217,12 +229,14 @@ export async function processGatewayInboundMessage(params: {
   handler: Handler;
   media?: readonly MediaFile[];
   sendEvent: (userId: string, event: WsEvent) => void;
-  appendTranscript?: (sessionKey: string, role: "user" | "assistant", text: string) => Promise<void>;
+  appendTranscript?: (sessionKey: string, role: "user" | "assistant", content: string | readonly TranscriptContentBlock[]) => Promise<void>;
   onAttemptStart?: (sessionKey: string) => void;
   onAttemptComplete?: (sessionKey: string) => void;
   onAttemptError?: (sessionKey: string, error: unknown) => void;
   onUserMessage?: (sessionKey: string, display: string) => void;
   onAssistantMessage?: (sessionKey: string, reply: string) => void;
+  /** Returns structured content blocks collected during streaming (thinking, tools). */
+  getContentBlocks?: () => TranscriptContentBlock[];
 }): Promise<string | null> {
   const trimmedText = params.text.trim();
   if (!trimmedText && (!params.media || params.media.length === 0)) {
@@ -279,6 +293,7 @@ export async function processGatewayInboundMessage(params: {
           await appendGatewayAssistantTranscript({
             sessionKey,
             reply,
+            contentBlocks: params.getContentBlocks?.() ?? [],
             append: params.appendTranscript,
           });
         } catch (err) {

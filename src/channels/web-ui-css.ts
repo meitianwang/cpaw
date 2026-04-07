@@ -282,6 +282,7 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 .code-block{position:relative;margin:12px 0}
 .code-block pre{margin:0}
 .code-lang{position:absolute;top:8px;left:14px;font-size:11px;color:var(--fg-quaternary);font-weight:600;text-transform:uppercase;font-family:var(--font);letter-spacing:0.04em}
+.code-block:has(.code-lang) pre{padding-top:32px}
 .code-copy{
   position:absolute;top:8px;right:10px;opacity:0;
   background:var(--bg-hover);color:var(--fg-secondary);border:1px solid var(--border);
