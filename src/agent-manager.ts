@@ -201,9 +201,9 @@ export class AgentSessionManager {
         thinkingConfig: ThinkingConfig, tools: any[], toolSchemas: any[];
       let toolUseContext: ToolUseContext;
       let attachmentMessages: Message[];
+      const { setAdditionalDirectoriesForClaudeMd } = await import("./engine/bootstrap/state.js");
       try {
         // Set per-user skill directory so engine scans user's skills
-        const { setAdditionalDirectoriesForClaudeMd } = await import("./engine/bootstrap/state.js");
         setAdditionalDirectoriesForClaudeMd(userAdditionalDirs);
         // Clear skill cache (user's skill directory may differ)
         const { clearCommandsCache } = await import("./engine/commands.js");
