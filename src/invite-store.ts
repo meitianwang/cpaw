@@ -6,8 +6,7 @@
  * a scoped token — users with an invite code can only see their own sessions.
  */
 
-import Database from "better-sqlite3";
-import type { Database as DatabaseType, Statement } from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -77,22 +76,22 @@ function rowToInviteCode(row: DbRow): InviteCode {
 // ---------------------------------------------------------------------------
 
 export class InviteStore {
-  private readonly db: DatabaseType;
+  private readonly db: Database;
 
   // Pre-compiled statements
-  private readonly stmtList: Statement;
-  private readonly stmtGet: Statement;
-  private readonly stmtInsert: Statement;
-  private readonly stmtDelete: Statement;
-  private readonly stmtConsume: Statement;
-  private readonly stmtIsValid: Statement;
+  private readonly stmtList: ReturnType<Database["prepare"]>;
+  private readonly stmtGet: ReturnType<Database["prepare"]>;
+  private readonly stmtInsert: ReturnType<Database["prepare"]>;
+  private readonly stmtDelete: ReturnType<Database["prepare"]>;
+  private readonly stmtConsume: ReturnType<Database["prepare"]>;
+  private readonly stmtIsValid: ReturnType<Database["prepare"]>;
 
   constructor(dbPath?: string) {
     const resolvedPath = dbPath ?? join(CONFIG_DIR, "invites.db");
     mkdirSync(dirname(resolvedPath), { recursive: true });
 
     this.db = new Database(resolvedPath);
-    this.db.pragma("journal_mode = WAL");
+    this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec(INIT_SQL);
 
     // Migrate: add used_by/used_at columns if missing
@@ -162,16 +161,21 @@ export class InviteStore {
     };
   }
 
+  /** Number of rows changed by the last INSERT/UPDATE/DELETE. */
+  private lastChanges(): number {
+    return (this.db.prepare("SELECT changes() as c").get() as any)?.c ?? 0;
+  }
+
   /** Mark an invite code as consumed. Records who used it and when. */
   consume(code: string, usedBy: string): boolean {
-    const result = this.stmtConsume.run({ code, usedBy, usedAt: Date.now() });
-    return result.changes > 0;
+    this.stmtConsume.run({ code, usedBy, usedAt: Date.now() });
+    return this.lastChanges() > 0;
   }
 
   /** Delete an invite code permanently. Returns true if deleted. */
   delete(code: string): boolean {
-    const result = this.stmtDelete.run(code);
-    return result.changes > 0;
+    this.stmtDelete.run(code);
+    return this.lastChanges() > 0;
   }
 
   /** Close the database connection. */

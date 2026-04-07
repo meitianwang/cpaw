@@ -166,7 +166,7 @@ function reverseSessionFilename(name: string): string | null {
 /** Find the primary user (first admin, or first user) from users.db. */
 function findPrimaryUser(): string | null {
   try {
-    const Database = require("better-sqlite3");
+    const { Database } = require("bun:sqlite");
     const db = new Database(join(CONFIG_DIR, "users.db"), { readonly: true });
     const row = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1").get() as { id: string } | undefined;
     if (row) { db.close(); return row.id; }

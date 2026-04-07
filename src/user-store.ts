@@ -8,8 +8,7 @@
  * - Invite code required for registration
  */
 
-import Database from "better-sqlite3";
-import type { Database as DatabaseType, Statement } from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import {
   randomBytes,
   scrypt,
@@ -199,30 +198,30 @@ const DEFAULT_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // ---------------------------------------------------------------------------
 
 export class UserStore {
-  private readonly db: DatabaseType;
+  private readonly db: Database;
 
   // Pre-compiled statements
-  private readonly stmtGetUserById: Statement;
-  private readonly stmtGetUserByEmail: Statement;
-  private readonly stmtGetUserByGoogleId: Statement;
-  private readonly stmtInsertUser: Statement;
-  private readonly stmtUpdateLastLogin: Statement;
-  private readonly stmtSetActive: Statement;
-  private readonly stmtSetRole: Statement;
-  private readonly stmtSetDisplayName: Statement;
-  private readonly stmtSetAvatarUrl: Statement;
-  private readonly stmtLinkGoogle: Statement;
-  private readonly stmtListUsers: Statement;
-  private readonly stmtCountUsers: Statement;
+  private readonly stmtGetUserById: ReturnType<Database["prepare"]>;
+  private readonly stmtGetUserByEmail: ReturnType<Database["prepare"]>;
+  private readonly stmtGetUserByGoogleId: ReturnType<Database["prepare"]>;
+  private readonly stmtInsertUser: ReturnType<Database["prepare"]>;
+  private readonly stmtUpdateLastLogin: ReturnType<Database["prepare"]>;
+  private readonly stmtSetActive: ReturnType<Database["prepare"]>;
+  private readonly stmtSetRole: ReturnType<Database["prepare"]>;
+  private readonly stmtSetDisplayName: ReturnType<Database["prepare"]>;
+  private readonly stmtSetAvatarUrl: ReturnType<Database["prepare"]>;
+  private readonly stmtLinkGoogle: ReturnType<Database["prepare"]>;
+  private readonly stmtListUsers: ReturnType<Database["prepare"]>;
+  private readonly stmtCountUsers: ReturnType<Database["prepare"]>;
 
-  private readonly stmtInsertSession: Statement;
-  private readonly stmtGetSession: Statement;
-  private readonly stmtDeleteSession: Statement;
-  private readonly stmtDeleteUserSessions: Statement;
-  private readonly stmtPruneSessions: Statement;
-  private readonly stmtIncrFailedAttempts: Statement;
-  private readonly stmtLockUser: Statement;
-  private readonly stmtResetFailedAttempts: Statement;
+  private readonly stmtInsertSession: ReturnType<Database["prepare"]>;
+  private readonly stmtGetSession: ReturnType<Database["prepare"]>;
+  private readonly stmtDeleteSession: ReturnType<Database["prepare"]>;
+  private readonly stmtDeleteUserSessions: ReturnType<Database["prepare"]>;
+  private readonly stmtPruneSessions: ReturnType<Database["prepare"]>;
+  private readonly stmtIncrFailedAttempts: ReturnType<Database["prepare"]>;
+  private readonly stmtLockUser: ReturnType<Database["prepare"]>;
+  private readonly stmtResetFailedAttempts: ReturnType<Database["prepare"]>;
 
   private readonly sessionMaxAgeMs: number;
 
@@ -231,8 +230,8 @@ export class UserStore {
     mkdirSync(dirname(resolvedPath), { recursive: true });
 
     this.db = new Database(resolvedPath);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db.exec("PRAGMA foreign_keys = ON");
     this.db.exec(INIT_SQL);
 
     this.sessionMaxAgeMs = sessionMaxAgeMs ?? DEFAULT_SESSION_MAX_AGE_MS;
@@ -330,6 +329,11 @@ export class UserStore {
     } catch {
       /* ignore */
     }
+  }
+
+  /** Number of rows changed by the last INSERT/UPDATE/DELETE. */
+  private lastChanges(): number {
+    return (this.db.prepare("SELECT changes() as c").get() as any)?.c ?? 0;
   }
 
   // -- User registration ----------------------------------------------------
@@ -497,23 +501,23 @@ export class UserStore {
   // -- User management (admin) ----------------------------------------------
 
   setActive(userId: string, active: boolean): boolean {
-    const result = this.stmtSetActive.run(active ? 1 : 0, userId);
-    return result.changes > 0;
+    this.stmtSetActive.run(active ? 1 : 0, userId);
+    return this.lastChanges() > 0;
   }
 
   setRole(userId: string, role: "admin" | "user"): boolean {
-    const result = this.stmtSetRole.run(role, userId);
-    return result.changes > 0;
+    this.stmtSetRole.run(role, userId);
+    return this.lastChanges() > 0;
   }
 
   setDisplayName(userId: string, displayName: string): boolean {
-    const result = this.stmtSetDisplayName.run(displayName, userId);
-    return result.changes > 0;
+    this.stmtSetDisplayName.run(displayName, userId);
+    return this.lastChanges() > 0;
   }
 
   setAvatarUrl(userId: string, avatarUrl: string | null): boolean {
-    const result = this.stmtSetAvatarUrl.run(avatarUrl, userId);
-    return result.changes > 0;
+    this.stmtSetAvatarUrl.run(avatarUrl, userId);
+    return this.lastChanges() > 0;
   }
 
   // -- Auth sessions --------------------------------------------------------
@@ -559,20 +563,20 @@ export class UserStore {
 
   /** Revoke a single session. */
   revokeSession(token: string): boolean {
-    const result = this.stmtDeleteSession.run(token);
-    return result.changes > 0;
+    this.stmtDeleteSession.run(token);
+    return this.lastChanges() > 0;
   }
 
   /** Revoke all sessions for a user. */
   revokeAllSessions(userId: string): number {
-    const result = this.stmtDeleteUserSessions.run(userId);
-    return result.changes;
+    this.stmtDeleteUserSessions.run(userId);
+    return this.lastChanges();
   }
 
   /** Remove expired sessions. */
   pruneExpiredSessions(): number {
-    const result = this.stmtPruneSessions.run(Date.now());
-    return result.changes;
+    this.stmtPruneSessions.run(Date.now());
+    return this.lastChanges();
   }
 
   // -- Lifecycle ------------------------------------------------------------

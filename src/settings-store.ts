@@ -2,8 +2,7 @@
  * Runtime settings store — SQLite-backed configuration for models, prompts, rules, and general settings.
  */
 
-import Database from "better-sqlite3";
-import type { Database as DatabaseType } from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CONFIG_DIR } from "./config.js";
@@ -67,14 +66,14 @@ export type McpTransportConfig =
 // ---------------------------------------------------------------------------
 
 export class SettingsStore {
-  private readonly db: DatabaseType;
+  private readonly db: Database;
 
   constructor(dbPath?: string) {
     const path = dbPath ?? DEFAULT_DB_PATH;
     mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("foreign_keys = ON");
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db.exec("PRAGMA foreign_keys = ON");
     this.createTables();
     this.migrate();
   }
@@ -155,7 +154,7 @@ export class SettingsStore {
 
   private migrate(): void {
     // Add cost columns to models table (v0.2.2)
-    const cols = this.db.pragma("table_info(models)") as { name: string }[];
+    const cols = this.db.prepare("PRAGMA table_info(models)").all() as { name: string }[];
     const colNames = new Set(cols.map((c) => c.name));
     if (!colNames.has("cost_input")) {
       this.db.exec(`
@@ -173,6 +172,11 @@ export class SettingsStore {
         ALTER TABLE models ADD COLUMN token_expires_at INTEGER;
       `);
     }
+  }
+
+  /** Number of rows changed by the last INSERT/UPDATE/DELETE. */
+  private lastChanges(): number {
+    return (this.db.prepare("SELECT changes() as c").get() as any)?.c ?? 0;
   }
 
   // -----------------------------------------------------------------------
@@ -342,10 +346,8 @@ export class SettingsStore {
   }
 
   deleteModel(id: string): boolean {
-    const result = this.db
-      .prepare("DELETE FROM models WHERE id = ?")
-      .run(id);
-    return result.changes > 0;
+    this.db.prepare("DELETE FROM models WHERE id = ?").run(id);
+    return this.lastChanges() > 0;
   }
 
   setDefaultModel(id: string): void {
@@ -398,10 +400,8 @@ export class SettingsStore {
   }
 
   deletePrompt(id: string): boolean {
-    const result = this.db
-      .prepare("DELETE FROM prompts WHERE id = ?")
-      .run(id);
-    return result.changes > 0;
+    this.db.prepare("DELETE FROM prompts WHERE id = ?").run(id);
+    return this.lastChanges() > 0;
   }
 
   setDefaultPrompt(id: string): void {
@@ -469,10 +469,8 @@ export class SettingsStore {
   }
 
   deleteTask(id: string): boolean {
-    const result = this.db
-      .prepare("DELETE FROM cron_tasks WHERE id = ?")
-      .run(id);
-    return result.changes > 0;
+    this.db.prepare("DELETE FROM cron_tasks WHERE id = ?").run(id);
+    return this.lastChanges() > 0;
   }
 
   // -----------------------------------------------------------------------
@@ -514,10 +512,8 @@ export class SettingsStore {
   }
 
   deleteMcpServer(id: string): boolean {
-    const result = this.db
-      .prepare("DELETE FROM mcp_servers WHERE id = ?")
-      .run(id);
-    return result.changes > 0;
+    this.db.prepare("DELETE FROM mcp_servers WHERE id = ?").run(id);
+    return this.lastChanges() > 0;
   }
 
   // -----------------------------------------------------------------------

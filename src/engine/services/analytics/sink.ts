@@ -117,20 +117,20 @@ export function initializeAnalyticsSink(): void {
 // Klaus-specific: SQLite analytics sink for local event storage
 // ============================================================================
 
-import Database from 'better-sqlite3'
+import { Database } from 'bun:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID } from 'crypto'
 
 export class SQLiteAnalyticsSink {
-  private db: InstanceType<typeof Database>
-  private insertStmt: import('better-sqlite3').Statement<[string, string, string, string]>
+  private db: Database
+  private insertStmt: ReturnType<Database["prepare"]>
 
   constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true })
     this.db = new Database(dbPath)
-    this.db.pragma('journal_mode = WAL')
-    this.db.pragma('synchronous = NORMAL')
+    this.db.exec('PRAGMA journal_mode = WAL')
+    this.db.exec('PRAGMA synchronous = NORMAL')
 
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS events (

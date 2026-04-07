@@ -7,7 +7,7 @@ export default defineConfig({
   clean: true,
   dts: true,
   sourcemap: true,
-  external: ["better-sqlite3", "@larksuiteoapi/node-sdk"],
+  external: ["bun:sqlite", "@larksuiteoapi/node-sdk"],
   loader: {
     ".md": "text",
     ".txt": "text",
