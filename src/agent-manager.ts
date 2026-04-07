@@ -219,7 +219,27 @@ export class AgentSessionManager {
       // Build ToolUseContext
       const toolUseContext = this.buildToolUseContext(sessionKey, session, tools, model, thinkingConfig, apiKey, baseUrl);
 
-      // Auto-approve all tools (Klaus uses yolo mode)
+      // Inject attachment messages (skill_listing, etc.) that processUserInput
+      // would normally add. Klaus bypasses processUserInput, so we must inject
+      // them manually before query() runs, otherwise the model never sees the
+      // available skills list in its first turn.
+      const { getAttachmentMessages } = await import("./engine/utils/attachments.js");
+      const { toArray } = await import("./engine/utils/array.js");
+      const attachmentMessages = await toArray(
+        getAttachmentMessages(
+          text,
+          toolUseContext as any,
+          null,
+          [],
+          session.messages,
+          "repl_main_thread" as any,
+        ),
+      );
+      for (const attachMsg of attachmentMessages) {
+        session.messages.push(attachMsg as Message);
+      }
+
+      // Auto-approve all tools (Klaus uses bypassPermissions mode)
       const canUseTool: CanUseToolFn = async (_tool, input) => {
         // Loop detection
         const loopResult = session.loopDetector.check({
@@ -730,7 +750,12 @@ export class AgentSessionManager {
     baseURL?: string,
   ): ToolUseContext {
     const appState = {
-      toolPermissionContext: getEmptyToolPermissionContext(),
+      toolPermissionContext: {
+        ...getEmptyToolPermissionContext(),
+        mode: 'bypassPermissions' as const,
+        isBypassPermissionsModeAvailable: true,
+        shouldAvoidPermissionPrompts: true,
+      },
       skills: [], // Engine manages skills via getCommands() internally
       mcp: {
         tools: this.mcpManager?.mcpTools ?? [],

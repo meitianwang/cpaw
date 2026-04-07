@@ -645,6 +645,7 @@ export function getSettingsJs(): string {
   var skSearch = document.getElementById("sk-search");
   var skInstalledData = [];
   var skMarketData = [];
+  var skBuiltinData = [];
   var skFilter = "market";
 
   function esc(s) { if (s == null) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -653,6 +654,8 @@ export function getSettingsJs(): string {
     var items;
     if (skFilter === "market") {
       items = skMarketData;
+    } else if (skFilter === "builtin") {
+      items = skBuiltinData;
     } else if (skFilter === "installed") {
       items = skInstalledData;
     } else if (skFilter === "enabled") {
@@ -672,7 +675,18 @@ export function getSettingsJs(): string {
       return;
     }
     skEmpty.style.display = "none";
-    if (skFilter === "market") {
+    if (skFilter === "builtin") {
+      // Built-in cards: read-only display, no toggle/uninstall
+      skGrid.innerHTML = items.map(function(s) {
+        return '<div class="sk-card">' +
+          '<div class="sk-card-head">' +
+            '<div class="sk-card-info"><div class="sk-card-emoji">\u{1F9E9}</div><div class="sk-card-name">/' + esc(s.name) + '</div></div>' +
+          '</div>' +
+          '<div class="sk-card-desc">' + esc(s.description || '') + '</div>' +
+          '<div class="sk-card-badges"><span class="s-badge s-badge-gray">' + esc(s.source) + '</span></div>' +
+        '</div>';
+      }).join("");
+    } else if (skFilter === "market") {
       // Market cards: name, description, install button
       skGrid.innerHTML = items.map(function(s) {
         var btnClass = s.installed ? "sk-install-market-btn installed" : "sk-install-market-btn";
@@ -757,7 +771,9 @@ export function getSettingsJs(): string {
 
   function loadInstalledSkills() {
     return fetch("/api/skills", { credentials: "same-origin" }).then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function(data) {
-      skInstalledData = (data.skills || []).filter(function(s) { return !s.always; });
+      var all = data.skills || [];
+      skBuiltinData = all.filter(function(s) { return s.always; });
+      skInstalledData = all.filter(function(s) { return !s.always; });
     }).catch(function(e) { console.error("Failed to load skills:", e); });
   }
 
@@ -770,12 +786,13 @@ export function getSettingsJs(): string {
 
   function updateSkillTabCounts() {
     var marketCount = skMarketData.length;
+    var builtinCount = skBuiltinData.length;
     var installedCount = skInstalledData.length;
     var enabledCount = skInstalledData.filter(function(s) { return s.userEnabled; }).length;
     var disabledCount = skInstalledData.filter(function(s) { return !s.userEnabled; }).length;
     document.querySelectorAll(".sk-tab").forEach(function(t) {
       var f = t.getAttribute("data-sk-filter");
-      var count = f === "market" ? marketCount : f === "installed" ? installedCount : f === "enabled" ? enabledCount : disabledCount;
+      var count = f === "market" ? marketCount : f === "builtin" ? builtinCount : f === "installed" ? installedCount : f === "enabled" ? enabledCount : disabledCount;
       if (!t.getAttribute("data-label")) t.setAttribute("data-label", t.textContent.replace(/ \d+$/, "").trim());
       t.textContent = t.getAttribute("data-label") + " " + count;
     });

@@ -1386,11 +1386,19 @@ async function handleUserSkills(
   if (req.method === "GET") {
     try {
       // Read skills from engine's command system
-      const { getCommands } = await import("../engine/commands.js");
+      const { getCommands, clearCommandsCache } = await import("../engine/commands.js");
       const { homedir } = await import("os");
-      const { join } = await import("path");
+      const { join, dirname } = await import("path");
+      const { fileURLToPath } = await import("url");
       const { readdir } = await import("node:fs/promises");
-      // Use ~/.klaus as cwd to avoid scanning Klaus project's .claude/skills/
+      const { setAdditionalDirectoriesForClaudeMd } = await import("../engine/bootstrap/state.js");
+      // Set additionalDirs so engine discovers builtin-skills and per-user skills
+      const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+      setAdditionalDirectoriesForClaudeMd([
+        join(homedir(), '.klaus', 'users', auth.user.id),
+        join(projectRoot, 'builtin-skills'),
+      ]);
+      clearCommandsCache();
       const allCommands = await getCommands(join(homedir(), '.klaus'));
       // Read per-user skill preferences
       const userSkillPrefs = settingsStoreRef.getByPrefix(`user.${auth.user.id}.skill.`);
