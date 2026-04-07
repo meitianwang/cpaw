@@ -3,12 +3,11 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .claude/
-!builtin-skills/.claude/
 openclaw/
 pi-mono/
 OPENCLAW-ANALYSIS.md
 *.md
-!skills/**/SKILL.md
+!skills-market/**/SKILL.md
 antigravity-sync-mcp/
 # iOS / Xcode
 ios/KlausAI.xcworkspace/
