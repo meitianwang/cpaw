@@ -128,6 +128,7 @@ export class AgentSessionManager {
   // MCP state — mirrors AppState.mcp from claude-code
   private _mcpClients: MCPServerConnection[] = [];
   private _mcpTools: Tool[] = [];
+  private _mcpLoadedForUser: string | null = null;
   private _mcpCommands: Command[] = [];
   private _mcpResources: Record<string, ServerResource[]> = {};
   private messageStore: MessageStore | null = null;
@@ -191,44 +192,63 @@ export class AgentSessionManager {
    * getAllMcpConfigs(), connects via getMcpToolsCommandsAndResources(),
    * stores results in instance state.
    */
-  async initMcp(): Promise<void> {
-    const { servers } = await getAllMcpConfigs();
-    if (Object.keys(servers).length === 0) return;
+  async initMcp(userId?: string): Promise<void> {
+    // Set per-user MCP config path if userId provided
+    if (userId) {
+      const { setCurrentMcpUserConfigPath } = await import("./engine/bootstrap/state.js");
+      const { getUserMcpConfigPath } = await import("./user-dirs.js");
+      setCurrentMcpUserConfigPath(getUserMcpConfigPath(userId));
+    }
 
-    // Reset state before connecting
-    this._mcpClients = [];
-    this._mcpTools = [];
-    this._mcpCommands = [];
-    this._mcpResources = {};
+    try {
+      const { servers } = await getAllMcpConfigs();
+      if (Object.keys(servers).length === 0) return;
 
-    await getMcpToolsCommandsAndResources(
-      ({ client, tools, commands, resources }) => {
-        this._mcpClients.push(client);
-        this._mcpTools.push(...tools);
-        if (commands) this._mcpCommands.push(...commands);
-        if (resources && resources.length > 0) {
-          this._mcpResources[client.name] = resources;
-        }
+      // Reset state before connecting
+      this._mcpClients = [];
+      this._mcpTools = [];
+      this._mcpCommands = [];
+      this._mcpResources = {};
 
-        if (client.type === "connected") {
-          console.log(
-            `[MCP] Connected to "${client.name}" — ${tools.length} tool(s): ${tools.map((t) => t.name).join(", ")}`,
-          );
-        } else if (client.type === "failed") {
-          console.warn(`[MCP] Failed to connect to "${client.name}"`);
-        } else {
-          console.log(`[MCP] "${client.name}" state: ${client.type}`);
-        }
-      },
-      servers,
-    );
+      await getMcpToolsCommandsAndResources(
+        ({ client, tools, commands, resources }) => {
+          this._mcpClients.push(client);
+          this._mcpTools.push(...tools);
+          if (commands) this._mcpCommands.push(...commands);
+          if (resources && resources.length > 0) {
+            this._mcpResources[client.name] = resources;
+          }
+
+          if (client.type === "connected") {
+            console.log(
+              `[MCP] Connected to "${client.name}" — ${tools.length} tool(s): ${tools.map((t) => t.name).join(", ")}`,
+            );
+          } else if (client.type === "failed") {
+            console.warn(`[MCP] Failed to connect to "${client.name}"`);
+          } else {
+            console.log(`[MCP] "${client.name}" state: ${client.type}`);
+          }
+        },
+        servers,
+      );
+    } finally {
+      if (userId) {
+        const { setCurrentMcpUserConfigPath } = await import("./engine/bootstrap/state.js");
+        setCurrentMcpUserConfigPath(null);
+      }
+    }
   }
 
   /**
    * Reconnect all MCP servers: close existing connections, clear caches,
    * then re-initialize from current config.
    */
-  async reconnectMcp(): Promise<void> {
+  /** Invalidate cached MCP user so next chat() triggers a reload. */
+  invalidateMcpCache(): void {
+    this._mcpLoadedForUser = null;
+  }
+
+  async reconnectMcp(userId?: string): Promise<void> {
     // Close all existing connected servers and clear engine caches
     for (const client of this._mcpClients) {
       if (client.type === "connected") {
@@ -239,7 +259,7 @@ export class AgentSessionManager {
         }
       }
     }
-    await this.initMcp();
+    await this.initMcp(userId);
   }
 
   async chat(
@@ -268,10 +288,20 @@ export class AgentSessionManager {
         thinkingConfig: ThinkingConfig, tools: any[], toolSchemas: any[];
       let toolUseContext: ToolUseContext;
       let attachmentMessages: Message[];
-      const { setAdditionalDirectoriesForClaudeMd } = await import("./engine/bootstrap/state.js");
+      const { setAdditionalDirectoriesForClaudeMd, setCurrentMcpUserConfigPath } = await import("./engine/bootstrap/state.js");
+      const { getUserMcpConfigPath } = await import("./user-dirs.js");
       try {
         // Set per-user skill directory so engine scans user's skills
         setAdditionalDirectoriesForClaudeMd(userAdditionalDirs);
+        // Set per-user MCP config path so engine reads user's MCP servers
+        setCurrentMcpUserConfigPath(getUserMcpConfigPath(userId));
+
+        // Reload MCP servers if user changed since last load
+        if (this._mcpLoadedForUser !== userId) {
+          await this.reconnectMcp(userId);
+          this._mcpLoadedForUser = userId;
+        }
+
         // Clear skill cache (user's skill directory may differ)
         const { clearCommandsCache } = await import("./engine/commands.js");
         clearCommandsCache();
@@ -303,10 +333,11 @@ export class AgentSessionManager {
           ),
         ) as Message[];
       } finally {
+        setCurrentMcpUserConfigPath(null);
         releaseSkillLock();
       }
 
-      // --- Below here no longer depends on global additionalDirs state ---
+      // --- Below here no longer depends on global additionalDirs/MCP state ---
 
       // Inject user context as first message (matches claude-code's prependUserContext)
       if (userContext.claudeMd && session.messages.length === 0) {

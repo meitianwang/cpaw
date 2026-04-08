@@ -1303,17 +1303,35 @@ async function handleAdminPrompts(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Admin: MCP servers CRUD
+// User: MCP servers CRUD (per-user isolation, like skills)
 // ---------------------------------------------------------------------------
 
-async function handleAdminMcp(
+async function handleUserMcp(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  if (!adminAuth(req, res)) return;
+  const auth = authenticateRequest(req);
+  if (auth.kind === "invalid") {
+    jsonResponse(res, 401, { error: "unauthorized" });
+    return;
+  }
+  const userId = auth.user.id;
+
   if (req.method === "GET") {
     try {
-      jsonResponse(res, 200, await gateway.listAdminMcpServers());
+      const { servers } = await gateway.listMcpServers(userId);
+      // Merge enable/disable preferences from settings store
+      if (settingsStoreRef) {
+        const prefs = settingsStoreRef.getByPrefix(`user.${userId}.mcp.`);
+        const enriched = servers.map(s => {
+          const prefKey = `user.${userId}.mcp.${s.name}`;
+          const pref = prefs.get(prefKey);
+          return { ...s, enabled: pref !== "off" };
+        });
+        jsonResponse(res, 200, { servers: enriched });
+      } else {
+        jsonResponse(res, 200, { servers });
+      }
     } catch (err) {
       gatewayErrorResponse(res, err);
     }
@@ -1323,9 +1341,38 @@ async function handleAdminMcp(
   if (req.method === "POST") {
     try {
       const parsed = await readJsonBody(req, 4096);
-      const result = await gateway.createAdminMcpServer(parsed);
-      agentManagerRef?.reconnectMcp().catch((e: unknown) => console.error("[MCP] Reconnect failed:", e));
+      const name = (parsed as Record<string, unknown>).name;
+      if (!name || typeof name !== "string" || !/^[a-zA-Z0-9_-]+$/.test(name) || name.length > 64) {
+        jsonResponse(res, 400, { error: "invalid server name: only letters, numbers, hyphens and underscores allowed" });
+        return;
+      }
+      const result = await gateway.createMcpServer(userId, parsed);
+      // Auto-enable (like skills)
+      if (settingsStoreRef && result.name) {
+        settingsStoreRef.set(`user.${userId}.mcp.${result.name}`, "on");
+      }
+      agentManagerRef?.invalidateMcpCache();
       jsonResponse(res, 201, result);
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  if (req.method === "PATCH") {
+    try {
+      const parsed = await readJsonBody(req, 1024) as { name?: string; enabled?: boolean };
+      const name = parsed.name;
+      if (!name || !/^[a-zA-Z0-9_-]+$/.test(name) || name.length > 64) {
+        jsonResponse(res, 400, { error: "invalid server name" });
+        return;
+      }
+      if (!settingsStoreRef) { jsonResponse(res, 503, { error: "not ready" }); return; }
+      settingsStoreRef.set(
+        `user.${userId}.mcp.${name}`,
+        parsed.enabled ? "on" : "off",
+      );
+      jsonResponse(res, 200, { ok: true });
     } catch (err) {
       gatewayErrorResponse(res, err);
     }
@@ -1335,12 +1382,15 @@ async function handleAdminMcp(
   if (req.method === "DELETE") {
     const url = new URL(req.url ?? "", "http://localhost");
     const name = url.searchParams.get("name") ?? "";
-    const scope = url.searchParams.get("scope") ?? undefined;
     if (!name) { jsonResponse(res, 400, { error: "name required" }); return; }
     try {
-      const deleted = await gateway.deleteAdminMcpServer(name, scope);
+      const deleted = await gateway.deleteMcpServer(userId, name);
       if (!deleted) { jsonResponse(res, 404, { error: "server not found" }); return; }
-      agentManagerRef?.reconnectMcp().catch((e: unknown) => console.error("[MCP] Reconnect failed:", e));
+      // Clear preference
+      if (settingsStoreRef) {
+        settingsStoreRef.set(`user.${userId}.mcp.${name}`, "");
+      }
+      agentManagerRef?.invalidateMcpCache();
       jsonResponse(res, 200, { ok: true });
     } catch (err) {
       gatewayErrorResponse(res, err);
@@ -2743,8 +2793,8 @@ async function handleRequest(
       return handleOAuthCallback(req, res);
     case "/api/admin/prompts":
       return handleAdminPrompts(req, res);
-case "/api/admin/mcp":
-      return handleAdminMcp(req, res);
+case "/api/mcp":
+      return handleUserMcp(req, res);
     case "/api/admin/channels":
       return handleAdminChannels(req, res);
     case "/api/admin/channels/feishu":

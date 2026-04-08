@@ -37,16 +37,16 @@ import {
   readGatewayHistory,
 } from "./server-methods/sessions.js";
 import {
-  createGatewayAdminMcpServer,
+  createGatewayMcpServer,
   createGatewayAdminModel,
   createGatewayAdminPrompt,
   createGatewayCronTask,
-  deleteGatewayAdminMcpServer,
+  deleteGatewayMcpServer,
   deleteGatewayAdminModel,
   deleteGatewayAdminPrompt,
   deleteGatewayCronTask,
   getGatewayAdminSettings,
-  listGatewayAdminMcpServers,
+  listGatewayMcpServers,
   listGatewayAdminModels,
   listGatewayAdminPrompts,
   listGatewayAdminSessions,
@@ -539,16 +539,16 @@ class GatewayService {
     });
   }
 
-async listAdminMcpServers() {
-    return listGatewayAdminMcpServers();
+async listMcpServers(userId: string) {
+    return listGatewayMcpServers(userId);
   }
 
-  async createAdminMcpServer(input: Record<string, unknown>) {
-    return createGatewayAdminMcpServer({ input });
+  async createMcpServer(userId: string, input: Record<string, unknown>) {
+    return createGatewayMcpServer({ userId, input });
   }
 
-  async deleteAdminMcpServer(name: string, scope?: string) {
-    return deleteGatewayAdminMcpServer({ name, scope });
+  async deleteMcpServer(userId: string, name: string) {
+    return deleteGatewayMcpServer({ userId, name });
   }
 
   async listAdminProviders(params?: {

@@ -101,15 +101,20 @@ export async function handleGatewayAdminRpcMethod(
     }
 case "mcp.list":
       try {
-        return { handled: true, result: await ctx.listAdminMcpServers() };
+        const userId = params.userId as string;
+        if (!userId) return { handled: true, error: "missing userId parameter" };
+        return { handled: true, result: await ctx.listMcpServers(userId) };
       } catch (err) {
         return { handled: true, error: String(err) };
       }
     case "mcp.add":
       try {
+        const userId = params.userId as string;
+        if (!userId) return { handled: true, error: "missing userId parameter" };
         return {
           handled: true,
-          result: await ctx.createAdminMcpServer(
+          result: await ctx.createMcpServer(
+            userId,
             (params.server ?? params) as Record<string, unknown>,
           ),
         };
@@ -118,11 +123,15 @@ case "mcp.list":
       }
     case "mcp.remove": {
       const name = params.name as string;
+      const userId = params.userId as string;
       if (!name) {
         return { handled: true, error: "missing name parameter" };
       }
+      if (!userId) {
+        return { handled: true, error: "missing userId parameter" };
+      }
       try {
-        return { handled: true, result: { ok: await ctx.deleteAdminMcpServer(name, params.scope as string | undefined) } };
+        return { handled: true, result: { ok: await ctx.deleteMcpServer(userId, name) } };
       } catch (err) {
         return { handled: true, error: String(err) };
       }

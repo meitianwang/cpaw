@@ -6,9 +6,9 @@ export type {
 } from "./admin-types.js";
 export { handleGatewayAdminRpcMethod } from "./admin-rpc.js";
 export {
-  createGatewayAdminMcpServer,
-  deleteGatewayAdminMcpServer,
-  listGatewayAdminMcpServers,
+  createGatewayMcpServer,
+  deleteGatewayMcpServer,
+  listGatewayMcpServers,
 } from "./mcp.js";
 export {
   createGatewayAdminModel,

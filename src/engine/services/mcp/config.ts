@@ -1,5 +1,5 @@
 import { feature } from 'bun:bundle'
-import { chmod, open, rename, stat, unlink } from 'fs/promises'
+import { chmod, mkdir, open, rename, stat, unlink } from 'fs/promises'
 import mapValues from 'lodash-es/mapValues.js'
 import memoize from 'lodash-es/memoize.js'
 import { dirname, join, parse } from 'path'
@@ -12,6 +12,7 @@ import {
   saveCurrentProjectConfig,
   saveGlobalConfig,
 } from '../../utils/config.js'
+import { getCurrentMcpUserConfigPath } from '../../bootstrap/state.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { getErrnoCode } from '../../utils/errors.js'
@@ -85,47 +86,63 @@ function addScopeToServers(
  * Uses the original path for rename (does not follow symlinks).
  */
 async function writeMcpjsonFile(config: McpJsonConfig): Promise<void> {
-  const mcpJsonPath = join(getCwd(), '.mcp.json')
+  return writeMcpjsonFileAt(join(getCwd(), '.mcp.json'), config)
+}
 
-  // Read existing file permissions to preserve them
+/**
+ * Internal utility: Write MCP config to an arbitrary .mcp.json path.
+ * Same atomic write pattern as writeMcpjsonFile but with explicit path.
+ */
+async function writeMcpjsonFileAt(
+  filePath: string,
+  config: McpJsonConfig,
+): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true })
+
   let existingMode: number | undefined
   try {
-    const stats = await stat(mcpJsonPath)
+    const stats = await stat(filePath)
     existingMode = stats.mode
   } catch (e: unknown) {
-    const code = getErrnoCode(e)
-    if (code !== 'ENOENT') {
-      throw e
-    }
-    // File doesn't exist yet -- no permissions to preserve
+    if (getErrnoCode(e) !== 'ENOENT') throw e
   }
 
-  // Write to temp file, flush to disk, then atomic rename
-  const tempPath = `${mcpJsonPath}.tmp.${process.pid}.${Date.now()}`
+  const tempPath = `${filePath}.tmp.${process.pid}.${Date.now()}`
   const handle = await open(tempPath, 'w', existingMode ?? 0o644)
   try {
-    await handle.writeFile(jsonStringify(config, null, 2), {
-      encoding: 'utf8',
-    })
+    await handle.writeFile(jsonStringify(config, null, 2), { encoding: 'utf8' })
     await handle.datasync()
   } finally {
     await handle.close()
   }
 
   try {
-    // Restore original file permissions on the temp file before rename
-    if (existingMode !== undefined) {
-      await chmod(tempPath, existingMode)
-    }
-    await rename(tempPath, mcpJsonPath)
+    if (existingMode !== undefined) await chmod(tempPath, existingMode)
+    await rename(tempPath, filePath)
   } catch (e: unknown) {
-    // Clean up temp file on failure
-    try {
-      await unlink(tempPath)
-    } catch {
-      // Best-effort cleanup
-    }
+    try { await unlink(tempPath) } catch { /* best-effort */ }
     throw e
+  }
+}
+
+/**
+ * Internal utility: Read MCP config from an arbitrary .mcp.json path.
+ */
+function readMcpjsonFileAt(
+  filePath: string,
+): { servers: Record<string, ScopedMcpServerConfig>; errors: ValidationError[] } {
+  const { config, errors } = parseMcpConfigFromFilePath({
+    filePath,
+    expandVars: true,
+    scope: 'user',
+  })
+  if (!config) {
+    const nonMissing = errors.filter(e => !e.message.startsWith('MCP config file not found'))
+    return { servers: {}, errors: nonMissing }
+  }
+  return {
+    servers: addScopeToServers(config.mcpServers, 'user'),
+    errors: errors || [],
   }
 }
 
@@ -673,9 +690,17 @@ export async function addMcpConfig(
       break
     }
     case 'user': {
-      const globalConfig = getGlobalConfig()
-      if (globalConfig.mcpServers?.[name]) {
-        throw new Error(`MCP server ${name} already exists in user config`)
+      const userConfigPath = getCurrentMcpUserConfigPath()
+      if (userConfigPath) {
+        const { servers } = readMcpjsonFileAt(userConfigPath)
+        if (servers[name]) {
+          throw new Error(`MCP server ${name} already exists in user config`)
+        }
+      } else {
+        const globalConfig = getGlobalConfig()
+        if (globalConfig.mcpServers?.[name]) {
+          throw new Error(`MCP server ${name} already exists in user config`)
+        }
       }
       break
     }
@@ -719,13 +744,25 @@ export async function addMcpConfig(
     }
 
     case 'user': {
-      saveGlobalConfig(current => ({
-        ...current,
-        mcpServers: {
-          ...current.mcpServers,
-          [name]: validatedConfig,
-        },
-      }))
+      const userConfigPath = getCurrentMcpUserConfigPath()
+      if (userConfigPath) {
+        const { servers: existing } = readMcpjsonFileAt(userConfigPath)
+        const mcpServers: Record<string, McpServerConfig> = {}
+        for (const [sn, sc] of Object.entries(existing)) {
+          const { scope: _, ...rest } = sc
+          mcpServers[sn] = rest
+        }
+        mcpServers[name] = validatedConfig
+        await writeMcpjsonFileAt(userConfigPath, { mcpServers })
+      } else {
+        saveGlobalConfig(current => ({
+          ...current,
+          mcpServers: {
+            ...current.mcpServers,
+            [name]: validatedConfig,
+          },
+        }))
+      }
       break
     }
 
@@ -783,17 +820,33 @@ export async function removeMcpConfig(
     }
 
     case 'user': {
-      const config = getGlobalConfig()
-      if (!config.mcpServers?.[name]) {
-        throw new Error(`No user-scoped MCP server found with name: ${name}`)
-      }
-      saveGlobalConfig(current => {
-        const { [name]: _, ...restMcpServers } = current.mcpServers ?? {}
-        return {
-          ...current,
-          mcpServers: restMcpServers,
+      const userConfigPath = getCurrentMcpUserConfigPath()
+      if (userConfigPath) {
+        const { servers: existing } = readMcpjsonFileAt(userConfigPath)
+        if (!existing[name]) {
+          throw new Error(`No user-scoped MCP server found with name: ${name}`)
         }
-      })
+        const mcpServers: Record<string, McpServerConfig> = {}
+        for (const [sn, sc] of Object.entries(existing)) {
+          if (sn !== name) {
+            const { scope: _, ...rest } = sc
+            mcpServers[sn] = rest
+          }
+        }
+        await writeMcpjsonFileAt(userConfigPath, { mcpServers })
+      } else {
+        const config = getGlobalConfig()
+        if (!config.mcpServers?.[name]) {
+          throw new Error(`No user-scoped MCP server found with name: ${name}`)
+        }
+        saveGlobalConfig(current => {
+          const { [name]: _, ...restMcpServers } = current.mcpServers ?? {}
+          return {
+            ...current,
+            mcpServers: restMcpServers,
+          }
+        })
+      }
       break
     }
 
@@ -945,6 +998,12 @@ export function getMcpConfigsByScope(
       }
     }
     case 'user': {
+      // Per-user MCP config path (set by gateway for multi-tenant isolation)
+      const userConfigPath = getCurrentMcpUserConfigPath()
+      if (userConfigPath) {
+        return readMcpjsonFileAt(userConfigPath)
+      }
+      // Fallback: global config (single-user / CLI mode)
       const mcpServers = getGlobalConfig().mcpServers
       if (!mcpServers) {
         return { servers: {}, errors: [] }

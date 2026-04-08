@@ -486,28 +486,118 @@ export function getChatBodyHtml(): string {
             <div class="settings-section" id="settings-mcp-section">
               <div class="settings-section-header">
                 <div class="settings-section-header-title" data-i18n="settings_mcp">MCP Servers</div>
-                <button class="s-btn s-btn-primary" id="s-mcp-add-btn" data-i18n="settings_mcp_add">+ Add Server</button>
-              </div>
-              <div id="s-mcp-form" class="s-form" style="display:none">
-                <div class="s-form-grid">
-                  <div><label data-i18n="settings_mcp_id">ID</label><input id="s-mcpf-id" class="s-form-input" placeholder="e.g. filesystem"></div>
-                  <div><label data-i18n="settings_mcp_name">Name</label><input id="s-mcpf-name" class="s-form-input" placeholder="Display name"></div>
-                  <div><label data-i18n="settings_mcp_type">Transport</label>
-                    <select id="s-mcpf-type" class="s-form-select"><option value="stdio">stdio</option><option value="sse">sse</option></select>
-                  </div>
-                  <div id="s-mcpf-stdio-fields">
-                    <label data-i18n="settings_mcp_command">Command</label><input id="s-mcpf-command" class="s-form-input" placeholder="e.g. npx -y @modelcontextprotocol/server-filesystem">
-                    <label data-i18n="settings_mcp_args" style="margin-top:8px">Args (comma-separated)</label><input id="s-mcpf-args" class="s-form-input" placeholder="e.g. /tmp,/home">
-                  </div>
-                  <div id="s-mcpf-sse-fields" style="display:none">
-                    <label data-i18n="settings_mcp_url">URL</label><input id="s-mcpf-url" class="s-form-input" placeholder="http://localhost:3001/sse">
+                <div style="position:relative">
+                  <button class="s-btn s-btn-primary" id="s-mcp-add-btn" data-i18n="settings_mcp_add">+ Add</button>
+                  <div id="s-mcp-add-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;background:var(--s-bg,#fff);border:1px solid var(--s-border,#e2e8f0);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,0.1);z-index:10;min-width:220px;padding:8px">
+                    <button class="s-mcp-menu-item" id="s-mcp-menu-manual" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;border:none;background:none;cursor:pointer;border-radius:8px;font-size:15px;font-family:inherit;color:inherit;text-align:left">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      <span data-i18n="settings_mcp_manual">Manual Config</span>
+                    </button>
+                    <button class="s-mcp-menu-item" id="s-mcp-menu-json" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;border:none;background:none;cursor:pointer;border-radius:8px;font-size:15px;font-family:inherit;color:inherit;text-align:left">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                      <span data-i18n="settings_mcp_json">Paste JSON Config</span>
+                    </button>
                   </div>
                 </div>
-                <div style="display:flex;gap:8px;justify-content:flex-end">
-                  <button class="s-btn s-btn-ghost" id="s-mcpf-cancel" data-i18n="settings_cancel">Cancel</button>
-                  <button class="s-btn s-btn-primary" id="s-mcpf-save" data-i18n="settings_save">Save</button>
-                </div>
               </div>
+
+              <!-- Manual Config Form -->
+              <div id="s-mcp-manual-form" class="s-form" style="display:none">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+                  <div>
+                    <div style="font-weight:600;font-size:16px" data-i18n="settings_mcp_add_title">Add MCP Server</div>
+                    <div style="color:var(--s-muted,#64748b);font-size:13px;margin-top:4px" data-i18n="settings_mcp_add_subtitle">Manually configure a new MCP server connection</div>
+                  </div>
+                  <button class="s-btn s-btn-ghost" id="s-mcp-manual-close" style="font-size:18px;padding:4px 8px;line-height:1">&times;</button>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:16px">
+                  <div>
+                    <label style="display:block;font-weight:500;margin-bottom:6px" data-i18n="settings_mcp_server_type">Server Type</label>
+                    <select id="s-mcpf-type" class="s-form-select" style="width:100%">
+                      <option value="stdio">STDIO</option>
+                      <option value="sse">SSE</option>
+                      <option value="http">Streamable HTTP</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="display:block;font-weight:500;margin-bottom:6px"><span data-i18n="settings_mcp_name">Server Name</span> <span style="color:#dc2626">*</span></label>
+                    <input id="s-mcpf-name" class="s-form-input" placeholder="my-mcp-server" style="width:100%">
+                  </div>
+                  <div id="s-mcpf-command-wrap">
+                    <label style="display:block;font-weight:500;margin-bottom:6px"><span data-i18n="settings_mcp_command">Command</span> <span style="color:#dc2626">*</span></label>
+                    <textarea id="s-mcpf-command" class="s-form-input" rows="2" style="width:100%;resize:vertical;font-family:inherit" placeholder="npx -y @modelcontextprotocol/server-filesystem"></textarea>
+                    <div style="color:var(--s-muted,#64748b);font-size:12px;margin-top:4px" data-i18n="settings_mcp_command_hint">Paste full command, e.g. npx -y @modelcontextprotocol/server-filesystem</div>
+                  </div>
+                  <div id="s-mcpf-url-wrap" style="display:none">
+                    <label style="display:block;font-weight:500;margin-bottom:6px"><span data-i18n="settings_mcp_url">URL</span> <span style="color:#dc2626">*</span></label>
+                    <input id="s-mcpf-url" class="s-form-input" placeholder="http://localhost:8080/sse" style="width:100%">
+                  </div>
+                  <div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                      <label style="margin:0;font-weight:500"><span data-i18n="settings_mcp_env">Environment Variables</span> <span style="color:var(--s-muted,#64748b);font-weight:400" data-i18n="settings_mcp_env_optional">(optional)</span></label>
+                      <button class="s-btn s-btn-ghost" id="s-mcpf-paste-env" style="font-size:12px;padding:2px 8px" data-i18n="settings_mcp_env_paste">Paste</button>
+                    </div>
+                    <div id="s-mcpf-env-rows"></div>
+                    <button class="s-btn s-btn-ghost" id="s-mcpf-add-env" style="font-size:12px;padding:4px 0" data-i18n="settings_mcp_env_add">+ Add Variable</button>
+                  </div>
+                  <div>
+                    <label style="display:block;font-weight:500;margin-bottom:6px"><span data-i18n="settings_mcp_timeout">Timeout</span> <span style="color:var(--s-muted,#64748b);font-weight:400" data-i18n="settings_mcp_timeout_optional">(optional)</span></label>
+                    <input id="s-mcpf-timeout" class="s-form-input" type="number" placeholder="60" style="width:100%">
+                  </div>
+                </div>
+                <button class="s-btn s-btn-primary" id="s-mcpf-save" style="width:100%;padding:12px;margin-top:16px;font-size:15px" data-i18n="settings_mcp_btn_add">Add</button>
+              </div>
+
+              <!-- JSON Import Form -->
+              <div id="s-mcp-json-form" class="s-form" style="display:none">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+                  <div>
+                    <div style="font-weight:600;font-size:16px" data-i18n="settings_mcp_json_title">Import via JSON</div>
+                    <div style="color:var(--s-muted,#64748b);font-size:13px;margin-top:4px" data-i18n="settings_mcp_json_subtitle">Paste your config JSON</div>
+                  </div>
+                  <button class="s-btn s-btn-ghost" id="s-mcp-json-close" style="font-size:18px;padding:4px 8px;line-height:1">&times;</button>
+                </div>
+                <textarea id="s-mcpf-json" class="s-form-input" rows="16" style="width:100%;font-family:monospace;font-size:13px;resize:vertical" placeholder='// You can use either format:
+// STDIO example:
+{
+  "mcpServers": {
+    "stdio-server-example": {
+      "command": "npx",
+      "args": ["-y", "mcp-server-example"]
+    }
+  }
+}
+
+// SSE example:
+{
+  "mcpServers": {
+    "sse-server-example": {
+      "url": "http://localhost:8080/sse"
+    }
+  }
+}
+
+// Streamable HTTP example:
+{
+  "mcpServers": {
+    "http-server-example": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+
+// With OAuth authentication:
+{
+  "mcpServers": {
+    "oauth-server-example": {
+      "url": "https://api.example.com/mcp",
+      "authType": "oauth"
+    }
+  }
+}'></textarea>
+                <button class="s-btn s-btn-primary" id="s-mcpf-json-import" style="width:100%;padding:12px;margin-top:8px;font-size:15px" data-i18n="settings_mcp_btn_import">Import</button>
+              </div>
+
               <div id="s-mcp-wrap"></div>
               <div id="s-mcp-empty" class="s-empty" style="display:none" data-i18n="settings_mcp_empty">No MCP servers configured.</div>
             </div>

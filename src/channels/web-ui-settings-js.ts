@@ -131,7 +131,22 @@ export function getSettingsJs(): string {
   // --- Toast ---
   var sToastEl = document.getElementById("s-toast"), sToastTimer;
   function showSettingsToast(msg) { sToastEl.textContent = msg; sToastEl.classList.add("show"); clearTimeout(sToastTimer); sToastTimer = setTimeout(function() { sToastEl.classList.remove("show"); }, 2000); }
-  function escS(s) { if (s == null) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function escS(s) { if (s == null) return ""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+
+  function mcpApi(_, method, params) {
+    var qs = "";
+    var opts = { method: method || "GET", credentials: "same-origin" };
+    if (method === "POST" || method === "PATCH") {
+      opts.headers = { "Content-Type": "application/json" };
+      opts.body = JSON.stringify(params || {});
+    } else if (params) {
+      var pairs = [];
+      Object.keys(params).forEach(function(k) { if (params[k] != null) pairs.push(k + "=" + encodeURIComponent(params[k])); });
+      qs = pairs.join("&");
+    }
+    var url = "/api/mcp" + (qs ? "?" + qs : "");
+    return fetch(url, opts).then(function(r) { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json(); });
+  }
 
   function adminApi(path, method, params) {
     var qs = "";
@@ -153,124 +168,222 @@ export function getSettingsJs(): string {
   // =====================================================
   var sMcpWrap = document.getElementById("s-mcp-wrap");
   var sMcpEmpty = document.getElementById("s-mcp-empty");
-  var sMcpForm = document.getElementById("s-mcp-form");
   var sMcpAddBtn = document.getElementById("s-mcp-add-btn");
-  var sMcpfId = document.getElementById("s-mcpf-id");
-  var sMcpfName = document.getElementById("s-mcpf-name");
+  var sMcpAddMenu = document.getElementById("s-mcp-add-menu");
+  var sMcpManualForm = document.getElementById("s-mcp-manual-form");
+  var sMcpJsonForm = document.getElementById("s-mcp-json-form");
   var sMcpfType = document.getElementById("s-mcpf-type");
+  var sMcpfName = document.getElementById("s-mcpf-name");
   var sMcpfCommand = document.getElementById("s-mcpf-command");
-  var sMcpfArgs = document.getElementById("s-mcpf-args");
   var sMcpfUrl = document.getElementById("s-mcpf-url");
-  var sMcpfStdio = document.getElementById("s-mcpf-stdio-fields");
-  var sMcpfSse = document.getElementById("s-mcpf-sse-fields");
-  var sMcpfSave = document.getElementById("s-mcpf-save");
-  var sMcpfCancel = document.getElementById("s-mcpf-cancel");
-  var editingMcpId = null;
+  var sMcpfCommandWrap = document.getElementById("s-mcpf-command-wrap");
+  var sMcpfUrlWrap = document.getElementById("s-mcpf-url-wrap");
+  var sMcpfEnvRows = document.getElementById("s-mcpf-env-rows");
+  var sMcpfTimeout = document.getElementById("s-mcpf-timeout");
 
-  sMcpfType.addEventListener("change", function() {
-    sMcpfStdio.style.display = sMcpfType.value === "stdio" ? "" : "none";
-    sMcpfSse.style.display = sMcpfType.value === "sse" ? "" : "none";
+  // Toggle add dropdown menu
+  sMcpAddBtn.onclick = function(e) {
+    e.stopPropagation();
+    sMcpAddMenu.style.display = sMcpAddMenu.style.display === "none" ? "block" : "none";
+  };
+  document.addEventListener("click", function(e) {
+    if (!sMcpAddMenu.contains(e.target) && e.target !== sMcpAddBtn) sMcpAddMenu.style.display = "none";
   });
 
+  // Menu item hover
+  document.querySelectorAll(".s-mcp-menu-item").forEach(function(item) {
+    item.addEventListener("mouseenter", function() { item.style.background = "var(--s-bg-hover,#f1f5f9)"; });
+    item.addEventListener("mouseleave", function() { item.style.background = "none"; });
+  });
+
+  // Open manual form
+  document.getElementById("s-mcp-menu-manual").onclick = function() {
+    sMcpAddMenu.style.display = "none";
+    sMcpJsonForm.style.display = "none";
+    resetManualMcpForm();
+    sMcpManualForm.style.display = "block";
+    sMcpWrap.style.display = "none";
+    sMcpfName.focus();
+  };
+  // Open JSON form
+  document.getElementById("s-mcp-menu-json").onclick = function() {
+    sMcpAddMenu.style.display = "none";
+    sMcpManualForm.style.display = "none";
+    sMcpJsonForm.style.display = "block";
+    sMcpWrap.style.display = "none";
+    document.getElementById("s-mcpf-json").focus();
+  };
+  // Close forms
+  document.getElementById("s-mcp-manual-close").onclick = function() {
+    sMcpManualForm.style.display = "none"; sMcpWrap.style.display = "";
+  };
+  document.getElementById("s-mcp-json-close").onclick = function() {
+    sMcpJsonForm.style.display = "none"; sMcpWrap.style.display = "";
+  };
+
+  // Server type toggle (stdio vs url-based)
+  sMcpfType.addEventListener("change", function() {
+    var isStdio = sMcpfType.value === "stdio";
+    sMcpfCommandWrap.style.display = isStdio ? "" : "none";
+    sMcpfUrlWrap.style.display = isStdio ? "none" : "";
+  });
+
+  // Env var row management
+  function addMcpEnvRow(key, val) {
+    var row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:8px;margin-bottom:4px;align-items:center";
+    row.innerHTML = "<input class='s-form-input' placeholder='API_KEY' value='" + escS(key || "") + "' style='flex:1' data-envkey>"
+      + "<input class='s-form-input' placeholder='your-api-key' value='" + escS(val || "") + "' style='flex:1' data-envval>"
+      + "<button class='s-btn s-btn-ghost' style='padding:4px 8px;font-size:16px;opacity:0.5' data-envdel>&times;</button>";
+    row.querySelector("[data-envdel]").onclick = function() { row.remove(); };
+    sMcpfEnvRows.appendChild(row);
+  }
+  document.getElementById("s-mcpf-add-env").onclick = function() { addMcpEnvRow("", ""); };
+
+  // Paste env vars (KEY=VALUE per line)
+  document.getElementById("s-mcpf-paste-env").onclick = function() {
+    navigator.clipboard.readText().then(function(text) {
+      var lines = text.trim().split("\\n");
+      lines.forEach(function(line) {
+        var eq = line.indexOf("=");
+        if (eq > 0) addMcpEnvRow(line.slice(0, eq).trim(), line.slice(eq + 1).trim());
+      });
+    }).catch(function() {});
+  };
+
+  function getMcpEnvVars() {
+    var env = {};
+    sMcpfEnvRows.querySelectorAll("[data-envkey]").forEach(function(el) {
+      var key = el.value.trim();
+      var val = el.parentElement.querySelector("[data-envval]").value;
+      if (key) env[key] = val;
+    });
+    return Object.keys(env).length ? env : undefined;
+  }
+
+  function resetManualMcpForm() {
+    sMcpfType.value = "stdio"; sMcpfName.value = ""; sMcpfCommand.value = ""; sMcpfUrl.value = "";
+    sMcpfTimeout.value = ""; sMcpfEnvRows.innerHTML = "";
+    sMcpfCommandWrap.style.display = ""; sMcpfUrlWrap.style.display = "none";
+  }
+
+  // Save manual config
+  document.getElementById("s-mcpf-save").onclick = function() {
+    var name = sMcpfName.value.trim();
+    if (!name) { showSettingsToast(tt("settings_mcp_name_required")); return; }
+    var type = sMcpfType.value;
+    var payload = { name: name };
+    if (type === "stdio") {
+      var cmdStr = sMcpfCommand.value.trim();
+      if (!cmdStr) return;
+      var parts = cmdStr.match(/(?:[^\\s"]+|"[^"]*")+/g) || [cmdStr];
+      parts = parts.map(function(p) { return p.replace(/^"|"$/g, ""); });
+      payload.command = parts[0];
+      if (parts.length > 1) payload.args = parts.slice(1);
+    } else {
+      var url = sMcpfUrl.value.trim();
+      if (!url) return;
+      payload.type = type;
+      payload.url = url;
+    }
+    var env = getMcpEnvVars();
+    if (env) payload.env = env;
+    var timeout = parseInt(sMcpfTimeout.value);
+    if (timeout > 0) payload.timeout = timeout;
+
+    var btn = document.getElementById("s-mcpf-save");
+    btn.disabled = true;
+    mcpApi("", "POST", payload)
+      .then(function() { sMcpManualForm.style.display = "none"; sMcpWrap.style.display = ""; resetManualMcpForm(); showSettingsToast(tt("settings_saved")); loadMcpServers(); })
+      .catch(function() { showSettingsToast(tt("settings_failed")); })
+      .finally(function() { btn.disabled = false; });
+  };
+
+  // JSON import
+  document.getElementById("s-mcpf-json-import").onclick = function() {
+    var raw = document.getElementById("s-mcpf-json").value.trim();
+    if (!raw) return;
+    // Strip // comments
+    var cleaned = raw.replace(/\\/\\/[^\\n]*/g, "").trim();
+    var parsed;
+    try { parsed = JSON.parse(cleaned); } catch(e) { showSettingsToast(tt("settings_mcp_import_failed") + ": Invalid JSON"); return; }
+
+    var servers = parsed.mcpServers || parsed;
+    if (typeof servers !== "object" || Array.isArray(servers)) { showSettingsToast(tt("settings_mcp_import_failed") + ": Expected mcpServers object"); return; }
+
+    var names = Object.keys(servers);
+    if (!names.length) { showSettingsToast(tt("settings_mcp_import_failed") + ": No servers found"); return; }
+
+    var btn = document.getElementById("s-mcpf-json-import");
+    btn.disabled = true;
+    var pending = names.length;
+    var errors = [];
+    names.forEach(function(sname) {
+      var config = Object.assign({}, servers[sname], { name: sname });
+      mcpApi("", "POST", config)
+        .catch(function(e) { errors.push(sname + ": " + (e.message || e)); })
+        .finally(function() {
+          pending--;
+          if (pending === 0) {
+            btn.disabled = false;
+            if (errors.length) { showSettingsToast(tt("settings_mcp_import_failed") + ": " + errors.join(", ")); }
+            else { sMcpJsonForm.style.display = "none"; sMcpWrap.style.display = ""; document.getElementById("s-mcpf-json").value = ""; showSettingsToast(tt("settings_mcp_imported")); }
+            loadMcpServers();
+          }
+        });
+    });
+  };
+
   function loadMcpServers() {
-    adminApi("mcp", "GET").then(function(d) {
+    mcpApi("", "GET").then(function(d) {
       var servers = d.servers || [];
       if (!servers.length) { sMcpWrap.innerHTML = ""; sMcpEmpty.style.display = "block"; return; }
       sMcpEmpty.style.display = "none";
-      var h = "<table class='s-table'><thead><tr><th>ID</th><th>" + tt("settings_mcp_name") + "</th><th>" + tt("settings_mcp_type") + "</th><th>Detail</th><th>Status</th><th></th></tr></thead><tbody>";
-      servers.forEach(function(s) {
-        var badge = s.enabled
-          ? "<span class='s-badge s-badge-green'>" + tt("settings_enabled") + "</span>"
-          : "<span class='s-badge s-badge-gray'>" + tt("settings_disabled") + "</span>";
-        var detail = s.transport.type === "stdio" ? escS(s.transport.command || "") : escS(s.transport.url || "");
-        h += "<tr>"
-          + "<td><span class='s-code'>" + escS(s.id) + "</span></td>"
-          + "<td>" + escS(s.name) + "</td>"
-          + "<td>" + escS(s.transport.type) + "</td>"
-          + "<td class='s-muted'>" + detail + "</td>"
-          + "<td>" + badge + "</td>"
-          + "<td><div class='s-actions'>"
-          + "<button class='s-btn s-btn-ghost' data-togglemcp='" + escS(s.id) + "' data-enabled='" + (s.enabled ? "1" : "0") + "'>" + (s.enabled ? "Disable" : "Enable") + "</button>"
-          + "<button class='s-btn s-btn-ghost' data-editmcp='" + escS(s.id) + "'>Edit</button>"
-          + "<button class='s-btn s-btn-danger' data-delmcp='" + escS(s.id) + "'>" + tt("delete_title") + "</button>"
-          + "</div></td></tr>";
+      sMcpWrap.innerHTML = '<div class="sk-grid">' + servers.map(function(s) {
+        var cfg = s.config || {};
+        var type = cfg.type || "stdio";
+        var detail = "";
+        if (type === "stdio") {
+          detail = escS(cfg.command || "");
+          if (cfg.args && cfg.args.length) detail += " " + cfg.args.map(function(a) { return escS(a); }).join(" ");
+        } else {
+          detail = escS(cfg.url || "");
+        }
+        var enabled = s.enabled !== false;
+        var toggle = '<label class="sk-toggle"><input type="checkbox" class="mcp-toggle-input" data-mcp="' + escS(s.name) + '"' + (enabled ? ' checked' : '') + '><span class="sk-slider"></span></label>';
+        var typeBadge = '<span class="s-badge s-badge-gray">' + escS(type.toUpperCase()) + '</span>';
+        var uninstallBtn = '<button class="sk-uninstall-btn" data-delmcp="' + escS(s.name) + '">' + tt("settings_mcp_uninstall") + '</button>';
+        return '<div class="sk-card">' +
+          '<div class="sk-card-head">' +
+            '<div class="sk-card-info"><div class="sk-card-emoji">\u{1F50C}</div><div class="sk-card-name">' + escS(s.name) + '</div></div>' +
+            toggle +
+          '</div>' +
+          '<div class="sk-card-desc">' + detail + '</div>' +
+          '<div class="sk-card-actions">' + uninstallBtn + '</div>' +
+          '<div class="sk-card-badges">' + typeBadge + '</div>' +
+        '</div>';
+      }).join("") + '</div>';
+
+      // Bind toggles
+      sMcpWrap.querySelectorAll(".mcp-toggle-input").forEach(function(el) {
+        el.addEventListener("change", function() {
+          var name = el.getAttribute("data-mcp");
+          mcpApi("", "PATCH", { name: name, enabled: el.checked })
+            .then(function() { loadMcpServers(); })
+            .catch(function() { loadMcpServers(); });
+        });
       });
-      h += "</tbody></table>";
-      sMcpWrap.innerHTML = h;
+      // Bind uninstall buttons
+      sMcpWrap.querySelectorAll(".sk-uninstall-btn[data-delmcp]").forEach(function(el) {
+        el.addEventListener("click", function() {
+          var name = el.getAttribute("data-delmcp");
+          if (!confirm(tt("settings_mcp_delete_confirm"))) return;
+          mcpApi("", "DELETE", { name: name })
+            .then(function() { loadMcpServers(); showSettingsToast(tt("settings_deleted")); });
+        });
+      });
     });
   }
-
-  sMcpAddBtn.onclick = function() {
-    editingMcpId = null;
-    sMcpfId.value = ""; sMcpfName.value = ""; sMcpfType.value = "stdio";
-    sMcpfCommand.value = ""; sMcpfArgs.value = ""; sMcpfUrl.value = "";
-    sMcpfId.disabled = false;
-    sMcpfStdio.style.display = ""; sMcpfSse.style.display = "none";
-    sMcpForm.style.display = "block";
-    sMcpfId.focus();
-  };
-  sMcpfCancel.onclick = function() { sMcpForm.style.display = "none"; };
-
-  sMcpfSave.onclick = function() {
-    var id = sMcpfId.value.trim();
-    if (!id) return;
-    sMcpfSave.disabled = true;
-    var transport;
-    if (sMcpfType.value === "stdio") {
-      var cmd = sMcpfCommand.value.trim();
-      if (!cmd) { sMcpfSave.disabled = false; return; }
-      var parts = cmd.split(/\s+/);
-      var argsStr = sMcpfArgs.value.trim();
-      var args = parts.slice(1);
-      if (argsStr) args = args.concat(argsStr.split(",").map(function(a) { return a.trim(); }).filter(Boolean));
-      transport = { type: "stdio", command: parts[0], args: args.length ? args : undefined };
-    } else {
-      var url = sMcpfUrl.value.trim();
-      if (!url) { sMcpfSave.disabled = false; return; }
-      transport = { type: "sse", url: url };
-    }
-    var payload = { id: id, name: sMcpfName.value.trim() || id, transport: transport, enabled: true };
-    var method = editingMcpId ? "PATCH" : "POST";
-    var path = editingMcpId ? "mcp?id=" + encodeURIComponent(editingMcpId) : "mcp";
-    adminApi(path, method, payload)
-      .then(function() { sMcpForm.style.display = "none"; showSettingsToast(tt("settings_saved")); loadMcpServers(); })
-      .catch(function() { showSettingsToast(tt("settings_failed")); })
-      .finally(function() { sMcpfSave.disabled = false; });
-  };
-
-  sMcpWrap.addEventListener("click", function(e) {
-    var btn = e.target.closest("button");
-    if (!btn) return;
-    e.stopPropagation();
-    if (btn.dataset.delmcp) {
-      if (!confirm(tt("settings_mcp_delete_confirm"))) return;
-      adminApi("mcp?id=" + encodeURIComponent(btn.dataset.delmcp), "DELETE").then(function() { loadMcpServers(); showSettingsToast(tt("settings_deleted")); });
-    } else if (btn.dataset.togglemcp) {
-      var enabled = btn.dataset.enabled === "1";
-      adminApi("mcp?id=" + encodeURIComponent(btn.dataset.togglemcp), "PATCH", { enabled: !enabled }).then(function() { loadMcpServers(); });
-    } else if (btn.dataset.editmcp) {
-      var sid = btn.dataset.editmcp;
-      adminApi("mcp", "GET").then(function(d) {
-        var s = (d.servers || []).find(function(x) { return x.id === sid; });
-        if (!s) return;
-        editingMcpId = sid;
-        sMcpfId.value = s.id; sMcpfId.disabled = true;
-        sMcpfName.value = s.name || "";
-        sMcpfType.value = s.transport.type || "stdio";
-        if (s.transport.type === "stdio") {
-          var fullCmd = s.transport.command || "";
-          if (s.transport.args && s.transport.args.length) fullCmd += " " + s.transport.args.join(" ");
-          sMcpfCommand.value = fullCmd;
-          sMcpfArgs.value = "";
-          sMcpfStdio.style.display = ""; sMcpfSse.style.display = "none";
-        } else {
-          sMcpfUrl.value = s.transport.url || "";
-          sMcpfStdio.style.display = "none"; sMcpfSse.style.display = "";
-        }
-        sMcpForm.style.display = "block";
-      });
-    }
-  });
 
   // =====================================================
   // CRON TASKS (in settings)

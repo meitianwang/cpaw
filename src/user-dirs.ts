@@ -47,6 +47,11 @@ export function getUserSkillsDir(userId: string): string {
   return join(USERS_BASE, userId, ".claude", "skills");
 }
 
+/** Per-user MCP config file: ~/.klaus/users/{userId}/.mcp.json */
+export function getUserMcpConfigPath(userId: string): string {
+  return join(USERS_BASE, userId, ".mcp.json");
+}
+
 /** Global skills marketplace — bundled with the project, deployed with the code. */
 const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const SKILLS_MARKET_DIR = join(PROJECT_ROOT, "skills-market");

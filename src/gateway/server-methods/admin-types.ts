@@ -41,9 +41,9 @@ export type GatewayAdminRpcContext = {
     patch: Record<string, unknown>;
   }): { ok: true; prompt: unknown };
   deleteAdminPrompt(id: string): boolean;
-  listAdminMcpServers(): Promise<{ servers: readonly unknown[] }>;
-  createAdminMcpServer(input: Record<string, unknown>): Promise<{ ok: true; name: string }>;
-  deleteAdminMcpServer(name: string, scope?: string): Promise<boolean>;
+  listMcpServers(userId: string): Promise<{ servers: readonly unknown[] }>;
+  createMcpServer(userId: string, input: Record<string, unknown>): Promise<{ ok: true; name: string }>;
+  deleteMcpServer(userId: string, name: string): Promise<boolean>;
   listAdminProviders(params?: {
     refresh?: boolean;
   }): Promise<unknown>;
