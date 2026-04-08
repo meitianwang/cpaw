@@ -6,7 +6,6 @@ import { dirname, join, parse } from 'path'
 import { getPlatform } from '../../utils/platform.js'
 import type { PluginError } from '../../types/plugin.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
-import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
 import {
   getCurrentProjectConfig,
   getGlobalConfig,
@@ -631,20 +630,6 @@ export async function addMcpConfig(
     throw new Error(
       `Invalid name ${name}. Names can only contain letters, numbers, hyphens, and underscores.`,
     )
-  }
-
-  // Block reserved server name "claude-in-chrome"
-  if (isClaudeInChromeMCPServer(name)) {
-    throw new Error(`Cannot add MCP server "${name}": this name is reserved.`)
-  }
-
-  if (feature('CHICAGO_MCP')) {
-    const { isComputerUseMCPServer } = await import(
-      '../../utils/computerUse/common.js'
-    )
-    if (isComputerUseMCPServer(name)) {
-      throw new Error(`Cannot add MCP server "${name}": this name is reserved.`)
-    }
   }
 
   // Block adding servers when enterprise MCP config exists (it has exclusive control)
@@ -1508,16 +1493,8 @@ export function areMcpConfigsAllowedWithEnterpriseMcpConfig(
  * (opt-out via disabledMcpServers), this requires explicit opt-in via
  * enabledMcpServers. Shows up in /mcp as disabled until the user enables it.
  */
-/* eslint-disable @typescript-eslint/no-require-imports */
-const DEFAULT_DISABLED_BUILTIN = feature('CHICAGO_MCP')
-  ? (
-      require('../../utils/computerUse/common.js') as typeof import('../../utils/computerUse/common.js')
-    ).COMPUTER_USE_MCP_SERVER_NAME
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
-
-function isDefaultDisabledBuiltin(name: string): boolean {
-  return DEFAULT_DISABLED_BUILTIN !== null && name === DEFAULT_DISABLED_BUILTIN
+function isDefaultDisabledBuiltin(_name: string): boolean {
+  return false
 }
 
 /**

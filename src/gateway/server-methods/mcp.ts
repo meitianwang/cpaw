@@ -1,81 +1,60 @@
-import type {
-  McpServerRecord,
-  McpTransportConfig,
-  SettingsStore,
-} from "../../settings-store.js";
+/**
+ * Gateway MCP server CRUD — uses the engine's .mcp.json config system
+ * (getAllMcpConfigs / addMcpConfig / removeMcpConfig) instead of SQLite.
+ */
+
+import {
+  getAllMcpConfigs,
+  addMcpConfig,
+  removeMcpConfig,
+} from "../../engine/services/mcp/config.js";
+import type { ScopedMcpServerConfig } from "../../engine/services/mcp/types.js";
 import { GatewayError } from "../errors.js";
-import { requireEntityId } from "./resource-utils.js";
 
-function normalizeMcpServerInput(
-  input: Record<string, unknown>,
-  existing?: McpServerRecord,
-): McpServerRecord {
-  const now = Date.now();
-  const id = requireEntityId(
-    "id" in input ? String(input.id ?? "") : (existing?.id ?? ""),
+/** Serializable MCP server record for admin API responses. */
+export interface McpServerInfo {
+  readonly name: string;
+  readonly scope: string;
+  readonly config: ScopedMcpServerConfig;
+}
+
+export async function listGatewayAdminMcpServers(): Promise<{
+  servers: readonly McpServerInfo[];
+}> {
+  const { servers } = await getAllMcpConfigs();
+  const result: McpServerInfo[] = Object.entries(servers).map(
+    ([name, config]) => ({
+      name,
+      scope: config.scope,
+      config,
+    }),
   );
-
-  const transport = "transport" in input
-    ? (input.transport as Record<string, unknown> | undefined)
-    : undefined;
-  const nextTransport = transport
-    ? (transport as McpTransportConfig)
-    : existing?.transport;
-  if (!nextTransport || !("type" in nextTransport) || !nextTransport.type) {
-    throw GatewayError.badRequest("transport with type is required");
-  }
-
-  return {
-    id,
-    name:
-      "name" in input
-        ? String(input.name ?? id)
-        : (existing?.name ?? id),
-    transport: nextTransport,
-    enabled:
-      "enabled" in input
-        ? Boolean(input.enabled)
-        : (existing?.enabled ?? true),
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
+  return { servers: result };
 }
 
-export function listGatewayAdminMcpServers(params: {
-  settingsStore: SettingsStore;
-}): { servers: readonly McpServerRecord[] } {
-  return { servers: params.settingsStore.listMcpServers() };
-}
-
-export function createGatewayAdminMcpServer(params: {
-  settingsStore: SettingsStore;
+export async function createGatewayAdminMcpServer(params: {
   input: Record<string, unknown>;
-}): { ok: true; server: McpServerRecord } {
-  const server = normalizeMcpServerInput(params.input);
-  params.settingsStore.upsertMcpServer(server);
-  return { ok: true, server: params.settingsStore.getMcpServer(server.id) ?? server };
+}): Promise<{ ok: true; name: string }> {
+  const { name, scope, ...config } = params.input as {
+    name?: string;
+    scope?: string;
+    [k: string]: unknown;
+  };
+  if (!name) throw GatewayError.badRequest("name is required");
+  const targetScope = (scope as "project" | "user" | "local") ?? "user";
+  await addMcpConfig(name, config, targetScope);
+  return { ok: true, name };
 }
 
-export function updateGatewayAdminMcpServer(params: {
-  settingsStore: SettingsStore;
-  id: string;
-  patch: Record<string, unknown>;
-}): { ok: true; server: McpServerRecord } {
-  const existing = params.settingsStore.getMcpServer(params.id);
-  if (!existing) {
-    throw GatewayError.notFound("server not found");
+export async function deleteGatewayAdminMcpServer(params: {
+  name: string;
+  scope?: string;
+}): Promise<boolean> {
+  const targetScope = (params.scope as "project" | "user" | "local") ?? "user";
+  try {
+    await removeMcpConfig(params.name, targetScope);
+    return true;
+  } catch {
+    return false;
   }
-  const server = normalizeMcpServerInput(
-    { ...params.patch, id: params.id },
-    existing,
-  );
-  params.settingsStore.upsertMcpServer(server);
-  return { ok: true, server: params.settingsStore.getMcpServer(server.id) ?? server };
-}
-
-export function deleteGatewayAdminMcpServer(params: {
-  settingsStore: SettingsStore;
-  id: string;
-}): boolean {
-  return params.settingsStore.deleteMcpServer(requireEntityId(params.id));
 }

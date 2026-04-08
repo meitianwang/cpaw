@@ -1,7 +1,5 @@
 import { feature } from 'bun:bundle'
-import { shouldAutoEnableClaudeInChrome } from '../../utils/claudeInChrome/setup.js'
 import { registerBatchSkill } from './batch.js'
-import { registerClaudeInChromeSkill } from './claudeInChrome.js'
 import { registerDebugSkill } from './debug.js'
 import { registerKeybindingsSkill } from './keybindings.js'
 import { registerLoremIpsumSkill } from './loremIpsum.js'
@@ -46,10 +44,6 @@ export function initBundledSkills(): void {
     } = require('./scheduleRemoteAgents.js')
     /* eslint-enable @typescript-eslint/no-require-imports */
     registerScheduleRemoteAgentsSkill()
-  }
-  // claude-api skill removed for Klaus
-  if (shouldAutoEnableClaudeInChrome()) {
-    registerClaudeInChromeSkill()
   }
   // runSkillGenerator skill removed — source file not present in Klaus
 }

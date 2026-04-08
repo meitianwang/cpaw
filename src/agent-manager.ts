@@ -17,7 +17,17 @@ import { ToolLoopDetector } from "./tool-loop-detector.js";
 import { loadSandboxConfig, sandboxExec } from "./sandbox.js";
 import { getAllBaseTools, assembleToolPool } from "./engine/tools.js";
 import { wrapLegacyTools, type LegacyAgentTool } from "./engine/utils/legacyToolAdapter.js";
-import type { MCPManager } from "./mcp-manager.js";
+import type { MCPServerConnection, ScopedMcpServerConfig, ServerResource } from "./engine/services/mcp/types.js";
+import type { Tool } from "./engine/Tool.js";
+import {
+  connectToServer,
+  clearServerCache,
+  fetchToolsForClient,
+  fetchResourcesForClient,
+  getMcpToolsCommandsAndResources,
+} from "./engine/services/mcp/client.js";
+import { getAllMcpConfigs } from "./engine/services/mcp/config.js";
+import type { Command } from "./engine/commands.js";
 // SkillTool removed from engine — define type locally
 import { dirname } from "path";
 import { fileURLToPath } from "url";
@@ -115,7 +125,11 @@ export class AgentSessionManager {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly store: SettingsStore;
   private readonly maxSessions: number;
-  private mcpManager: MCPManager | null = null;
+  // MCP state — mirrors AppState.mcp from claude-code
+  private _mcpClients: MCPServerConnection[] = [];
+  private _mcpTools: Tool[] = [];
+  private _mcpCommands: Command[] = [];
+  private _mcpResources: Record<string, ServerResource[]> = {};
   private messageStore: MessageStore | null = null;
   private readonly skillMutex = new SkillStateMutex();
 
@@ -171,8 +185,61 @@ export class AgentSessionManager {
     this.messageStore = store;
   }
 
-  setMCPManager(mgr: MCPManager | null): void {
-    this.mcpManager = mgr;
+  /**
+   * Initialize MCP connections using the engine's config system (.mcp.json).
+   * Mirrors claude-code's useManageMCPConnections: loads configs via
+   * getAllMcpConfigs(), connects via getMcpToolsCommandsAndResources(),
+   * stores results in instance state.
+   */
+  async initMcp(): Promise<void> {
+    const { servers } = await getAllMcpConfigs();
+    if (Object.keys(servers).length === 0) return;
+
+    // Reset state before connecting
+    this._mcpClients = [];
+    this._mcpTools = [];
+    this._mcpCommands = [];
+    this._mcpResources = {};
+
+    await getMcpToolsCommandsAndResources(
+      ({ client, tools, commands, resources }) => {
+        this._mcpClients.push(client);
+        this._mcpTools.push(...tools);
+        if (commands) this._mcpCommands.push(...commands);
+        if (resources && resources.length > 0) {
+          this._mcpResources[client.name] = resources;
+        }
+
+        if (client.type === "connected") {
+          console.log(
+            `[MCP] Connected to "${client.name}" — ${tools.length} tool(s): ${tools.map((t) => t.name).join(", ")}`,
+          );
+        } else if (client.type === "failed") {
+          console.warn(`[MCP] Failed to connect to "${client.name}"`);
+        } else {
+          console.log(`[MCP] "${client.name}" state: ${client.type}`);
+        }
+      },
+      servers,
+    );
+  }
+
+  /**
+   * Reconnect all MCP servers: close existing connections, clear caches,
+   * then re-initialize from current config.
+   */
+  async reconnectMcp(): Promise<void> {
+    // Close all existing connected servers and clear engine caches
+    for (const client of this._mcpClients) {
+      if (client.type === "connected") {
+        try {
+          await clearServerCache(client.name, client.config);
+        } catch (err) {
+          console.error(`[MCP] Error closing "${client.name}": ${err}`);
+        }
+      }
+    }
+    await this.initMcp();
   }
 
   async chat(
@@ -486,8 +553,8 @@ export class AgentSessionManager {
     }
 
     // Add MCP tools (mcp__server__tool wrappers)
-    if (this.mcpManager) {
-      tools.push(...this.mcpManager.mcpTools);
+    if (this._mcpTools.length > 0) {
+      tools.push(...this._mcpTools);
     }
 
     return tools;
@@ -564,7 +631,20 @@ export class AgentSessionManager {
 
   async disposeAll(): Promise<void> {
     this.sessions.clear();
-    await this.mcpManager?.close();
+    // Close all connected MCP servers
+    for (const client of this._mcpClients) {
+      if (client.type === "connected") {
+        try {
+          await clearServerCache(client.name, client.config);
+        } catch (err) {
+          console.error(`[MCP] Error closing "${client.name}": ${err}`);
+        }
+      }
+    }
+    this._mcpClients = [];
+    this._mcpTools = [];
+    this._mcpCommands = [];
+    this._mcpResources = {};
   }
 
   // ============================================================================
@@ -713,7 +793,7 @@ export class AgentSessionManager {
       tools,
       modelRecord.model,
       undefined, // additionalWorkingDirectories
-      this.mcpManager?.mcpClients,
+      this._mcpClients,
       sectionOverrides,
       disabledSkills,
     );
@@ -789,9 +869,9 @@ export class AgentSessionManager {
       },
       skills: [], // Engine manages skills via getCommands() internally
       mcp: {
-        tools: this.mcpManager?.mcpTools ?? [],
-        clients: this.mcpManager?.mcpClients ?? [],
-        commands: [],
+        tools: this._mcpTools,
+        clients: this._mcpClients,
+        commands: this._mcpCommands,
       },
       tasks: {},
       fastMode: undefined,
@@ -808,8 +888,8 @@ export class AgentSessionManager {
         tools: tools as any,
         verbose: false,
         thinkingConfig,
-        mcpClients: this.mcpManager?.mcpClients ?? [],
-        mcpResources: this.mcpManager?.mcpResources ?? {},
+        mcpClients: this._mcpClients,
+        mcpResources: this._mcpResources,
         isNonInteractiveSession: true,
         agentDefinitions: { agents: [], errors: [], activeAgents: [], allowedAgentTypes: undefined },
         hooksConfig: this.store.getHooks(),

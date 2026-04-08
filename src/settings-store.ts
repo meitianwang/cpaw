@@ -48,18 +48,6 @@ export interface PromptRecord {
   readonly updatedAt: number;
 }
 
-export interface McpServerRecord {
-  readonly id: string;
-  readonly name: string;
-  readonly transport: McpTransportConfig;
-  readonly enabled: boolean;
-  readonly createdAt: number;
-  readonly updatedAt: number;
-}
-
-export type McpTransportConfig =
-  | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string> }
-  | { type: "sse"; url: string; headers?: Record<string, string> };
 
 // ---------------------------------------------------------------------------
 // SettingsStore
@@ -141,14 +129,6 @@ export class SettingsStore {
         updated_at        INTEGER NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS mcp_servers (
-        id          TEXT PRIMARY KEY,
-        name        TEXT NOT NULL,
-        transport   TEXT NOT NULL,
-        enabled     INTEGER NOT NULL DEFAULT 1,
-        created_at  INTEGER NOT NULL,
-        updated_at  INTEGER NOT NULL
-      );
     `);
   }
 
@@ -473,48 +453,7 @@ export class SettingsStore {
     return this.lastChanges() > 0;
   }
 
-  // -----------------------------------------------------------------------
-  // MCP Servers CRUD
-  // -----------------------------------------------------------------------
-
-  listMcpServers(): McpServerRecord[] {
-    const rows = this.db
-      .prepare("SELECT * FROM mcp_servers ORDER BY name ASC")
-      .all() as RawMcpRow[];
-    return rows.map(toMcpRecord);
-  }
-
-  getEnabledMcpServers(): McpServerRecord[] {
-    const rows = this.db
-      .prepare("SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY name ASC")
-      .all() as RawMcpRow[];
-    return rows.map(toMcpRecord);
-  }
-
-  getMcpServer(id: string): McpServerRecord | undefined {
-    const row = this.db
-      .prepare("SELECT * FROM mcp_servers WHERE id = ?")
-      .get(id) as RawMcpRow | undefined;
-    return row ? toMcpRecord(row) : undefined;
-  }
-
-  upsertMcpServer(s: McpServerRecord): void {
-    const now = Date.now();
-    this.db
-      .prepare(
-        `INSERT INTO mcp_servers (id, name, transport, enabled, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           name = excluded.name, transport = excluded.transport,
-           enabled = excluded.enabled, updated_at = excluded.updated_at`,
-      )
-      .run(s.id, s.name, JSON.stringify(s.transport), s.enabled ? 1 : 0, s.createdAt ?? now, now);
-  }
-
-  deleteMcpServer(id: string): boolean {
-    this.db.prepare("DELETE FROM mcp_servers WHERE id = ?").run(id);
-    return this.lastChanges() > 0;
-  }
+  // MCP config moved to engine's .mcp.json system (engine/services/mcp/config.ts)
 
   // -----------------------------------------------------------------------
   // Memory config
@@ -657,22 +596,4 @@ function toCronTask(r: RawCronRow): CronTask {
   };
 }
 
-interface RawMcpRow {
-  id: string;
-  name: string;
-  transport: string;
-  enabled: number;
-  created_at: number;
-  updated_at: number;
-}
 
-function toMcpRecord(r: RawMcpRow): McpServerRecord {
-  return {
-    id: r.id,
-    name: r.name,
-    transport: safeJsonParse(r.transport) as McpTransportConfig,
-    enabled: r.enabled === 1,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}

@@ -101,7 +101,7 @@ export async function handleGatewayAdminRpcMethod(
     }
 case "mcp.list":
       try {
-        return { handled: true, result: ctx.listAdminMcpServers() };
+        return { handled: true, result: await ctx.listAdminMcpServers() };
       } catch (err) {
         return { handled: true, error: String(err) };
       }
@@ -109,37 +109,20 @@ case "mcp.list":
       try {
         return {
           handled: true,
-          result: ctx.createAdminMcpServer(
+          result: await ctx.createAdminMcpServer(
             (params.server ?? params) as Record<string, unknown>,
           ),
         };
       } catch (err) {
         return { handled: true, error: String(err) };
       }
-    case "mcp.update": {
-      const id = params.id as string;
-      if (!id) {
-        return { handled: true, error: "missing id parameter" };
-      }
-      try {
-        return {
-          handled: true,
-          result: ctx.updateAdminMcpServer({
-            id,
-            patch: (params.patch ?? {}) as Record<string, unknown>,
-          }),
-        };
-      } catch (err) {
-        return { handled: true, error: String(err) };
-      }
-    }
     case "mcp.remove": {
-      const id = params.id as string;
-      if (!id) {
-        return { handled: true, error: "missing id parameter" };
+      const name = params.name as string;
+      if (!name) {
+        return { handled: true, error: "missing name parameter" };
       }
       try {
-        return { handled: true, result: { ok: ctx.deleteAdminMcpServer(id) } };
+        return { handled: true, result: { ok: await ctx.deleteAdminMcpServer(name, params.scope as string | undefined) } };
       } catch (err) {
         return { handled: true, error: String(err) };
       }

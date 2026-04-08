@@ -42,11 +42,6 @@ const shimPath = (file: string) => join(shimDir, file)
 const SHIMS: Record<string, string> = {
   'bun:bundle':                     shimPath('bun-bundle.ts'),
   '@anthropic-ai/sandbox-runtime':  shimPath('pkg-sandbox-runtime.ts'),
-  '@ant/claude-for-chrome-mcp':     shimPath('pkg-ant-stubs.ts'),
-  '@ant/computer-use-mcp':          shimPath('pkg-ant-stubs.ts'),
-  '@ant/computer-use-mcp/types':    shimPath('pkg-ant-stubs.ts'),
-  '@ant/computer-use-swift':        shimPath('pkg-ant-stubs.ts'),
-  '@ant/computer-use-input':        shimPath('pkg-ant-stubs.ts'),
   '@anthropic-ai/mcpb':             shimPath('pkg-ant-stubs.ts'),
 }
 

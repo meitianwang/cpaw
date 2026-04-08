@@ -9,7 +9,6 @@ export {
   createGatewayAdminMcpServer,
   deleteGatewayAdminMcpServer,
   listGatewayAdminMcpServers,
-  updateGatewayAdminMcpServer,
 } from "./mcp.js";
 export {
   createGatewayAdminModel,

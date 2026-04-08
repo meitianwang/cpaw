@@ -9,11 +9,6 @@ const antStubsURL = new URL('./pkg-ant-stubs.ts', import.meta.url).href
 const SHIMMED_PACKAGES: Record<string, string> = {
   'bun:bundle': shimURL,
   '@anthropic-ai/sandbox-runtime': sandboxShimURL,
-  '@ant/claude-for-chrome-mcp': antStubsURL,
-  '@ant/computer-use-mcp': antStubsURL,
-  '@ant/computer-use-mcp/types': antStubsURL,
-  '@ant/computer-use-swift': antStubsURL,
-  '@ant/computer-use-input': antStubsURL,
   '@anthropic-ai/mcpb': antStubsURL,
 }
 

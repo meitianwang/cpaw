@@ -272,8 +272,6 @@ function setAgentManager(manager: import("../agent-manager.js").AgentSessionMana
   agentManagerRef = manager;
 }
 
-// MCP manager reference (for reconnect after admin CRUD)
-let mcpManagerRef: import("../mcp-manager.js").MCPManager | null = null;
 
 // ---------------------------------------------------------------------------
 // Hot-start: delegate to ChannelManager for proper lifecycle management
@@ -1315,7 +1313,7 @@ async function handleAdminMcp(
   if (!adminAuth(req, res)) return;
   if (req.method === "GET") {
     try {
-      jsonResponse(res, 200, gateway.listAdminMcpServers());
+      jsonResponse(res, 200, await gateway.listAdminMcpServers());
     } catch (err) {
       gatewayErrorResponse(res, err);
     }
@@ -1325,25 +1323,9 @@ async function handleAdminMcp(
   if (req.method === "POST") {
     try {
       const parsed = await readJsonBody(req, 4096);
-      const result = gateway.createAdminMcpServer(parsed);
-      mcpManagerRef?.reconnect().catch((e) => console.error("[MCP] Reconnect failed:", e));
+      const result = await gateway.createAdminMcpServer(parsed);
+      agentManagerRef?.reconnectMcp().catch((e: unknown) => console.error("[MCP] Reconnect failed:", e));
       jsonResponse(res, 201, result);
-    } catch (err) {
-      gatewayErrorResponse(res, err);
-    }
-    return;
-  }
-
-  if (req.method === "PATCH") {
-    const url = new URL(req.url ?? "", "http://localhost");
-    const id = url.searchParams.get("id") ?? "";
-    if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
-
-    try {
-      const parsed = await readJsonBody(req, 4096);
-      const result = gateway.updateAdminMcpServer({ id, patch: parsed });
-      mcpManagerRef?.reconnect().catch((e) => console.error("[MCP] Reconnect failed:", e));
-      jsonResponse(res, 200, result);
     } catch (err) {
       gatewayErrorResponse(res, err);
     }
@@ -1352,12 +1334,13 @@ async function handleAdminMcp(
 
   if (req.method === "DELETE") {
     const url = new URL(req.url ?? "", "http://localhost");
-    const id = url.searchParams.get("id") ?? "";
-    if (!id) { jsonResponse(res, 400, { error: "id required" }); return; }
+    const name = url.searchParams.get("name") ?? "";
+    const scope = url.searchParams.get("scope") ?? undefined;
+    if (!name) { jsonResponse(res, 400, { error: "name required" }); return; }
     try {
-      const deleted = gateway.deleteAdminMcpServer(id);
+      const deleted = await gateway.deleteAdminMcpServer(name, scope);
       if (!deleted) { jsonResponse(res, 404, { error: "server not found" }); return; }
-      mcpManagerRef?.reconnect().catch((e) => console.error("[MCP] Reconnect failed:", e));
+      agentManagerRef?.reconnectMcp().catch((e: unknown) => console.error("[MCP] Reconnect failed:", e));
       jsonResponse(res, 200, { ok: true });
     } catch (err) {
       gatewayErrorResponse(res, err);
@@ -3027,7 +3010,6 @@ export const webPlugin: ChannelPlugin = {
       if (ctx.services.handler && !handlerRef) setHandler(ctx.services.handler as Handler);
       if (ctx.services.cronScheduler && !cronSchedulerRef) setCronScheduler(ctx.services.cronScheduler as NonNullable<typeof cronSchedulerRef>);
       if (ctx.services.channelManager) channelManagerRef = ctx.services.channelManager as import("./manager.js").ChannelManager;
-      if (ctx.services.mcpManager && !mcpManagerRef) mcpManagerRef = ctx.services.mcpManager as import("../mcp-manager.js").MCPManager;
       if (ctx.services.analyticsSink && !analyticsSinkRef) setAnalyticsSink(ctx.services.analyticsSink as import("../engine/services/analytics/sink.js").SQLiteAnalyticsSink);
     }
 

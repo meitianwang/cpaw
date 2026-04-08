@@ -5,7 +5,6 @@ import type { CronTask } from "../types.js";
 import type { Handler } from "../types.js";
 import type { MessageStore, TranscriptContentBlock } from "../message-store.js";
 import type {
-  McpServerRecord,
   PromptRecord,
   SettingsStore,
 } from "../settings-store.js";
@@ -54,7 +53,6 @@ import {
   listGatewayAdminUsers,
   listGatewayCronTasks,
   readGatewayAdminHistory,
-  updateGatewayAdminMcpServer,
   updateGatewayAdminModel,
   updateGatewayAdminPrompt,
   updateGatewayAdminSettings,
@@ -541,34 +539,16 @@ class GatewayService {
     });
   }
 
-listAdminMcpServers(): { servers: readonly McpServerRecord[] } {
-    return listGatewayAdminMcpServers({
-      settingsStore: this.requireSettingsStore(),
-    });
+async listAdminMcpServers() {
+    return listGatewayAdminMcpServers();
   }
 
-  createAdminMcpServer(input: Record<string, unknown>): { ok: true; server: McpServerRecord } {
-    return createGatewayAdminMcpServer({
-      settingsStore: this.requireSettingsStore(),
-      input,
-    });
+  async createAdminMcpServer(input: Record<string, unknown>) {
+    return createGatewayAdminMcpServer({ input });
   }
 
-  updateAdminMcpServer(params: {
-    id: string;
-    patch: Record<string, unknown>;
-  }): { ok: true; server: McpServerRecord } {
-    return updateGatewayAdminMcpServer({
-      settingsStore: this.requireSettingsStore(),
-      ...params,
-    });
-  }
-
-  deleteAdminMcpServer(id: string): boolean {
-    return deleteGatewayAdminMcpServer({
-      settingsStore: this.requireSettingsStore(),
-      id,
-    });
+  async deleteAdminMcpServer(name: string, scope?: string) {
+    return deleteGatewayAdminMcpServer({ name, scope });
   }
 
   async listAdminProviders(params?: {

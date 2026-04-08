@@ -55,11 +55,8 @@ async function start(): Promise<void> {
   // Initialize agent session manager
   const agentManager = new AgentSessionManager(settingsStore);
 
-  // Initialize MCP connections
-  const { MCPManager } = await import("./mcp-manager.js");
-  const mcpManager = new MCPManager(settingsStore);
-  await mcpManager.connect();
-  agentManager.setMCPManager(mcpManager);
+  // Initialize MCP connections (uses engine's getAllMcpConfigs + getMcpToolsCommandsAndResources)
+  await agentManager.initMcp();
 
   const defaultModel = settingsStore.getDefaultModel();
   console.log(
@@ -159,7 +156,6 @@ async function start(): Promise<void> {
     webServices.settingsStore = settingsStore;
     webServices.handler = handler;
     webServices.agentManager = agentManager;
-    webServices.mcpManager = mcpManager;
     webServices.analyticsSink = analyticsSink;
   }
 
