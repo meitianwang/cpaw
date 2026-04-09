@@ -23,11 +23,9 @@ import {
 } from "./server-methods/chat.js";
 import {
   completeGatewayProviderOAuth,
-  dispatchGatewayCapabilityHttpRoute,
   type OAuthCallbackPage,
   type PendingOAuth,
   beginGatewayProviderOAuth,
-  getGatewayAdminCapabilities,
   listGatewayAdminProviders,
   reloadGatewayAdminProviders,
 } from "./server-methods/providers.js";
@@ -576,12 +574,6 @@ async listMcpServers(userId: string) {
     return reloadGatewayAdminProviders();
   }
 
-  getAdminCapabilities(): {
-    capabilities: Record<string, number>;
-  } {
-    return getGatewayAdminCapabilities();
-  }
-
   beginProviderOAuth(params: {
     providerId: string;
     modelId: string;
@@ -605,15 +597,6 @@ async listMcpServers(userId: string) {
       ...params,
       updateModelOAuthTokens: this.updateModelOAuthTokens.bind(this),
     });
-  }
-
-  async dispatchCapabilityHttpRoute(params: {
-    pathname: string;
-    req: IncomingMessage;
-    res: ServerResponse;
-    isAuthenticated: boolean;
-  }): Promise<boolean> {
-    return dispatchGatewayCapabilityHttpRoute(params);
   }
 
   getSessionRuntime(params: {

@@ -153,12 +153,6 @@ case "mcp.list":
       } catch (err) {
         return { handled: true, error: String(err) };
       }
-    case "capabilities.get":
-      try {
-        return { handled: true, result: ctx.getAdminCapabilities() };
-      } catch (err) {
-        return { handled: true, error: String(err) };
-      }
     default:
       return { handled: false };
   }

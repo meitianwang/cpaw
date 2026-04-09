@@ -49,7 +49,6 @@ export type GatewayAdminRpcContext = {
     refresh?: boolean;
   }): Promise<unknown>;
   reloadAdminProviders(): Promise<unknown>;
-  getAdminCapabilities(): unknown;
 };
 
 export type GatewayRpcMethodDispatchResult =

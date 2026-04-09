@@ -1,11 +1,3 @@
-import type {
-  BeforeToolCallContext,
-  BeforeToolCallResult,
-  AfterToolCallContext,
-  AfterToolCallResult,
-} from "../klaus-agent-compat.js";
-import type { ProviderAPI } from "../capabilities/types.js";
-
 export interface ModelPreset {
   readonly id: string;
   readonly label: string;
@@ -28,11 +20,6 @@ export interface ProviderAuth {
   readonly method: ProviderAuthMethod;
 }
 
-export interface ProviderHooks {
-  readonly beforeToolCall?: (ctx: BeforeToolCallContext) => Promise<BeforeToolCallResult | void>;
-  readonly afterToolCall?: (ctx: AfterToolCallContext) => Promise<AfterToolCallResult | void>;
-}
-
 export interface ProviderDefinition {
   readonly id: string;
   readonly label: string;
@@ -41,6 +28,4 @@ export interface ProviderDefinition {
   readonly models: readonly ModelPreset[];
   readonly auth?: ProviderAuth;
   readonly catalog?: (apiKey?: string, baseUrl?: string) => Promise<ModelPreset[]>;
-  readonly hooks?: ProviderHooks;
-  readonly register?: (api: ProviderAPI) => void;
 }

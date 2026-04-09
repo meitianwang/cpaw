@@ -1,4 +1,3 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SettingsStore } from "../../settings-store.js";
 import type { ModelPreset } from "../../providers/types.js";
 import {
@@ -8,7 +7,6 @@ import {
   generateState,
 } from "../../auth/oauth.js";
 import {
-  capabilities,
   getAllProviders,
   getProvider,
   reloadExternalProviders,
@@ -67,15 +65,6 @@ async function resolveProviderModels(params: {
   return models;
 }
 
-function sendJsonResponse(
-  res: ServerResponse,
-  status: number,
-  body: Record<string, unknown>,
-): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(body));
-}
-
 export async function listGatewayAdminProviders(params: {
   settingsStore: SettingsStore | null;
   refresh?: boolean;
@@ -115,12 +104,6 @@ export async function reloadGatewayAdminProviders(): Promise<{
 }> {
   const result = await reloadExternalProviders();
   return { ok: true, ...result };
-}
-
-export function getGatewayAdminCapabilities(): {
-  capabilities: Record<string, number>;
-} {
-  return { capabilities: capabilities.getSummary() };
 }
 
 export function beginGatewayProviderOAuth(params: {
@@ -226,27 +209,3 @@ export async function completeGatewayProviderOAuth(params: {
   }
 }
 
-export async function dispatchGatewayCapabilityHttpRoute(params: {
-  pathname: string;
-  req: IncomingMessage;
-  res: ServerResponse;
-  isAuthenticated: boolean;
-}): Promise<boolean> {
-  for (const route of capabilities.getAllHttpRoutes()) {
-    const match =
-      route.match === "prefix"
-        ? params.pathname.startsWith(route.path)
-        : params.pathname === route.path;
-    if (!match) {
-      continue;
-    }
-    // Both "admin" and "user" auth routes require authentication (admin only gates admin panel)
-    if ((route.auth === "admin" || route.auth === "user") && !params.isAuthenticated) {
-      sendJsonResponse(params.res, 401, { error: "unauthorized" });
-      return true;
-    }
-    await route.handler(params.req, params.res);
-    return true;
-  }
-  return false;
-}

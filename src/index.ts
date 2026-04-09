@@ -22,7 +22,7 @@ import { formatDisplayText } from "./message.js";
 import { generateLocalToken } from "./local-token.js";
 import { AgentSessionManager } from "./agent-manager.js";
 import { SettingsStore } from "./settings-store.js";
-import { loadExternalProviders, registerAllCapabilities, capabilities } from "./providers/registry.js";
+import { loadExternalProviders } from "./providers/registry.js";
 import { getGatewayService } from "./gateway/service.js";
 import { parseWebSessionKey } from "./gateway/protocol.js";
 
@@ -47,10 +47,8 @@ async function start(): Promise<void> {
   const { runMigrationIfNeeded } = await import("./migration/user-dirs.js");
   await runMigrationIfNeeded();
 
-  // Load external providers and register all factories + capabilities
+  // Load external providers (model catalog only)
   await loadExternalProviders();
-  registerAllCapabilities();
-  await capabilities.startServices();
 
   // Initialize agent session manager
   const agentManager = new AgentSessionManager(settingsStore);
@@ -224,7 +222,6 @@ async function start(): Promise<void> {
   } finally {
     console.log("[Klaus] Shutting down...");
     cronScheduler?.stop();
-    await capabilities.stopServices();
     await agentManager.disposeAll();
     inviteStoreInstance?.close();
     userStoreInstance?.close();

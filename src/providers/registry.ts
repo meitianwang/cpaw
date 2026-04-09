@@ -3,7 +3,6 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CONFIG_DIR } from "../config.js";
-import { CapabilityRegistry } from "../capabilities/registry.js";
 import { anthropicProvider } from "./anthropic.js";
 
 const providers: ProviderDefinition[] = [
@@ -15,8 +14,6 @@ const byId = new Map<string, ProviderDefinition>(
 );
 
 const BUILTIN_IDS = new Set(providers.map((p) => p.id));
-
-export const capabilities = new CapabilityRegistry();
 
 export function getAllProviders(): readonly ProviderDefinition[] {
   return providers;
@@ -66,25 +63,14 @@ export async function loadExternalProviders(): Promise<void> {
   }
 }
 
-export function registerAllCapabilities(): void {
-  for (const def of providers) {
-    if (def.register) {
-      const api = capabilities.createAPI(def.id);
-      def.register(api);
-    }
-  }
-}
-
 export async function reloadExternalProviders(): Promise<{ added: string[]; removed: string[] }> {
   const previousExternal = providers
     .filter((p) => !BUILTIN_IDS.has(p.id))
     .map((p) => p.id);
 
-  // Stop services and remove all external providers and their capabilities
+  // Remove all external providers
   for (const id of previousExternal) {
-    await capabilities.stopProviderServices(id);
     byId.delete(id);
-    capabilities.removeProvider(id);
   }
   for (let i = providers.length - 1; i >= 0; i--) {
     if (!BUILTIN_IDS.has(providers[i].id)) providers.splice(i, 1);
@@ -92,13 +78,6 @@ export async function reloadExternalProviders(): Promise<{ added: string[]; remo
 
   // Re-scan and load
   await loadExternalProviders();
-
-  // Re-register capabilities for new externals
-  for (const def of providers) {
-    if (!BUILTIN_IDS.has(def.id)) {
-      if (def.register) def.register(capabilities.createAPI(def.id));
-    }
-  }
 
   const currentExternal = providers
     .filter((p) => !BUILTIN_IDS.has(p.id))

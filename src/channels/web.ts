@@ -1105,26 +1105,6 @@ async function handleAdminProvidersReload(
 }
 
 // ---------------------------------------------------------------------------
-// Admin: capabilities (read-only)
-// ---------------------------------------------------------------------------
-
-function handleAdminCapabilities(
-  req: IncomingMessage,
-  res: ServerResponse,
-): void {
-  if (!adminAuth(req, res)) return;
-  if (req.method !== "GET") {
-    jsonResponse(res, 405, { error: "method not allowed" });
-    return;
-  }
-  try {
-    jsonResponse(res, 200, gateway.getAdminCapabilities());
-  } catch (err) {
-    gatewayErrorResponse(res, err);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // OAuth: provider authorization flow
 // ---------------------------------------------------------------------------
 
@@ -2799,8 +2779,6 @@ async function handleRequest(
       return handleAdminProviders(req, res);
     case "/api/admin/providers/reload":
       return handleAdminProvidersReload(req, res);
-    case "/api/admin/capabilities":
-      return handleAdminCapabilities(req, res);
     case "/auth/provider/start":
       return handleOAuthStart(req, res, cfg);
     case "/auth/provider/callback":
@@ -2993,18 +2971,6 @@ case "/api/mcp":
       if (url.pathname.startsWith("/api/avatars/") && req.method === "GET") {
         const fileName = url.pathname.slice("/api/avatars/".length);
         return handleAvatarServe(req, res, fileName);
-      }
-      {
-        const auth = authenticateRequest(req);
-        const handled = await gateway.dispatchCapabilityHttpRoute({
-          pathname: url.pathname,
-          req,
-          res,
-          isAuthenticated: auth.kind !== "invalid",
-        });
-        if (handled) {
-          return;
-        }
       }
       res.writeHead(404);
       res.end("not found");

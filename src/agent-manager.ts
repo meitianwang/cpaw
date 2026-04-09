@@ -8,7 +8,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { setOriginalCwd, setCwdState, setProjectRoot } from "./engine/bootstrap/state.js";
 import type { SettingsStore } from "./settings-store.js";
-import { getProvider, capabilities } from "./providers/registry.js";
+import { getProvider } from "./providers/registry.js";
 import { refreshAccessToken } from "./auth/oauth.js";
 import type { OAuthProviderAuth } from "./auth/oauth.js";
 import { getSystemPrompt, getSimpleIntroSection, getSimpleSystemSection, getSimpleDoingTasksSection, getActionsSection, getSimpleToneAndStyleSection, getOutputEfficiencySection } from "./engine/constants/prompts.js";
@@ -16,7 +16,6 @@ import { clearSystemPromptSections } from "./engine/constants/systemPromptSectio
 import { ToolLoopDetector } from "./tool-loop-detector.js";
 import { loadSandboxConfig, sandboxExec } from "./sandbox.js";
 import { getAllBaseTools, assembleToolPool } from "./engine/tools.js";
-import { wrapLegacyTools, type LegacyAgentTool } from "./engine/utils/legacyToolAdapter.js";
 import type { MCPServerConnection, ScopedMcpServerConfig, ServerResource } from "./engine/services/mcp/types.js";
 import type { Tool } from "./engine/Tool.js";
 import {
@@ -622,17 +621,10 @@ export class AgentSessionManager {
     const providerDef = modelRecord?.provider ? getProvider(modelRecord.provider) : undefined;
     const apiKey = apiKeyOverride ?? modelRecord?.apiKey;
 
-    // Start with engine's built-in tools (BashTool, FileRead/Edit/Write, Glob, Grep, etc.)
-    // Filter out disabled tools (stubs like TungstenTool, REPLTool etc.)
+    // Engine built-in tools (BashTool, FileRead/Edit/Write, Glob, Grep, etc.)
     const tools: any[] = [...getAllBaseTools()].filter(t => t.isEnabled());
 
-    // Add capability-registered legacy tools wrapped as engine tools
-    const legacyCapTools = capabilities.buildTools();
-    if (legacyCapTools.length > 0) {
-      tools.push(...wrapLegacyTools(legacyCapTools as LegacyAgentTool[]));
-    }
-
-    // Add MCP tools (mcp__server__tool wrappers)
+    // MCP tools (mcp__server__tool wrappers)
     if (this._mcpTools.length > 0) {
       tools.push(...this._mcpTools);
     }
