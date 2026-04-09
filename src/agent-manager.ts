@@ -121,16 +121,23 @@ class SkillStateMutex {
   }
 }
 
+interface McpUserState {
+  clients: MCPServerConnection[];
+  tools: Tool[];
+  commands: Command[];
+  resources: Record<string, ServerResource[]>;
+}
+
+function emptyMcpState(): McpUserState {
+  return { clients: [], tools: [], commands: [], resources: {} };
+}
+
 export class AgentSessionManager {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly store: SettingsStore;
   private readonly maxSessions: number;
-  // MCP state — mirrors AppState.mcp from claude-code
-  private _mcpClients: MCPServerConnection[] = [];
-  private _mcpTools: Tool[] = [];
-  private _mcpLoadedForUser: string | null = null;
-  private _mcpCommands: Command[] = [];
-  private _mcpResources: Record<string, ServerResource[]> = {};
+  // Per-user MCP state — each user gets their own connections & tools
+  private readonly _mcpByUser = new Map<string, McpUserState>();
   private messageStore: MessageStore | null = null;
   private readonly skillMutex = new SkillStateMutex();
 
@@ -187,14 +194,17 @@ export class AgentSessionManager {
     this.messageStore = store;
   }
 
+  /** Get per-user MCP state (read-only, returns empty if not initialized). */
+  private getMcpState(userId: string): McpUserState {
+    return this._mcpByUser.get(userId) ?? emptyMcpState();
+  }
+
   /**
-   * Initialize MCP connections using the engine's config system (.mcp.json).
-   * Mirrors claude-code's useManageMCPConnections: loads configs via
-   * getAllMcpConfigs(), connects via getMcpToolsCommandsAndResources(),
-   * stores results in instance state.
+   * Initialize MCP connections for a specific user.
+   * Each user's connections are stored independently — no cross-user teardown.
    */
   async initMcp(userId?: string): Promise<void> {
-    // Set per-user MCP config path if userId provided
+    const uid = userId ?? "__global__";
     if (userId) {
       const { setCurrentMcpUserConfigPath } = await import("./engine/bootstrap/state.js");
       const { getUserMcpConfigPath } = await import("./user-dirs.js");
@@ -203,35 +213,36 @@ export class AgentSessionManager {
 
     try {
       const { servers } = await getAllMcpConfigs();
-      if (Object.keys(servers).length === 0) return;
+      if (Object.keys(servers).length === 0) {
+        this._mcpByUser.set(uid, emptyMcpState());
+        return;
+      }
 
-      // Reset state before connecting
-      this._mcpClients = [];
-      this._mcpTools = [];
-      this._mcpCommands = [];
-      this._mcpResources = {};
+      const state = emptyMcpState();
 
       await getMcpToolsCommandsAndResources(
         ({ client, tools, commands, resources }) => {
-          this._mcpClients.push(client);
-          this._mcpTools.push(...tools);
-          if (commands) this._mcpCommands.push(...commands);
+          state.clients.push(client);
+          state.tools.push(...tools);
+          if (commands) state.commands.push(...commands);
           if (resources && resources.length > 0) {
-            this._mcpResources[client.name] = resources;
+            state.resources[client.name] = resources;
           }
 
           if (client.type === "connected") {
             console.log(
-              `[MCP] Connected to "${client.name}" — ${tools.length} tool(s): ${tools.map((t) => t.name).join(", ")}`,
+              `[MCP:${uid}] Connected to "${client.name}" — ${tools.length} tool(s): ${tools.map((t) => t.name).join(", ")}`,
             );
           } else if (client.type === "failed") {
-            console.warn(`[MCP] Failed to connect to "${client.name}"`);
+            console.warn(`[MCP:${uid}] Failed to connect to "${client.name}"`);
           } else {
-            console.log(`[MCP] "${client.name}" state: ${client.type}`);
+            console.log(`[MCP:${uid}] "${client.name}" state: ${client.type}`);
           }
         },
         servers,
       );
+
+      this._mcpByUser.set(uid, state);
     } finally {
       if (userId) {
         const { setCurrentMcpUserConfigPath } = await import("./engine/bootstrap/state.js");
@@ -240,25 +251,38 @@ export class AgentSessionManager {
     }
   }
 
-  /**
-   * Reconnect all MCP servers: close existing connections, clear caches,
-   * then re-initialize from current config.
-   */
-  /** Invalidate cached MCP user so next chat() triggers a reload. */
-  invalidateMcpCache(): void {
-    this._mcpLoadedForUser = null;
+  /** Invalidate cached MCP state for a user so next chat() triggers a reload.
+   *  Closes existing connections before removing state to prevent leaks. */
+  async invalidateMcpCache(userId?: string): Promise<void> {
+    const uids = userId ? [userId] : [...this._mcpByUser.keys()];
+    for (const uid of uids) {
+      const state = this._mcpByUser.get(uid);
+      if (state) {
+        for (const client of state.clients) {
+          if (client.type === "connected") {
+            try { await clearServerCache(client.name, client.config); }
+            catch (err) { console.error(`[MCP:${uid}] Error closing "${client.name}": ${err}`); }
+          }
+        }
+      }
+      this._mcpByUser.delete(uid);
+    }
   }
 
   async reconnectMcp(userId?: string): Promise<void> {
-    // Close all existing connected servers and clear engine caches
-    for (const client of this._mcpClients) {
-      if (client.type === "connected") {
-        try {
-          await clearServerCache(client.name, client.config);
-        } catch (err) {
-          console.error(`[MCP] Error closing "${client.name}": ${err}`);
+    const uid = userId ?? "__global__";
+    const old = this._mcpByUser.get(uid);
+    if (old) {
+      for (const client of old.clients) {
+        if (client.type === "connected") {
+          try {
+            await clearServerCache(client.name, client.config);
+          } catch (err) {
+            console.error(`[MCP:${uid}] Error closing "${client.name}": ${err}`);
+          }
         }
       }
+      this._mcpByUser.delete(uid);
     }
     await this.initMcp(userId);
   }
@@ -298,10 +322,9 @@ export class AgentSessionManager {
         // Set per-user MCP config path so engine reads user's MCP servers
         setCurrentMcpUserConfigPath(getUserMcpConfigPath(userId));
 
-        // Reload MCP servers if user changed since last load
-        if (this._mcpLoadedForUser !== userId) {
-          await this.reconnectMcp(userId);
-          this._mcpLoadedForUser = userId;
+        // Ensure this user's MCP servers are loaded (no-op if already present)
+        if (!this._mcpByUser.has(userId)) {
+          await this.initMcp(userId);
         }
 
         // Clear skill cache (user's skill directory may differ)
@@ -624,9 +647,10 @@ export class AgentSessionManager {
     // Engine built-in tools (BashTool, FileRead/Edit/Write, Glob, Grep, etc.)
     const tools: any[] = [...getAllBaseTools()].filter(t => t.isEnabled());
 
-    // MCP tools (mcp__server__tool wrappers)
-    if (this._mcpTools.length > 0) {
-      tools.push(...this._mcpTools);
+    // MCP tools (mcp__server__tool wrappers) — per-user
+    const mcpState = this._mcpByUser.get(userId);
+    if (mcpState && mcpState.tools.length > 0) {
+      tools.push(...mcpState.tools);
     }
 
     return tools;
@@ -703,20 +727,19 @@ export class AgentSessionManager {
 
   async disposeAll(): Promise<void> {
     this.sessions.clear();
-    // Close all connected MCP servers
-    for (const client of this._mcpClients) {
-      if (client.type === "connected") {
-        try {
-          await clearServerCache(client.name, client.config);
-        } catch (err) {
-          console.error(`[MCP] Error closing "${client.name}": ${err}`);
+    // Close all per-user MCP connections
+    for (const [uid, state] of this._mcpByUser) {
+      for (const client of state.clients) {
+        if (client.type === "connected") {
+          try {
+            await clearServerCache(client.name, client.config);
+          } catch (err) {
+            console.error(`[MCP:${uid}] Error closing "${client.name}": ${err}`);
+          }
         }
       }
     }
-    this._mcpClients = [];
-    this._mcpTools = [];
-    this._mcpCommands = [];
-    this._mcpResources = {};
+    this._mcpByUser.clear();
   }
 
   // ============================================================================
@@ -865,7 +888,7 @@ export class AgentSessionManager {
       tools,
       modelRecord.model,
       undefined, // additionalWorkingDirectories
-      this._mcpClients,
+      this.getMcpState(userId).clients,
       sectionOverrides,
       disabledSkills,
     );
@@ -949,9 +972,9 @@ export class AgentSessionManager {
       },
       skills: [], // Engine manages skills via getCommands() internally
       mcp: {
-        tools: this._mcpTools,
-        clients: this._mcpClients,
-        commands: this._mcpCommands,
+        tools: this.getMcpState(userId).tools,
+        clients: this.getMcpState(userId).clients,
+        commands: this.getMcpState(userId).commands,
       },
       tasks: {},
       fastMode: undefined,
@@ -968,8 +991,8 @@ export class AgentSessionManager {
         tools: tools as any,
         verbose: false,
         thinkingConfig,
-        mcpClients: this._mcpClients,
-        mcpResources: this._mcpResources,
+        mcpClients: this.getMcpState(userId).clients,
+        mcpResources: this.getMcpState(userId).resources,
         isNonInteractiveSession: isBypass, // interactive when permissions are enabled (WebSocket approval)
         agentDefinitions: { agents: [], errors: [], activeAgents: [], allowedAgentTypes: undefined },
         // Hooks disabled: Klaus uses WebSocket-based permission approval

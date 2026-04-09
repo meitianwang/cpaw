@@ -1337,7 +1337,7 @@ async function handleUserMcp(
       if (settingsStoreRef && result.name) {
         settingsStoreRef.set(`user.${userId}.mcp.${result.name}`, "on");
       }
-      agentManagerRef?.invalidateMcpCache();
+      await agentManagerRef?.invalidateMcpCache(userId);
       jsonResponse(res, 201, result);
     } catch (err) {
       gatewayErrorResponse(res, err);
@@ -1376,7 +1376,7 @@ async function handleUserMcp(
       if (settingsStoreRef) {
         settingsStoreRef.set(`user.${userId}.mcp.${name}`, "");
       }
-      agentManagerRef?.invalidateMcpCache();
+      await agentManagerRef?.invalidateMcpCache(userId);
       jsonResponse(res, 200, { ok: true });
     } catch (err) {
       gatewayErrorResponse(res, err);
