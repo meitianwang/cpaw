@@ -24,6 +24,7 @@
  *   GET  /api/admin/sessions  → Browse any user's sessions (admin only)
  *   GET  /api/admin/history   → View any session's history (admin only)
  *   GET/PATCH /api/admin/settings → All settings: general, web, session, transcripts, cron (admin only)
+ *   GET/POST/DELETE /api/admin/permission-rules → Permission rules CRUD (admin only)
  *   GET/POST/PATCH/DELETE /api/admin/cron/tasks → Cron task CRUD (admin only)
  *   GET  /api/skills/market    → Browse skills marketplace
  *   POST /api/skills/install   → Install skill (from market or upload)
@@ -647,7 +648,13 @@ type ClientWsMessage =
       params?: Record<string, unknown>;
     }
   | { type: "pong" }
-  | { type: "permission_response"; requestId: string; decision: "allow" | "deny" };
+  | {
+      type: "permission_response";
+      requestId: string;
+      decision: "allow" | "deny";
+      updatedInput?: Record<string, unknown>;
+      acceptedSuggestionIndices?: number[];
+    };
 
 function handleWsMessage(
   ws: KlausWebSocket,
@@ -734,7 +741,12 @@ function handleWsMessage(
       break;
     }
     case "permission_response": {
-      permissionManager.handleResponse(parsed.requestId, parsed.decision);
+      permissionManager.handleResponse(
+        parsed.requestId,
+        parsed.decision,
+        parsed.updatedInput,
+        parsed.acceptedSuggestionIndices,
+      );
       break;
     }
     default:
@@ -1069,6 +1081,106 @@ async function handleAdminSettings(
     try {
       const parsed = await readJsonBody(req, 8192);
       jsonResponse(res, 200, gateway.updateAdminSettings(parsed));
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  jsonResponse(res, 405, { error: "method not allowed" });
+}
+
+// ---------------------------------------------------------------------------
+// Admin: permission rules CRUD
+// ---------------------------------------------------------------------------
+
+async function handleAdminPermissionRules(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  if (!adminAuth(req, res)) return;
+
+  const { loadAllPermissionRulesFromDisk } = await import(
+    "../engine/utils/permissions/permissionsLoader.js"
+  );
+  const { addPermissionRulesToSettings, deletePermissionRuleFromSettings } =
+    await import("../engine/utils/permissions/permissionsLoader.js");
+
+  if (req.method === "GET") {
+    try {
+      const rules = loadAllPermissionRulesFromDisk();
+      jsonResponse(res, 200, { rules });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  // POST: add a rule  { behavior: "allow"|"deny"|"ask", rule: "Bash(git:*)", source?: "userSettings"|"projectSettings" }
+  if (req.method === "POST") {
+    try {
+      const body = await readJsonBody(req, 4096);
+      const behavior = body.behavior as string;
+      const rule = body.rule as string;
+      const source = (body.source as string) || "userSettings";
+      if (!behavior || !rule) {
+        jsonResponse(res, 400, { error: "behavior and rule are required" });
+        return;
+      }
+      if (!["allow", "deny", "ask"].includes(behavior)) {
+        jsonResponse(res, 400, { error: "behavior must be allow, deny, or ask" });
+        return;
+      }
+      if (!["userSettings", "projectSettings", "localSettings"].includes(source)) {
+        jsonResponse(res, 400, { error: "source must be userSettings, projectSettings, or localSettings" });
+        return;
+      }
+      const { permissionRuleValueFromString } = await import(
+        "../engine/utils/permissions/permissionRuleParser.js"
+      );
+      const ruleValue = permissionRuleValueFromString(rule);
+      const ok = addPermissionRulesToSettings(
+        { ruleValues: [ruleValue], ruleBehavior: behavior as "allow" | "deny" | "ask" },
+        source as "userSettings" | "projectSettings" | "localSettings",
+      );
+      if (!ok) {
+        jsonResponse(res, 500, { error: "failed to add rule" });
+        return;
+      }
+      const rules = loadAllPermissionRulesFromDisk();
+      jsonResponse(res, 201, { ok: true, rules });
+    } catch (err) {
+      gatewayErrorResponse(res, err);
+    }
+    return;
+  }
+
+  // DELETE: remove a rule  { behavior: "allow"|"deny"|"ask", rule: "Bash(git:*)", source: "userSettings"|"projectSettings" }
+  if (req.method === "DELETE") {
+    try {
+      const body = await readJsonBody(req, 4096);
+      const behavior = body.behavior as string;
+      const rule = body.rule as string;
+      const source = body.source as string;
+      if (!behavior || !rule || !source) {
+        jsonResponse(res, 400, { error: "behavior, rule, and source are required" });
+        return;
+      }
+      const { permissionRuleValueFromString } = await import(
+        "../engine/utils/permissions/permissionRuleParser.js"
+      );
+      const ruleValue = permissionRuleValueFromString(rule);
+      const ok = deletePermissionRuleFromSettings({
+        source: source as "userSettings" | "projectSettings" | "localSettings",
+        ruleBehavior: behavior as "allow" | "deny" | "ask",
+        ruleValue,
+      });
+      if (!ok) {
+        jsonResponse(res, 404, { error: "rule not found or not deletable" });
+        return;
+      }
+      const rules = loadAllPermissionRulesFromDisk();
+      jsonResponse(res, 200, { ok: true, rules });
     } catch (err) {
       gatewayErrorResponse(res, err);
     }
@@ -2872,6 +2984,8 @@ async function handleRequest(
       return handleOAuthCallback(req, res);
     case "/api/admin/prompts":
       return handleAdminPrompts(req, res);
+    case "/api/admin/permission-rules":
+      return handleAdminPermissionRules(req, res);
 case "/api/mcp":
       return handleUserMcp(req, res);
     case "/api/admin/channels":

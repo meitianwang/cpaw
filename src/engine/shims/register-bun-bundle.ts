@@ -17,6 +17,8 @@ process.env.CLAUDE_CODE_FEATURES = [
   'EXTRACT_MEMORIES',
   'CONTEXT_COLLAPSE',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
+  'TRANSCRIPT_CLASSIFIER',
+  'BASH_CLASSIFIER',
 ].filter(Boolean).join(',')
 
 process.env.CLAUDE_CONFIG_DIR = join(homedir(), '.klaus')

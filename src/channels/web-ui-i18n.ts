@@ -205,6 +205,10 @@ export function getChatI18n(): string {
       settings_ch_whatsapp_scan_hint: "Open WhatsApp \u2192 Linked Devices \u2192 Link a Device \u2192 Scan",
       settings_ch_whatsapp_waiting: "Waiting for scan...",
       settings_ch_whatsapp_loading: "Starting WhatsApp...",
+      always_allow: "Always Allow",
+      always_deny: "Always Deny",
+      always_ask: "Always Ask",
+      rules_saved: "rules saved",
       settings_confirm_delete: "Are you sure?",
     },
     zh: {
@@ -409,6 +413,10 @@ export function getChatI18n(): string {
       settings_ch_whatsapp_scan_hint: "\u6253\u5f00 WhatsApp \u2192 \u5df2\u5173\u8054\u8bbe\u5907 \u2192 \u5173\u8054\u65b0\u8bbe\u5907 \u2192 \u626b\u7801",
       settings_ch_whatsapp_waiting: "\u7b49\u5f85\u626b\u7801...",
       settings_ch_whatsapp_loading: "\u6b63\u5728\u542f\u52a8 WhatsApp...",
+      always_allow: "\u59cb\u7ec8\u5141\u8bb8",
+      always_deny: "\u59cb\u7ec8\u62d2\u7edd",
+      always_ask: "\u59cb\u7ec8\u8be2\u95ee",
+      rules_saved: "\u89c4\u5219\u5df2\u4fdd\u5b58",
       settings_confirm_delete: "\u786e\u5b9a\u64cd\u4f5c\uff1f",
     }
   };

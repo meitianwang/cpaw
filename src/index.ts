@@ -1,3 +1,25 @@
+// ---------------------------------------------------------------------------
+// Feature gates — must be set before any engine import reads them.
+// In dev mode, register-bun-bundle.ts sets these via Bun preload.
+// In prod builds (tsup → node), we set them here as a fallback.
+// ---------------------------------------------------------------------------
+if (!process.env.CLAUDE_CODE_FEATURES) {
+  process.env.CLAUDE_CODE_FEATURES = [
+    'EXTRACT_MEMORIES',
+    'CONTEXT_COLLAPSE',
+    'BUILTIN_EXPLORE_PLAN_AGENTS',
+    'TRANSCRIPT_CLASSIFIER',
+    'BASH_CLASSIFIER',
+  ].join(',');
+} else {
+  // Append missing defaults
+  const existing = new Set(process.env.CLAUDE_CODE_FEATURES.split(','));
+  for (const f of ['EXTRACT_MEMORIES', 'CONTEXT_COLLAPSE', 'BUILTIN_EXPLORE_PLAN_AGENTS', 'TRANSCRIPT_CLASSIFIER', 'BASH_CLASSIFIER']) {
+    existing.add(f);
+  }
+  process.env.CLAUDE_CODE_FEATURES = [...existing].filter(Boolean).join(',');
+}
+
 import { webPlugin } from "./channels/web.js";
 import { feishuPlugin } from "./channels/feishu.js";
 import { dingtalkPlugin } from "./channels/dingtalk.js";

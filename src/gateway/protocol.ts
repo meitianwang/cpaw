@@ -75,6 +75,8 @@ export type WsEvent =
       readonly toolInput: Record<string, unknown>;
       readonly message: string;
       readonly sessionId?: string;
+      /** Engine-provided suggestions (e.g. "Always Allow Bash" rules). */
+      readonly suggestions?: ReadonlyArray<Record<string, unknown>>;
     }
   | {
       readonly type: "mcp_auth_url";

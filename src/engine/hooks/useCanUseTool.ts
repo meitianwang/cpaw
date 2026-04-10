@@ -1,6 +1,7 @@
 import type { ToolPermissionContext, Tool as ToolType, ToolUseContext } from '../Tool.js'
 import type { AssistantMessage } from '../types/message.js'
 import type { PermissionDecision } from '../utils/permissions/PermissionResult.js'
+import type { PermissionUpdate } from '../utils/permissions/PermissionUpdateSchema.js'
 import { hasPermissionsToUseTool } from '../utils/permissions/permissions.js'
 
 export type CanUseToolFn<Input extends Record<string, unknown> = Record<string, unknown>> = (
@@ -13,11 +14,35 @@ export type CanUseToolFn<Input extends Record<string, unknown> = Record<string, 
 ) => Promise<PermissionDecision<Input>>
 
 /**
+ * Callback invoked when the engine decides 'ask' — bridges to the UI
+ * (WebSocket in Klaus, terminal in claude-code).
+ *
+ * Returns the user's decision including optional updatedInput and
+ * suggestions they chose to persist (e.g. "Always Allow").
+ */
+export type OnAskCallback = (params: {
+  tool: ToolType
+  input: Record<string, unknown>
+  message: string
+  suggestions?: PermissionUpdate[]
+  toolUseContext: ToolUseContext
+}) => Promise<{
+  decision: 'allow' | 'deny'
+  updatedInput?: Record<string, unknown>
+  /** Suggestions the user accepted (e.g. Always Allow rules to persist). */
+  acceptedSuggestions?: PermissionUpdate[]
+}>
+
+/**
  * Non-React implementation of canUseTool that delegates to hasPermissionsToUseTool.
  * In the original claude-code, this was a React hook wrapping permission logic.
  * For Klaus (non-React), we expose a factory that returns a CanUseToolFn.
+ *
+ * @param onAsk  Optional callback for interactive approval (WebSocket bridge).
+ *               When provided, 'ask' decisions are forwarded to the callback
+ *               instead of being auto-denied.
  */
-export function createCanUseTool(): CanUseToolFn {
+export function createCanUseTool(onAsk?: OnAskCallback): CanUseToolFn {
   return async (tool, input, toolUseContext, assistantMessage, toolUseID, forceDecision) => {
     if (forceDecision !== undefined) {
       return forceDecision
@@ -30,7 +55,33 @@ export function createCanUseTool(): CanUseToolFn {
         decisionReason: result.decisionReason,
       }
     }
-    // For non-interactive context, deny by default
+
+    // For 'ask' decisions with an interactive callback, forward to the UI
+    if (result.behavior === 'ask' && onAsk) {
+      const response = await onAsk({
+        tool,
+        input: input as Record<string, unknown>,
+        message: result.message,
+        suggestions: result.suggestions,
+        toolUseContext,
+      })
+
+      if (response.decision === 'allow') {
+        return {
+          behavior: 'allow' as const,
+          updatedInput: response.updatedInput ?? result.updatedInput ?? input,
+          decisionReason: result.decisionReason,
+        }
+      }
+
+      return {
+        behavior: 'deny' as const,
+        message: 'User denied permission',
+        decisionReason: { type: 'other' as const, reason: 'user_rejected' },
+      }
+    }
+
+    // Non-interactive: 'ask' → deny, or forward 'deny' as-is
     return result
   }
 }

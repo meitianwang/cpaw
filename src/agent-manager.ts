@@ -52,6 +52,12 @@ import {
   type ToolPermissionContext,
   getEmptyToolPermissionContext,
 } from "./engine/index.js";
+import { createCanUseTool, type OnAskCallback } from "./engine/hooks/useCanUseTool.js";
+import { loadAllPermissionRulesFromDisk } from "./engine/utils/permissions/permissionsLoader.js";
+import { applyPermissionRulesToPermissionContext } from "./engine/utils/permissions/permissions.js";
+import type { PermissionUpdate } from "./engine/utils/permissions/PermissionUpdateSchema.js";
+import { applyPermissionUpdate } from "./engine/utils/permissions/PermissionUpdate.js";
+import { addPermissionRulesToSettings } from "./engine/utils/permissions/permissionsLoader.js";
 import { asSystemPrompt, type SystemPrompt } from "./engine/utils/systemPromptType.js";
 import { getAutoMemPath } from "./engine/memdir/paths.js";
 import { enableConfigs } from "./engine/utils/config.js";
@@ -403,65 +409,74 @@ export class AgentSessionManager {
         session.messages.push(attachMsg);
       }
 
-      // Permission check: use engine's permission system + WebSocket approval
-      const canUseTool: CanUseToolFn = async (_tool, input, _toolUseContext, assistantMessage, toolUseID) => {
-        // Loop detection
+      // Permission check: delegate to engine's full permission pipeline
+      // (rules, modes, safety checks, classifier) + WebSocket approval for 'ask'
+      const onAsk: OnAskCallback = async ({ tool: askTool, input: askInput, message, suggestions, toolUseContext: askCtx }) => {
+        // Loop detection (checked before sending to user)
         const loopResult = session.loopDetector.check({
-          toolName: _tool.name,
-          args: input,
+          toolName: askTool.name,
+          args: askInput,
           toolCallId: randomUUID(),
         });
         if (loopResult?.block) {
-          return { behavior: "deny" as const, message: loopResult.reason ?? "Loop detected", decisionReason: { type: "other" as const, reason: loopResult.reason ?? "Loop detected" } };
+          return { decision: "deny" as const };
         }
 
-        // In bypassPermissions mode, skip all permission checks
-        const currentMode = toolUseContext.getAppState().toolPermissionContext.mode;
-        if (currentMode === "bypassPermissions") {
-          return { behavior: "allow" as const, updatedInput: input };
-        }
-
-        // Determine permission via tool's own checkPermissions (lightweight, no classifier)
-        try {
-          const parsedInput = _tool.inputSchema.parse(input);
-          const checkResult = await _tool.checkPermissions(parsedInput, toolUseContext);
-          console.log(`[Permission] ${_tool.name}: checkPermissions → ${checkResult.behavior} (mode=${currentMode})`);
-          if (checkResult.behavior === "allow") {
-            return { behavior: "allow" as const, updatedInput: input, decisionReason: checkResult.decisionReason };
-          }
-          if (checkResult.behavior === "deny") {
-            return { behavior: "deny" as const, message: (checkResult as any).message, decisionReason: checkResult.decisionReason };
-          }
-          // "ask" or "passthrough" → fall through to WebSocket approval
-        } catch (err) {
-          console.warn(`[Permission] checkPermissions error for ${_tool.name}:`, err);
-          // On error, fall through to ask the user
-        }
-
-        // behavior === "ask": send WebSocket request to user for approval
         const parsed = parseWebSessionKey(sessionKey);
         if (!parsed || !sendEvent) {
-          return { behavior: "deny" as const, message: "Permission required but no interactive channel available", decisionReason: { type: "other" as const, reason: "non-interactive" } };
+          return { decision: "deny" as const };
         }
 
-        const { createPermissionRequestMessage } = await import("./engine/utils/permissions/permissions.js");
         const { permissionManager } = await import("./permission-manager.js");
-        const message = createPermissionRequestMessage(_tool.name);
-        console.log(`[Permission] Asking user for ${_tool.name} (mode=${currentMode})`);
-        const decision = await permissionManager.requestPermission({
+        console.log(`[Permission] Asking user for ${askTool.name} (mode=${askCtx.getAppState().toolPermissionContext.mode})`);
+
+        // Serialize suggestions for the WebSocket protocol
+        const serializedSuggestions = suggestions?.map(s => ({ ...s } as Record<string, unknown>));
+
+        const response = await permissionManager.requestPermission({
           userId: parsed.userId,
           sessionId: parsed.sessionId,
-          toolName: _tool.name,
-          toolInput: input as Record<string, unknown>,
+          toolName: askTool.name,
+          toolInput: askInput,
           message,
+          suggestions: serializedSuggestions,
           sendEvent,
         });
 
-        if (decision === "allow") {
-          return { behavior: "allow" as const, updatedInput: input };
+        // If user accepted suggestions (e.g. "Always Allow"), persist them
+        if (response.decision === "allow" && response.acceptedSuggestionIndices && suggestions) {
+          for (const idx of response.acceptedSuggestionIndices) {
+            const suggestion = suggestions[idx];
+            if (suggestion) {
+              try {
+                // Apply to in-memory context
+                const appState = askCtx.getAppState();
+                const updated = applyPermissionUpdate(appState.toolPermissionContext, suggestion);
+                askCtx.setAppState((prev: AppState) => ({
+                  ...prev,
+                  toolPermissionContext: updated,
+                }));
+                // Persist to disk (settings.json)
+                if (suggestion.type === 'addRules' && suggestion.rules && suggestion.behavior) {
+                  addPermissionRulesToSettings(
+                    { ruleValues: suggestion.rules, ruleBehavior: suggestion.behavior },
+                    (suggestion as any).destination ?? 'userSettings',
+                  );
+                }
+              } catch (err) {
+                console.warn(`[Permission] Failed to persist suggestion:`, err);
+              }
+            }
+          }
         }
-        return { behavior: "deny" as const, message: "User denied permission", decisionReason: { type: "other" as const, reason: "user_rejected" } };
+
+        return {
+          decision: response.decision,
+          updatedInput: response.updatedInput,
+        };
       };
+
+      const canUseTool = createCanUseTool(onAsk);
 
       const queryParams: QueryParams = {
         messages: session.messages,
@@ -982,13 +997,26 @@ export class AgentSessionManager {
       ?? "default"
     ) as ToolPermissionContext["mode"];
     const isBypass = permissionMode === "bypassPermissions";
+
+    // Load permission rules from disk (settings.json files) and populate the context
+    let toolPermissionCtx: ToolPermissionContext = {
+      ...getEmptyToolPermissionContext(),
+      mode: permissionMode,
+      isBypassPermissionsModeAvailable: true,
+      shouldAvoidPermissionPrompts: false, // Klaus is interactive via WebSocket
+    };
+    try {
+      const rules = loadAllPermissionRulesFromDisk();
+      if (rules.length > 0) {
+        toolPermissionCtx = applyPermissionRulesToPermissionContext(toolPermissionCtx, rules);
+        console.log(`[Permission] Loaded ${rules.length} rule(s) from disk`);
+      }
+    } catch (err) {
+      console.warn('[Permission] Failed to load rules from disk:', err);
+    }
+
     const appState = {
-      toolPermissionContext: {
-        ...getEmptyToolPermissionContext(),
-        mode: permissionMode,
-        isBypassPermissionsModeAvailable: true,
-        shouldAvoidPermissionPrompts: isBypass,
-      },
+      toolPermissionContext: toolPermissionCtx,
       skills: [], // Engine manages skills via getCommands() internally
       mcp: {
         tools: this.getMcpState(userId).tools,

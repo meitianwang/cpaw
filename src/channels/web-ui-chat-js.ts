@@ -540,6 +540,25 @@ export function getChatMainJs(): string {
         + '<pre class="permission-input-preview">' + escHtml(inputStr) + '</pre></details>';
     }
 
+    // Suggestions (e.g. "Always Allow Bash", "Always Allow Read")
+    var suggestionsHtml = '';
+    var suggestions = data.suggestions || [];
+    if (suggestions.length > 0) {
+      suggestionsHtml = '<div class="permission-suggestions">';
+      for (var si = 0; si < suggestions.length; si++) {
+        var sug = suggestions[si];
+        var sugLabel = "";
+        if (sug.type === "addRules" && sug.rules && sug.rules.length > 0) {
+          var ruleNames = sug.rules.map(function(r) { return r.toolName + (r.ruleContent ? "(" + r.ruleContent + ")" : ""); });
+          sugLabel = (sug.behavior === "allow" ? tt("always_allow") : sug.behavior === "deny" ? tt("always_deny") : tt("always_ask")) + ": " + ruleNames.join(", ");
+        } else {
+          sugLabel = JSON.stringify(sug);
+        }
+        suggestionsHtml += '<label class="permission-suggestion"><input type="checkbox" data-sug-idx="' + si + '"> ' + escHtml(sugLabel) + '</label>';
+      }
+      suggestionsHtml += '</div>';
+    }
+
     // Buttons
     var actionsHtml = '<div class="permission-actions">'
       + '<button class="permission-btn permission-btn-allow">' + tt("allow") + '</button>'
@@ -549,7 +568,7 @@ export function getChatMainJs(): string {
     // Timer
     var timerHtml = '<div class="permission-timer"><span class="permission-timer-text">120s</span></div>';
 
-    card.innerHTML = headerHtml + msgHtml + inputHtml + actionsHtml + timerHtml;
+    card.innerHTML = headerHtml + msgHtml + inputHtml + suggestionsHtml + actionsHtml + timerHtml;
     container.appendChild(card);
     scrollBottom();
 
@@ -565,7 +584,7 @@ export function getChatMainJs(): string {
       }
     }, 1000);
 
-    pendingPermissions.set(requestId, { card: card, countdown: countdown });
+    pendingPermissions.set(requestId, { card: card, countdown: countdown, suggestions: suggestions });
 
     // Button handlers
     var allowBtn = card.querySelector(".permission-btn-allow");
@@ -580,21 +599,38 @@ export function getChatMainJs(): string {
     clearInterval(entry.countdown);
     pendingPermissions.delete(requestId);
 
+    // Collect accepted suggestion indices
+    var acceptedIndices = [];
+    var card = entry.card;
+    if (decision === "allow" && entry.suggestions && entry.suggestions.length > 0) {
+      var checkboxes = card.querySelectorAll('.permission-suggestion input[type="checkbox"]');
+      checkboxes.forEach(function(cb) {
+        if (cb.checked) {
+          acceptedIndices.push(parseInt(cb.dataset.sugIdx, 10));
+        }
+      });
+    }
+
     // Send response to server
+    var payload = { type: "permission_response", requestId: requestId, decision: decision };
+    if (acceptedIndices.length > 0) payload.acceptedSuggestionIndices = acceptedIndices;
     if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: "permission_response", requestId: requestId, decision: decision }));
+      ws.send(JSON.stringify(payload));
     }
 
     // Update card UI
-    var card = entry.card;
     var actions = card.querySelector(".permission-actions");
     var timer = card.querySelector(".permission-timer");
+    var sugBox = card.querySelector(".permission-suggestions");
     if (actions) actions.remove();
     if (timer) timer.remove();
+    if (sugBox) sugBox.remove();
 
     var badge = document.createElement("div");
     badge.className = "permission-result " + (decision === "allow" ? "permission-allowed" : "permission-denied");
-    badge.textContent = decision === "allow" ? (tt("allowed") || "Allowed") : (tt("denied") || "Denied");
+    var badgeText = decision === "allow" ? (tt("allowed") || "Allowed") : (tt("denied") || "Denied");
+    if (acceptedIndices.length > 0) badgeText += " (" + tt("rules_saved") + ")";
+    badge.textContent = badgeText;
     card.appendChild(badge);
     card.classList.add("permission-resolved");
   }

@@ -254,6 +254,9 @@ tr.clickable:hover { background: var(--card-bg); }
       <button class="nav-item" data-tab="invites">
         <span data-i18n="tab_invites">Invites</span>
       </button>
+      <button class="nav-item" data-tab="permissions">
+        <span data-i18n="tab_permissions">Permissions</span>
+      </button>
       <button class="nav-item" data-tab="memory">
         <span data-i18n="tab_memory">Memory</span>
       </button>
@@ -455,6 +458,33 @@ tr.clickable:hover { background: var(--card-bg); }
     </div>
 
     <!-- ============ Memory Tab ============ -->
+    <!-- ============ Permissions Tab ============ -->
+    <div id="tab-permissions" class="tab-panel">
+      <h1 class="page-title" data-i18n="tab_permissions">Permissions</h1>
+      <div class="section">
+        <div class="section-header" data-i18n="perm_sec_rules">Permission Rules</div>
+        <p style="font-size:12px;color:var(--fg-tertiary);margin:0 0 12px" data-i18n="perm_rules_desc">Manage allow/deny/ask rules that control tool execution permissions. Rules are stored in settings.json.</p>
+        <div id="perm-rules-list" style="margin-bottom:12px"></div>
+        <div class="card" style="padding:12px">
+          <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+            <div style="flex:0 0 auto">
+              <label style="font-size:11px;color:var(--fg-tertiary);display:block;margin-bottom:4px" data-i18n="perm_behavior">Behavior</label>
+              <select id="perm-add-behavior" class="f-input f-input-sm" style="width:100px">
+                <option value="allow">Allow</option>
+                <option value="deny">Deny</option>
+                <option value="ask">Ask</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:200px">
+              <label style="font-size:11px;color:var(--fg-tertiary);display:block;margin-bottom:4px" data-i18n="perm_rule">Rule</label>
+              <input id="perm-add-rule" type="text" class="f-input f-input-sm" placeholder="Bash, Bash(git:*), FileEdit, mcp__server1">
+            </div>
+            <button id="perm-add-btn" class="btn btn-sm btn-primary" data-i18n="btn_create">Create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="tab-memory" class="tab-panel">
       <h1 class="page-title" data-i18n="tab_memory">Memory</h1>
 
@@ -618,7 +648,10 @@ tr.clickable:hover { background: var(--card-bg); }
   var I18N = {
     en: {
       admin_title: "Admin",
-      tab_settings: "Settings", tab_models: "Models", tab_prompts: "Prompts", tab_users: "Users", tab_invites: "Invites", tab_memory: "Memory",      back_chat: "Back to Chat", back_klaus: "Back to Klaus",
+      tab_settings: "Settings", tab_models: "Models", tab_prompts: "Prompts", tab_permissions: "Permissions", tab_users: "Users", tab_invites: "Invites", tab_memory: "Memory",      back_chat: "Back to Chat", back_klaus: "Back to Klaus",
+      perm_sec_rules: "Permission Rules", perm_rules_desc: "Manage allow/deny/ask rules that control tool execution permissions. Rules are stored in settings.json.",
+      perm_behavior: "Behavior", perm_rule: "Rule", perm_no_rules: "No permission rules configured.", perm_source: "Source",
+      perm_confirm_delete: "Delete this rule?", perm_deleted: "Rule deleted", perm_added: "Rule added", perm_failed: "Failed",
       sec_general: "General", sec_agent: "Agent", sec_web: "Web Server", sec_session: "Chat Sessions", sec_transcripts: "Transcripts", sec_cron: "Cron",
       lbl_persona: "System Prompt",
       lbl_max_sessions: "Max Sessions", lbl_yolo: "Auto-approve Tools",
@@ -653,7 +686,10 @@ tr.clickable:hover { background: var(--card-bg); }
     },
     zh: {
       admin_title: "管理面板",
-      tab_settings: "设置", tab_models: "模型", tab_prompts: "提示词", tab_users: "用户", tab_invites: "邀请码", tab_memory: "记忆",      back_chat: "返回对话", back_klaus: "返回 Klaus",
+      tab_settings: "设置", tab_models: "模型", tab_prompts: "提示词", tab_permissions: "权限", tab_users: "用户", tab_invites: "邀请码", tab_memory: "记忆",      back_chat: "返回对话", back_klaus: "返回 Klaus",
+      perm_sec_rules: "权限规则", perm_rules_desc: "管理控制工具执行权限的 allow/deny/ask 规则。规则存储在 settings.json 中。",
+      perm_behavior: "行为", perm_rule: "规则", perm_no_rules: "暂无权限规则。", perm_source: "来源",
+      perm_confirm_delete: "确定删除此规则？", perm_deleted: "规则已删除", perm_added: "规则已添加", perm_failed: "操作失败",
       sec_general: "通用", sec_agent: "Agent", sec_web: "Web 服务器", sec_session: "对话会话", sec_transcripts: "历史记录", sec_cron: "定时任务",
       lbl_persona: "系统提示词",
       lbl_max_sessions: "最大会话数", lbl_yolo: "自动批准工具",
@@ -731,8 +767,103 @@ tr.clickable:hover { background: var(--card-bg); }
     if (id === "users") showSubView("users-list");
     if (id === "models") loadProviders().then(loadModels);
     if (id === "prompts") loadPrompts();
+    if (id === "permissions") loadPermissionRules();
   }
   navItems.forEach(function(b) { b.addEventListener("click", function() { switchTab(b.dataset.tab); }); });
+
+  // =====================================================
+  // PERMISSIONS TAB
+  // =====================================================
+  var permRulesList = document.getElementById("perm-rules-list");
+  var permAddBehavior = document.getElementById("perm-add-behavior");
+  var permAddRule = document.getElementById("perm-add-rule");
+  var permAddBtn = document.getElementById("perm-add-btn");
+
+  function renderPermissionRules(rules) {
+    if (!rules || rules.length === 0) {
+      permRulesList.innerHTML = '<div style="font-size:12px;color:var(--fg-tertiary);padding:8px 0">' + tt("perm_no_rules") + '</div>';
+      return;
+    }
+    var behaviorColors = { allow: "#16a34a", deny: "#dc2626", ask: "#eab308" };
+    var html = '<table style="width:100%;font-size:12px;border-collapse:collapse">'
+      + '<thead><tr style="text-align:left;color:var(--fg-tertiary);border-bottom:1px solid var(--border)">'
+      + '<th style="padding:6px 8px">' + tt("perm_behavior") + '</th>'
+      + '<th style="padding:6px 8px">' + tt("perm_rule") + '</th>'
+      + '<th style="padding:6px 8px">' + tt("perm_source") + '</th>'
+      + '<th style="padding:6px 8px;width:60px"></th>'
+      + '</tr></thead><tbody>';
+    rules.forEach(function(r) {
+      var ruleStr = r.ruleValue.toolName + (r.ruleValue.ruleContent ? "(" + r.ruleValue.ruleContent + ")" : "");
+      var color = behaviorColors[r.ruleBehavior] || "var(--fg)";
+      html += '<tr style="border-bottom:1px solid var(--border)">'
+        + '<td style="padding:6px 8px"><span style="color:' + color + ';font-weight:500">' + esc(r.ruleBehavior) + '</span></td>'
+        + '<td style="padding:6px 8px;font-family:var(--font-mono)">' + esc(ruleStr) + '</td>'
+        + '<td style="padding:6px 8px;color:var(--fg-tertiary)">' + esc(r.source) + '</td>'
+        + '<td style="padding:6px 8px">';
+      if (r.source === "userSettings" || r.source === "projectSettings" || r.source === "localSettings") {
+        html += '<button class="btn btn-sm" style="font-size:10px;padding:2px 8px;color:#dc2626" '
+          + 'data-perm-del-behavior="' + esc(r.ruleBehavior) + '" '
+          + 'data-perm-del-rule="' + esc(ruleStr) + '" '
+          + 'data-perm-del-source="' + esc(r.source) + '">'
+          + tt("delete") + '</button>';
+      }
+      html += '</td></tr>';
+    });
+    html += '</tbody></table>';
+    permRulesList.innerHTML = html;
+
+    // Attach delete handlers
+    permRulesList.querySelectorAll("[data-perm-del-behavior]").forEach(function(btn) {
+      btn.onclick = function() {
+        if (!confirm(tt("perm_confirm_delete"))) return;
+        var opts = {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            behavior: btn.dataset.permDelBehavior,
+            rule: btn.dataset.permDelRule,
+            source: btn.dataset.permDelSource,
+          }),
+        };
+        fetch("/api/admin/permission-rules", opts)
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (d.ok) { renderPermissionRules(d.rules); showToast(tt("perm_deleted")); }
+            else { showToast(tt("perm_failed") + ": " + (d.error || "")); }
+          })
+          .catch(function() { showToast(tt("perm_failed")); });
+      };
+    });
+  }
+
+  function loadPermissionRules() {
+    fetch("/api/admin/permission-rules", { credentials: "same-origin" })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { renderPermissionRules(d.rules || []); })
+      .catch(function() { permRulesList.innerHTML = '<div style="color:#dc2626;font-size:12px">' + tt("perm_failed") + '</div>'; });
+  }
+
+  permAddBtn.onclick = function() {
+    var behavior = permAddBehavior.value;
+    var rule = permAddRule.value.trim();
+    if (!rule) return;
+    permAddBtn.disabled = true;
+    var opts = {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ behavior: behavior, rule: rule }),
+    };
+    fetch("/api/admin/permission-rules", opts)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        permAddBtn.disabled = false;
+        if (d.ok) { permAddRule.value = ""; renderPermissionRules(d.rules); showToast(tt("perm_added")); }
+        else { showToast(tt("perm_failed") + ": " + (d.error || "")); }
+      })
+      .catch(function() { permAddBtn.disabled = false; showToast(tt("perm_failed")); });
+  };
 
   // =====================================================
   // SETTINGS TAB

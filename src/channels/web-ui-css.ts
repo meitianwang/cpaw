@@ -522,6 +522,9 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
   background:var(--bg-surface);border-radius:4px;padding:8px;margin-top:4px;
   max-height:120px;overflow:auto;white-space:pre-wrap;word-break:break-all;line-height:1.4;
 }
+.permission-suggestions{margin-bottom:10px;display:flex;flex-direction:column;gap:4px}
+.permission-suggestion{font-size:11px;color:var(--fg-secondary);display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+.permission-suggestion input[type="checkbox"]{margin:0;accent-color:#16a34a;cursor:pointer}
 .permission-actions{display:flex;gap:8px;margin-bottom:6px}
 .permission-btn{
   padding:5px 16px;border-radius:var(--radius-sm);font-size:12px;font-weight:500;
