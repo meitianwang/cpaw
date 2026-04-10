@@ -1,4 +1,4 @@
-import type { TextProps } from '../ink.js'
+type TextProps = { color?: string; [key: string]: unknown }
 import {
   AGENT_COLOR_TO_THEME_COLOR,
   type AgentColorName,

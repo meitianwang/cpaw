@@ -1,6 +1,6 @@
 import { feature } from 'bun:bundle'
 import { getModelOptions } from '../../utils/model/modelOptions.js'
-import { isVoiceGrowthBookEnabled } from '../../voice/voiceModeEnabled.js'
+const isVoiceGrowthBookEnabled = () => false
 import {
   getOptionsForSetting,
   SUPPORTED_SETTINGS,

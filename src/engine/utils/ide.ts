@@ -29,10 +29,7 @@ import { getPlatform } from './platform.js'
 import { lt } from './semver.js'
 
 // Lazy: IdeOnboardingDialog.tsx pulls React/ink; only needed in interactive onboarding path
-/* eslint-disable @typescript-eslint/no-require-imports */
-const ideOnboardingDialog =
-  (): typeof import('src/components/IdeOnboardingDialog.js') =>
-    require('src/components/IdeOnboardingDialog.js')
+const ideOnboardingDialog = () => ({ showIdeOnboarding: async () => {}, hasIdeOnboardingDialogBeenShown: () => true })
 
 import { createAbortController } from './abortController.js'
 import { logForDebugging } from './debug.js'

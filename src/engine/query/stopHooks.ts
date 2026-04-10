@@ -1,5 +1,6 @@
 import { feature } from 'bun:bundle'
-import { getShortcutDisplay } from '../keybindings/shortcutFormat.js'
+// Klaus: keybindings removed, always return fallback
+const getShortcutDisplay = (_action: string, _context: string, fallback: string) => fallback
 import { isExtractModeActive } from '../memdir/paths.js'
 import {
   type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,

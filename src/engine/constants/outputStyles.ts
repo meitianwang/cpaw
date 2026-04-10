@@ -1,6 +1,6 @@
 import figures from 'figures'
 import memoize from 'lodash-es/memoize.js'
-import { getOutputStyleDirStyles } from '../outputStyles/loadOutputStylesDir.js'
+const getOutputStyleDirStyles = async (_cwd: string): Promise<OutputStyleConfig[]> => []
 import type { OutputStyle } from '../utils/config.js'
 import { getCwd } from '../utils/cwd.js'
 import { logForDebugging } from '../utils/debug.js'

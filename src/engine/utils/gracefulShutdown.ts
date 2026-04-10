@@ -10,25 +10,19 @@ import {
   getSessionId,
   isSessionPersistenceDisabled,
 } from '../bootstrap/state.js'
-import instances from '../ink/instances.js'
-import {
-  DISABLE_KITTY_KEYBOARD,
-  DISABLE_MODIFY_OTHER_KEYS,
-} from '../ink/termio/csi.js'
-import {
-  DBP,
-  DFE,
-  DISABLE_MOUSE_TRACKING,
-  EXIT_ALT_SCREEN,
-  SHOW_CURSOR,
-} from '../ink/termio/dec.js'
-import {
-  CLEAR_ITERM2_PROGRESS,
-  CLEAR_TAB_STATUS,
-  CLEAR_TERMINAL_TITLE,
-  supportsTabStatus,
-  wrapForMultiplexer,
-} from '../ink/termio/osc.js'
+const instances: Map<NodeJS.WriteStream, any> = new Map()
+const DISABLE_KITTY_KEYBOARD = '\x1b[>4;0m'
+const DISABLE_MODIFY_OTHER_KEYS = '\x1b[>4;0m'
+const DBP = '\x1b[?2004l'
+const DFE = '\x1b[?1004l'
+const DISABLE_MOUSE_TRACKING = '\x1b[?1000l\x1b[?1003l\x1b[?1006l'
+const EXIT_ALT_SCREEN = '\x1b[?1049l'
+const SHOW_CURSOR = '\x1b[?25h'
+const CLEAR_ITERM2_PROGRESS = '\x1b]9;4;0;\x07'
+const CLEAR_TAB_STATUS = '\x1b]21337;\x07'
+const CLEAR_TERMINAL_TITLE = '\x1b]0;\x07'
+const supportsTabStatus = () => false
+const wrapForMultiplexer = (s: string) => s
 import { shutdownDatadog } from '../services/analytics/datadog.js'
 import { shutdown1PEventLogging } from '../services/analytics/firstPartyEventLogger.js'
 import {

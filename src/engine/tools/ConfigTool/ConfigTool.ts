@@ -114,9 +114,7 @@ export const ConfigTool = buildTool({
     // must also be gated at runtime. When the kill-switch is on, treat
     // voiceEnabled as an unknown setting so no voice-specific strings leak.
     if (feature('VOICE_MODE') && setting === 'voiceEnabled') {
-      const { isVoiceGrowthBookEnabled } = await import(
-        '../../voice/voiceModeEnabled.js'
-      )
+      const isVoiceGrowthBookEnabled = () => false
       if (!isVoiceGrowthBookEnabled()) {
         return {
           data: { success: false, error: `Unknown setting: "${setting}"` },
@@ -234,9 +232,7 @@ export const ConfigTool = buildTool({
       setting === 'voiceEnabled' &&
       finalValue === true
     ) {
-      const { isVoiceModeEnabled } = await import(
-        '../../voice/voiceModeEnabled.js'
-      )
+      const isVoiceModeEnabled = () => false
       if (!isVoiceModeEnabled()) {
         const { isAnthropicAuthEnabled } = await import('../../utils/auth.js')
         return {

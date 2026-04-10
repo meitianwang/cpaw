@@ -7,10 +7,10 @@ import {
   getSettingsForSource,
 } from '../../utils/settings/settings.js'
 import { shouldOfferTerminalSetup } from '../../commands/terminalSetup/terminalSetup.js'
-import { getDesktopUpsellConfig } from '../../components/DesktopUpsell/DesktopUpsellStartup.js'
-import { color } from '../../components/design-system/color.js'
-import { shouldShowOverageCreditUpsell } from '../../components/LogoV2/OverageCreditUpsell.js'
-import { getShortcutDisplay } from '../../keybindings/shortcutFormat.js'
+const getDesktopUpsellConfig = () => undefined
+const _id = (s: string) => s; const color: any = new Proxy((..._a: any[]) => _id, { get: () => _id, apply: () => _id })
+const shouldShowOverageCreditUpsell = () => false
+const getShortcutDisplay = (_action: string, _context: string, fallback: string) => fallback
 import { isKairosCronEnabled } from '../../tools/ScheduleCronTool/prompt.js'
 import { is1PApiCustomer } from '../../utils/auth.js'
 import { countConcurrentSessions } from '../../utils/concurrentSessions.js'

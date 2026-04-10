@@ -1,4 +1,4 @@
-import type { TerminalNotification } from '../ink/useTerminalNotification.js'
+type TerminalNotification = { notifyBell: () => void; notifyITerm2: (opts: unknown) => void; notifyKitty: (opts: unknown) => void; notifyGhostty: (opts: unknown) => void }
 import { getGlobalConfig } from '../utils/config.js'
 import { env } from '../utils/env.js'
 import { execFileNoThrow } from '../utils/execFileNoThrow.js'

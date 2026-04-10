@@ -2,7 +2,7 @@ import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs
 type UUID = string
 import type React from 'react'
 import type { PermissionResult } from '../entrypoints/agentSdkTypes.js'
-import type { Key } from '../ink.js'
+type Key = { upArrow: boolean; downArrow: boolean; leftArrow: boolean; rightArrow: boolean; return: boolean; escape: boolean; ctrl: boolean; shift: boolean; tab: boolean; backspace: boolean; delete: boolean; meta: boolean; pageDown: boolean; pageUp: boolean }
 import type { PastedContent } from '../utils/config.js'
 import type { ImageDimensions } from '../utils/imageResizer.js'
 import type { TextHighlight } from '../utils/textHighlighting.js'

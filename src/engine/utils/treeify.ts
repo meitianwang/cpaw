@@ -1,5 +1,5 @@
 import figures from 'figures'
-import { color } from '../components/design-system/color.js'
+const _id = (s: string) => s; const color: any = new Proxy((..._a: any[]) => _id, { get: () => _id, apply: () => _id })
 import type { Theme, ThemeName } from './theme.js'
 
 export type TreeNode = {

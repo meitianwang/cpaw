@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { SuggestionItem } from '../../components/PromptInput/PromptInputFooterSuggestions.js'
+type SuggestionItem = { id: string; displayText: string; tag?: string; description?: string; metadata?: unknown; color?: string }
 import type { MCPServerConnection } from '../../services/mcp/types.js'
 import { logForDebugging } from '../debug.js'
 import { lazySchema } from '../lazySchema.js'

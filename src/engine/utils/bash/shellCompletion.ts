@@ -1,4 +1,4 @@
-import type { SuggestionItem } from '../../components/PromptInput/PromptInputFooterSuggestions.js'
+type SuggestionItem = { id: string; displayText: string; tag?: string; description?: string; metadata?: unknown; color?: string }
 import {
   type ParseEntry,
   quote,

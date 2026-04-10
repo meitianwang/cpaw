@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { join } from 'path'
 import { getIsNonInteractiveSession } from '../../bootstrap/state.js'
 import type { Command } from '../../commands.js'
-import type { AgentMcpServerInfo } from '../../components/mcp/types.js'
+type AgentMcpServerInfo = { name: string; sourceAgents: string[]; transport: string; command?: string; url?: string; needsAuth: boolean }
 import type { Tool } from '../../Tool.js'
 import type { AgentDefinition } from '../../tools/AgentTool/loadAgentsDir.js'
 import { getCwd } from '../../utils/cwd.js'

@@ -17,7 +17,7 @@
 
 import { spawn, spawnSync } from 'child_process'
 import { getSessionId } from '../bootstrap/state.js'
-import instances from '../ink/instances.js'
+const instances: Map<NodeJS.WriteStream, any> = new Map()
 import { registerCleanup } from './cleanupRegistry.js'
 import { pwd } from './cwd.js'
 import { logForDebugging } from './debug.js'

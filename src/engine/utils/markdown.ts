@@ -1,10 +1,9 @@
 import chalk from 'chalk'
 import { marked, type Token, type Tokens } from 'marked'
 import stripAnsi from 'strip-ansi'
-import { color } from '../components/design-system/color.js'
+const _id = (s: string) => s; const color: any = new Proxy((..._a: any[]) => _id, { get: () => _id, apply: () => _id })
 import { BLOCKQUOTE_BAR } from '../constants/figures.js'
-import { stringWidth } from '../ink/stringWidth.js'
-import { supportsHyperlinks } from '../ink/supports-hyperlinks.js'
+import { stringWidth, supportsHyperlinks } from './stringWidth.js'
 import type { CliHighlight } from './cliHighlight.js'
 import { logForDebugging } from './debug.js'
 import { createHyperlink } from './hyperlink.js'

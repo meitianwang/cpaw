@@ -2,8 +2,8 @@ type UUID = string
 import { logEvent } from '../services/analytics/index.js'
 import type { AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS } from '../services/analytics/metadata.js'
 import { type Command, getCommandName, isCommandEnabled } from '../commands.js'
-import { selectableUserMessagesFilter } from '../components/MessageSelector.js'
-import type { SpinnerMode } from '../components/Spinner/types.js'
+const selectableUserMessagesFilter = (_msg?: any) => true
+type SpinnerMode = 'requesting' | 'thinking' | 'responding' | 'tool-use' | 'tool-input' | 'idle'
 import type { QuerySource } from '../constants/querySource.js'
 import { expandPastedTextRefs, parseReferences } from '../history.js'
 import type { CanUseToolFn } from '../hooks/useCanUseTool.js'

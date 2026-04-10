@@ -5,7 +5,7 @@ import {
   getCommand,
   getCommandName,
 } from '../../commands.js'
-import type { SuggestionItem } from '../../components/PromptInput/PromptInputFooterSuggestions.js'
+type SuggestionItem = { id: string; displayText: string; tag?: string; description?: string; metadata?: unknown; color?: string }
 import { getSkillUsageScore } from './skillUsageTracking.js'
 
 // Treat these characters as word separators for command search
