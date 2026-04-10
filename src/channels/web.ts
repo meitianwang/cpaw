@@ -566,6 +566,7 @@ function handleMcpOAuthCallback(
 ): void {
   const serverName = url.searchParams.get("server");
   const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
   const errorDescription = url.searchParams.get("error_description") ?? "";
 
@@ -587,9 +588,9 @@ function handleMcpOAuthCallback(
     return;
   }
 
-  if (!code) {
+  if (!code || !state) {
     res.writeHead(400, { "Content-Type": "text/html" });
-    res.end("<h1>Bad Request</h1><p>Missing authorization code.</p>");
+    res.end("<h1>Bad Request</h1><p>Missing authorization code or state parameter.</p>");
     return;
   }
 
@@ -603,7 +604,17 @@ function handleMcpOAuthCallback(
     return;
   }
 
-  resolvePendingAuth(serverName, code);
+  const resolved = resolvePendingAuth(serverName, code, state);
+  if (!resolved) {
+    res.writeHead(403, { "Content-Type": "text/html" });
+    res.end(
+      `<h1>Authentication Error</h1>` +
+      `<p>Invalid state parameter — possible CSRF attack. Please try again.</p>` +
+      `<p>You can close this window.</p>`,
+    );
+    return;
+  }
+
   res.writeHead(200, { "Content-Type": "text/html" });
   res.end(
     `<h1>Authentication Successful</h1>` +
@@ -3112,6 +3123,16 @@ export const webPlugin: ChannelPlugin = {
       if (ctx.services.analyticsSink && !analyticsSinkRef) setAnalyticsSink(ctx.services.analyticsSink as import("../engine/services/analytics/sink.js").SQLiteAnalyticsSink);
     }
 
+    // Set public base URL from config (after services are applied so agentManagerRef is available)
+    if (cfg.publicBaseUrl) {
+      if (agentManagerRef) {
+        agentManagerRef.setPublicBaseUrl(cfg.publicBaseUrl);
+        console.log(`[Web] Public base URL set from config: ${cfg.publicBaseUrl}`);
+      } else {
+        console.warn(`[Web] public_base_url configured but agentManager not available yet — will fall back to request inference`);
+      }
+    }
+
     const server = createServer((req, res) => {
       handleRequest(req, res, cfg).catch((err) => {
         console.error("[Web] Request error:", err);
@@ -3171,12 +3192,14 @@ export const webPlugin: ChannelPlugin = {
     wss.on(
       "connection",
       (rawWs: WebSocket, req: IncomingMessage, user: User) => {
-        // Set public base URL for MCP OAuth callbacks (once, from first connection)
+        // Infer public base URL from first WS connection if not set via config.
+        // This is a fallback — prefer setting web.public_base_url in config.yaml.
         if (agentManagerRef && !agentManagerRef.publicBaseUrl && req.headers.host) {
           const fwdProto = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0].trim().toLowerCase();
           const proto = (fwdProto === "https" || fwdProto === "http") ? fwdProto : "http";
-          agentManagerRef.setPublicBaseUrl(`${proto}://${req.headers.host}`);
-          console.log(`[Web] Public base URL set: ${proto}://${req.headers.host}`);
+          const inferred = `${proto}://${req.headers.host}`;
+          agentManagerRef.setPublicBaseUrl(inferred);
+          console.warn(`[Web] Public base URL inferred from request: ${inferred} — set web.public_base_url in config.yaml for reliability`);
         }
 
         const ws = rawWs as KlausWebSocket;

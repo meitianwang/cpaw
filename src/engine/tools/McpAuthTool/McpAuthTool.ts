@@ -135,7 +135,7 @@ export function createMcpAuthTool(
       const { setAppState } = context
 
       // Determine if we can use external redirect (Klaus public URL available)
-      const publicBaseUrl = (context as any).publicBaseUrl as string | null
+      const publicBaseUrl = context.publicBaseUrl
       const useExternal = !!publicBaseUrl
 
       // Build options for performMCPOAuthFlow
@@ -154,8 +154,8 @@ export function createMcpAuthTool(
         // 方案2: external redirect through Klaus's own HTTP route
         const redirectUri = `${publicBaseUrl}/api/oauth/mcp/callback?server=${encodeURIComponent(serverName)}`
         flowOptions.externalRedirectUri = redirectUri
-        flowOptions.onExternalCode = (resolve, rejectFn) => {
-          registerPendingAuth(serverName, resolve, rejectFn)
+        flowOptions.onExternalCode = (resolve, rejectFn, oauthState) => {
+          registerPendingAuth(serverName, resolve, rejectFn, oauthState)
         }
         logMCPDebug(serverName, `Using Klaus external redirect: ${redirectUri}`)
       }

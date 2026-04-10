@@ -291,6 +291,9 @@ export type ToolUseContext = {
    * resumeAgentBackground threads one reconstructed from sidechain records.
    */
   contentReplacementState?: ContentReplacementState
+  /** Klaus: public base URL of the server (e.g. "https://example.com").
+   *  Used by McpAuthTool to build OAuth redirect URIs. */
+  publicBaseUrl?: string | null
   /**
    * Parent's rendered system prompt bytes, frozen at turn start.
    * Used by fork subagents to share the parent's prompt cache — re-calling

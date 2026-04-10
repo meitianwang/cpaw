@@ -14,6 +14,8 @@ export interface WebConfig {
   readonly port: number;
   readonly sessionMaxAgeDays: number;
   readonly google?: GoogleOAuthConfig;
+  /** Explicit public base URL (e.g. "https://example.com") for OAuth callbacks. */
+  readonly publicBaseUrl?: string;
 }
 
 export interface TranscriptsConfig {

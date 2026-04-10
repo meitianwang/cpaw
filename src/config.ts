@@ -47,10 +47,26 @@ export function loadWebConfig(): WebConfig {
     }
   }
 
+  const rawPublicBaseUrl = (
+    (cfg.public_base_url as string) ?? process.env.KLAUS_PUBLIC_BASE_URL ?? ""
+  ).trim().replace(/\/+$/, "");
+  let publicBaseUrl: string | undefined;
+  if (rawPublicBaseUrl) {
+    try {
+      const u = new URL(rawPublicBaseUrl);
+      if (u.protocol === "http:" || u.protocol === "https:") {
+        publicBaseUrl = u.origin;  // normalized, no trailing slash or path
+      }
+    } catch {
+      console.warn(`[Config] Invalid public_base_url: "${rawPublicBaseUrl}" — ignored`);
+    }
+  }
+
   return {
     port: Number(cfg.port ?? process.env.KLAUS_WEB_PORT ?? 3000),
     sessionMaxAgeDays: positiveNumber(cfg.session_max_age_days, 7),
     ...(google ? { google } : {}),
+    ...(publicBaseUrl ? { publicBaseUrl } : {}),
   };
 }
 

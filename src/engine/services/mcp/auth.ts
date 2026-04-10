@@ -857,8 +857,9 @@ export async function performMCPOAuthFlow(
      *  function that the caller invokes with the authorization code. */
     externalRedirectUri?: string
     /** Called when externalRedirectUri is set. The caller must arrange for the
-     *  code to arrive (e.g. via an HTTP route) and call `resolve(code)`. */
-    onExternalCode?: (resolve: (code: string) => void, reject: (err: Error) => void) => void
+     *  code to arrive (e.g. via an HTTP route) and call `resolve(code)`.
+     *  `oauthState` is the CSRF token that the callback route must validate. */
+    onExternalCode?: (resolve: (code: string) => void, reject: (err: Error) => void, oauthState: string) => void
   },
 ): Promise<void> {
   // XAA (SEP-990): if configured, bypass the per-server consent dance.
@@ -1117,6 +1118,7 @@ export async function performMCPOAuthFlow(
         options!.onExternalCode!(
           (code: string) => { cleanup(); resolveOnce(code) },
           (err: Error) => { cleanup(); rejectOnce(err) },
+          oauthState,
         )
 
         // Start the SDK auth flow (triggers client registration + redirect URL generation)

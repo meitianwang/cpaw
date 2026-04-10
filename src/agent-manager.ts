@@ -105,12 +105,10 @@ interface SessionEntry {
 // AgentSessionManager
 // ============================================================================
 
-// Mutex for serializing per-user skill state operations.
-// The engine stores additionalDirs in a global singleton — concurrent requests
-// can overwrite each other's state between setAdditionalDirs → getCommands.
-// This lock ensures the whole sequence (set dirs → clear cache → build config
-// → collect attachments) runs atomically per request.
-class SkillStateMutex {
+// Mutex for serializing operations that touch global engine singletons
+// (additionalDirs, currentMcpUserConfigPath).  Concurrent requests can
+// overwrite each other's state — this lock serializes those critical sections.
+class GlobalStateMutex {
   private pending: Promise<void> = Promise.resolve();
   acquire(): Promise<() => void> {
     let release!: () => void;
@@ -139,7 +137,7 @@ export class AgentSessionManager {
   // Per-user MCP state — each user gets their own connections & tools
   private readonly _mcpByUser = new Map<string, McpUserState>();
   private messageStore: MessageStore | null = null;
-  private readonly skillMutex = new SkillStateMutex();
+  private readonly globalStateMutex = new GlobalStateMutex();
   /** Public base URL of the Klaus server (e.g. "https://example.com").
    *  Set by the web channel on first request. Used for MCP OAuth callbacks. */
   private _publicBaseUrl: string | null = null;
@@ -212,9 +210,22 @@ export class AgentSessionManager {
 
   /**
    * Initialize MCP connections for a specific user.
-   * Each user's connections are stored independently — no cross-user teardown.
+   * Acquires globalStateMutex to protect setCurrentMcpUserConfigPath.
+   * For calls from within an already-held lock (e.g. chat()), use _initMcpLocked().
    */
   async initMcp(userId?: string): Promise<void> {
+    const release = await this.globalStateMutex.acquire();
+    try {
+      await this._initMcpLocked(userId);
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Internal: initialize MCP connections. Caller MUST hold globalStateMutex.
+   */
+  private async _initMcpLocked(userId?: string): Promise<void> {
     const uid = userId ?? "__global__";
     if (userId) {
       const { setCurrentMcpUserConfigPath } = await import("./engine/bootstrap/state.js");
@@ -265,6 +276,26 @@ export class AgentSessionManager {
   /** Invalidate cached MCP state for a user so next chat() triggers a reload.
    *  Closes existing connections before removing state to prevent leaks. */
   async invalidateMcpCache(userId?: string): Promise<void> {
+    const release = await this.globalStateMutex.acquire();
+    try {
+      await this._closeMcpConnections(userId);
+    } finally {
+      release();
+    }
+  }
+
+  async reconnectMcp(userId?: string): Promise<void> {
+    const release = await this.globalStateMutex.acquire();
+    try {
+      await this._closeMcpConnections(userId);
+      await this._initMcpLocked(userId);
+    } finally {
+      release();
+    }
+  }
+
+  /** Internal: close MCP connections for user(s) and remove state. Caller MUST hold globalStateMutex. */
+  private async _closeMcpConnections(userId?: string): Promise<void> {
     const uids = userId ? [userId] : [...this._mcpByUser.keys()];
     for (const uid of uids) {
       const state = this._mcpByUser.get(uid);
@@ -278,24 +309,6 @@ export class AgentSessionManager {
       }
       this._mcpByUser.delete(uid);
     }
-  }
-
-  async reconnectMcp(userId?: string): Promise<void> {
-    const uid = userId ?? "__global__";
-    const old = this._mcpByUser.get(uid);
-    if (old) {
-      for (const client of old.clients) {
-        if (client.type === "connected") {
-          try {
-            await clearServerCache(client.name, client.config);
-          } catch (err) {
-            console.error(`[MCP:${uid}] Error closing "${client.name}": ${err}`);
-          }
-        }
-      }
-      this._mcpByUser.delete(uid);
-    }
-    await this.initMcp(userId);
   }
 
   async chat(
@@ -316,10 +329,10 @@ export class AgentSessionManager {
       ];
       const userMemoryPath = join(homedir(), '.klaus', 'users', userId, 'memory');
 
-      // Acquire skill mutex — serializes the global-state-dependent sequence:
-      // setAdditionalDirs → clearCache → buildQueryConfig → getAttachmentMessages.
-      // Without this, concurrent users can overwrite each other's additionalDirs.
-      const releaseSkillLock = await this.skillMutex.acquire();
+      // Acquire global state mutex — serializes the global-state-dependent sequence:
+      // setAdditionalDirs → setMcpConfigPath → clearCache → buildQueryConfig → getAttachmentMessages.
+      // Without this, concurrent users can overwrite each other's global state.
+      const releaseGlobalLock = await this.globalStateMutex.acquire();
       let systemPrompt, userContext, systemContext, apiKey: string, baseUrl: string | undefined,
         model: string, fallbackModel: string | undefined, maxContextTokens: number,
         thinkingConfig: ThinkingConfig, tools: any[], toolSchemas: any[];
@@ -335,7 +348,7 @@ export class AgentSessionManager {
 
         // Ensure this user's MCP servers are loaded (no-op if already present)
         if (!this._mcpByUser.has(userId)) {
-          await this.initMcp(userId);
+          await this._initMcpLocked(userId);
         }
 
         // Clear skill cache (user's skill directory may differ)
@@ -370,7 +383,7 @@ export class AgentSessionManager {
         ) as Message[];
       } finally {
         setCurrentMcpUserConfigPath(null);
-        releaseSkillLock();
+        releaseGlobalLock();
       }
 
       // --- Below here no longer depends on global additionalDirs/MCP state ---
@@ -738,19 +751,9 @@ export class AgentSessionManager {
 
   async disposeAll(): Promise<void> {
     this.sessions.clear();
-    // Close all per-user MCP connections
-    for (const [uid, state] of this._mcpByUser) {
-      for (const client of state.clients) {
-        if (client.type === "connected") {
-          try {
-            await clearServerCache(client.name, client.config);
-          } catch (err) {
-            console.error(`[MCP:${uid}] Error closing "${client.name}": ${err}`);
-          }
-        }
-      }
-    }
-    this._mcpByUser.clear();
+    // Shutdown path — no new requests expected, skip mutex to avoid deadlock
+    // if a chat() call is still holding the lock during SIGTERM.
+    await this._closeMcpConnections();
   }
 
   // ============================================================================
@@ -957,6 +960,10 @@ export class AgentSessionManager {
   // Private: build ToolUseContext for the engine
   // ============================================================================
 
+  // Klaus only populates the ToolUseContext fields it actually uses.
+  // The engine type has many more fields for CLI/UI concerns that are
+  // irrelevant in a headless server context.  Partial<> + cast documents
+  // this intentional subset rather than hiding it behind `as any`.
   private buildToolUseContext(
     sessionKey: string,
     session: SessionEntry,
@@ -986,13 +993,15 @@ export class AgentSessionManager {
         tools: this.getMcpState(userId).tools,
         clients: this.getMcpState(userId).clients,
         commands: this.getMcpState(userId).commands,
+        resources: this.getMcpState(userId).resources,
+        pluginReconnectKey: 0,
       },
       tasks: {},
       fastMode: undefined,
       effortValue: undefined,
       advisorModel: undefined,
       settings: {},
-    } as any as AppState;
+    } as Partial<AppState> as AppState;
 
     return {
       options: {
@@ -1005,7 +1014,7 @@ export class AgentSessionManager {
         mcpClients: this.getMcpState(userId).clients,
         mcpResources: this.getMcpState(userId).resources,
         isNonInteractiveSession: isBypass, // interactive when permissions are enabled (WebSocket approval)
-        agentDefinitions: { agents: [], errors: [], activeAgents: [], allowedAgentTypes: undefined },
+        agentDefinitions: { agents: [], errors: [], activeAgents: [], allowedAgentTypes: undefined, allAgents: [] },
         // Hooks disabled: Klaus uses WebSocket-based permission approval
         // instead of claude-code's CLI hooks. PreToolUse hooks block tool
         // execution with stopReason=undefined in this context.
@@ -1041,7 +1050,7 @@ export class AgentSessionManager {
             });
           }
         : undefined,
-    } as any as ToolUseContext;
+    } as Partial<ToolUseContext> as ToolUseContext;
   }
 }
 
