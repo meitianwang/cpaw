@@ -52,11 +52,6 @@ export interface TaskOutputProgress {
   [key: string]: unknown
 }
 
-export interface REPLToolProgress {
-  type: 'repl'
-  content?: string
-}
-
 export interface PowerShellProgress {
   type: 'powershell' | 'powershell_progress'
   stdout?: string
@@ -81,5 +76,4 @@ export type ToolProgressData =
   | WebSearchProgress
   | SkillToolProgress
   | TaskOutputProgress
-  | REPLToolProgress
   | PowerShellProgress

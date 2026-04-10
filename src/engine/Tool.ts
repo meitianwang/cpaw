@@ -51,7 +51,6 @@ import type {
   AgentToolProgress,
   BashProgress,
   MCPProgress,
-  REPLToolProgress,
   SkillToolProgress,
   TaskOutputProgress,
   ToolProgressData,
@@ -67,7 +66,6 @@ export type {
   AgentToolProgress,
   BashProgress,
   MCPProgress,
-  REPLToolProgress,
   SkillToolProgress,
   TaskOutputProgress,
   WebSearchProgress,
@@ -399,8 +397,6 @@ export type Tool<
   // Type for MCP tools that can specify their input schema directly in JSON Schema format
   // rather than converting from Zod schema
   readonly inputJSONSchema?: ToolInputJSONSchema
-  // Optional because TungstenTool doesn't define this. TODO: Make it required.
-  // When we do that, we can also go through and make this a bit more type-safe.
   outputSchema?: z.ZodType<unknown>
   inputsEquivalent?(a: z.infer<Input>, b: z.infer<Input>): boolean
   isConcurrencySafe(input: z.infer<Input>): boolean
