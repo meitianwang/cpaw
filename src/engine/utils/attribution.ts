@@ -30,9 +30,11 @@ import {
   getPublicModelDisplayName,
   getPublicModelName,
 } from './model/model.js'
-import { isMemoryFileAccess } from './sessionFileAccessHooks.js'
+// sessionFileAccessHooks removed — stub
+function isMemoryFileAccess(_name: string, _input: unknown): boolean { return false }
 import { getTranscriptPath } from './sessionStorage.js'
-import { readTranscriptForLoad } from './sessionStoragePortable.js'
+// sessionStoragePortable removed — stub
+async function readTranscriptForLoad(_path: string, _size?: number) { return { postBoundaryBuf: '' } }
 import { getInitialSettings } from './settings/settings.js'
 import { isUndercover } from './undercover.js'
 
@@ -373,20 +375,6 @@ export async function getEnhancedPRAttribution(
       : ''
   const summary = `🤖 Generated with [Claude Code](${PRODUCT_URL}) (${claudePercent}% ${promptCount}-shotted by ${shortModelName}${memSuffix})`
 
-  // Append trailer lines for squash-merge survival. Only for allowlisted repos
-  // (INTERNAL_MODEL_REPOS) and only in builds with COMMIT_ATTRIBUTION enabled —
-  // attributionTrailer.ts contains excluded strings, so reach it via dynamic
-  // import behind feature(). When the repo is configured with
-  // squash_merge_commit_message=PR_BODY (cli, apps), the PR body becomes the
-  // squash commit body verbatim — trailer lines at the end become proper git
-  // trailers on the squash commit.
-  if (feature('COMMIT_ATTRIBUTION') && isInternal && attributionData) {
-    const { buildPRTrailers } = await import('./attributionTrailer.js')
-    const trailers = buildPRTrailers(attributionData, appState.attribution)
-    const result = `${summary}\n\n${trailers}`
-    logForDebugging(`PR Attribution: returning with trailers: ${result}`)
-    return result
-  }
 
   logForDebugging(`PR Attribution: returning summary: ${summary}`)
   return summary

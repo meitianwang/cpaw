@@ -148,7 +148,7 @@ export function createDumpPromptsFetch(
 ): ClientOptions['fetch'] {
   const filePath = getDumpPromptsPath(agentIdOrSessionId)
 
-  return async (input: RequestInfo | URL, init?: RequestInit) => {
+  return async (input: string | URL | Request, init?: RequestInit) => {
     const state = dumpState.get(agentIdOrSessionId) ?? {
       initialized: false,
       messageCountSeen: 0,

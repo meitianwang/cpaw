@@ -25,7 +25,8 @@ import { jsonStringify } from '../utils/slowOperations.js'
 import { isToolReferenceBlock } from '../utils/toolSearch.js'
 import { getAPIMetadata, getExtraBodyParams } from './api/claude.js'
 import { getAnthropicClient } from './api/client.js'
-import { withTokenCountVCR } from './vcr.js'
+// VCR (test fixture recording) removed — passthrough stub
+async function withTokenCountVCR(_messages: unknown, _tools: unknown, fn: () => Promise<any>) { return fn() }
 
 // Minimal values for token counting with thinking enabled
 // API constraint: max_tokens must be greater than thinking.budget_tokens

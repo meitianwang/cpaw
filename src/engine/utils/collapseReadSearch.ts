@@ -23,7 +23,8 @@ import type { AssistantMessage, AttachmentMessage, GroupedToolUseMessage, UserMe
 /** A message eligible for collapsing into a read/search group. */
 type CollapsibleMessage = AssistantMessage | GroupedToolUseMessage | UserMessage
 import { getDisplayPath } from './file.js'
-import { isFullscreenEnvEnabled } from './fullscreen.js'
+// fullscreen mode removed — always disabled in Klaus
+function isFullscreenEnvEnabled() { return false }
 import {
   isAutoManagedMemoryFile,
   isAutoManagedMemoryPattern,

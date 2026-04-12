@@ -5,7 +5,8 @@ import {
   tryParseShellCommand,
 } from '../bash/shellQuote.js'
 import { logForDebugging } from '../debug.js'
-import { getShellType } from '../localInstaller.js'
+// localInstaller removed — stub
+function getShellType(): string { return process.env.SHELL?.includes('zsh') ? 'zsh' : 'bash' }
 import * as Shell from '../Shell.js'
 
 // Constants

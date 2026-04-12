@@ -224,7 +224,9 @@ import {
 } from '../compact/microCompact.js'
 
 import { isToolFromMcpServer } from '../mcp/utils.js'
-import { withStreamingVCR, withVCR } from '../vcr.js'
+// VCR (test fixture recording) removed — passthrough stubs
+async function withVCR(_messages: unknown, fn: () => Promise<any>) { return fn() }
+async function* withStreamingVCR(_messages: unknown, fn: () => AsyncGenerator<any>) { yield* fn() }
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
