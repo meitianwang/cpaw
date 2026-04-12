@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { z } from 'zod/v4'
-import { getIsNonInteractiveSession, getSessionId } from '../bootstrap/state.js'
+import { getIsNonInteractiveSession, getSessionId, getScopedUserId } from '../bootstrap/state.js'
 import { uniq } from './array.js'
 import { logForDebugging } from './debug.js'
 import { getClaudeConfigHomeDir, getTeamsDir, isEnvTruthy } from './envUtils.js'
@@ -21,16 +21,22 @@ const tasksUpdated = createSignal()
  * Team name set by the leader when creating a team.
  * Used by getTaskListId() so the leader's tasks are stored under the team name
  * (matching where tmux/iTerm2 teammates look), not under the session ID.
+ * Keyed by userId for multi-user isolation (Klaus); single-user CLI uses key ''.
  */
-let leaderTeamName: string | undefined
+const leaderTeamNames = new Map<string, string>()
+
+function getLeaderTeamNameKey(): string {
+  return getScopedUserId() ?? ''
+}
 
 /**
  * Sets the leader's team name for task list resolution.
  * Called by TeamCreateTool when a team is created.
  */
 export function setLeaderTeamName(teamName: string): void {
-  if (leaderTeamName === teamName) return
-  leaderTeamName = teamName
+  const key = getLeaderTeamNameKey()
+  if (leaderTeamNames.get(key) === teamName) return
+  leaderTeamNames.set(key, teamName)
   // Changing the task list ID is a "tasks updated" event for subscribers —
   // they're now looking at a different directory.
   notifyTasksUpdated()
@@ -41,8 +47,9 @@ export function setLeaderTeamName(teamName: string): void {
  * Called when a team is deleted.
  */
 export function clearLeaderTeamName(): void {
-  if (leaderTeamName === undefined) return
-  leaderTeamName = undefined
+  const key = getLeaderTeamNameKey()
+  if (!leaderTeamNames.has(key)) return
+  leaderTeamNames.delete(key)
   notifyTasksUpdated()
 }
 
@@ -206,7 +213,7 @@ export function getTaskListId(): string {
   if (teammateCtx) {
     return teammateCtx.teamName
   }
-  return getTeamName() || leaderTeamName || getSessionId()
+  return getTeamName() || leaderTeamNames.get(getLeaderTeamNameKey()) || getSessionId()
 }
 
 /**
