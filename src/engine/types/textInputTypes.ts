@@ -5,7 +5,6 @@ import type { PermissionResult } from '../entrypoints/agentSdkTypes.js'
 type Key = { upArrow: boolean; downArrow: boolean; leftArrow: boolean; rightArrow: boolean; return: boolean; escape: boolean; ctrl: boolean; shift: boolean; tab: boolean; backspace: boolean; delete: boolean; meta: boolean; pageDown: boolean; pageUp: boolean }
 import type { PastedContent } from '../utils/config.js'
 import type { ImageDimensions } from '../utils/imageResizer.js'
-import type { TextHighlight } from '../utils/textHighlighting.js'
 import type { AgentId } from './ids.js'
 import type { AssistantMessage, MessageOrigin } from './message.js'
 
@@ -180,7 +179,7 @@ export type BaseTextInputProps = {
   /**
    * Optional text highlights for search results or other highlighting
    */
-  readonly highlights?: TextHighlight[]
+  readonly highlights?: Array<{ start: number; end: number; priority: number; color?: string; dimColor?: boolean; inverse?: boolean; shimmerColor?: string }>
 
   /**
    * Optional custom React element to render as placeholder.

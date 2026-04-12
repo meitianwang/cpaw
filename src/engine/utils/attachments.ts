@@ -46,7 +46,6 @@ import {
 } from './claudemd.js'
 import { dirname, parse, relative, resolve } from 'path'
 import { getCwd } from './cwd.js'
-import { getViewedTeammateTask } from '../state/selectors.js'
 import { logError } from './log.js'
 import { logAntError } from './debug.js'
 import { isENOENT, toError } from './errors.js'
@@ -3483,13 +3482,9 @@ async function getTeammateMailboxAttachments(
   // Check if we're the team lead (uses shared logic from swarm utils)
   const teamLeadStatus = isTeamLead(appState.teamContext)
 
-  // Check if viewing a teammate's transcript (for in-process teammates)
-  const viewedTeammate = getViewedTeammateTask(appState)
-
   // Resolve agent name based on who we're VIEWING:
-  // - If viewing a teammate, use THEIR name (to read from their mailbox)
   // - Otherwise use env var if set, or leader's name if we're the team lead
-  let agentName = viewedTeammate?.identity.agentName ?? envAgentName
+  let agentName = envAgentName
   if (!agentName && teamLeadStatus && appState.teamContext) {
     const leadAgentId = appState.teamContext.leadAgentId
     // Look up the lead's name from agents map (not the UUID)
@@ -3530,14 +3525,10 @@ async function getTeammateMailboxAttachments(
   // Also check AppState.inbox for pending messages (queued mid-turn by useInboxPoller)
   // IMPORTANT: appState.inbox contains messages FROM teammates TO the leader.
   // Only show these when viewing the leader's transcript (not a teammate's).
-  // When viewing a teammate, their messages come from the file-based mailbox above.
   // In-process teammates share AppState with the leader — appState.inbox contains
-  // the LEADER's queued messages, not the teammate's. Skip it to prevent leakage
-  // (including self-echo from broadcasts). Teammates receive messages exclusively
-  // through their file-based mailbox + waitForNextPromptOrShutdown.
-  // Note: viewedTeammate was already computed above for agentName resolution
+  // the LEADER's queued messages, not the teammate's. Skip it to prevent leakage.
   const pendingInboxMessages =
-    viewedTeammate || isInProcessTeammate()
+    isInProcessTeammate()
       ? [] // Viewing teammate or running as in-process teammate - don't show leader's inbox
       : appState.inbox.messages.filter(m => m.status === 'pending')
   logForDebugging(

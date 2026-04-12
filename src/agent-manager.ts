@@ -39,6 +39,8 @@ import { createContentReplacementState } from "./engine/utils/toolResultStorage.
 import type { ContentReplacementState } from "./engine/utils/toolResultStorage.js";
 import { parseWebSessionKey } from "./gateway/protocol.js";
 
+import { startPreventSleep, stopPreventSleep } from "./engine/services/preventSleep.js";
+
 // Engine imports
 import {
   query,
@@ -516,6 +518,7 @@ export class AgentSessionManager {
       return await runWithUserScope(userScope, async () => {
 
       console.log(`[Query] Starting query with ${session.messages.length} messages, model=${model}`);
+      startPreventSleep();
       const gen = query(queryParams);
 
       let currentToolCallId = ""; // Track current tool_use block ID for input_json_delta
@@ -674,6 +677,7 @@ export class AgentSessionManager {
 
       }); // end runWithUserScope
     } finally {
+      stopPreventSleep();
       session.isRunning = false;
     }
   }
