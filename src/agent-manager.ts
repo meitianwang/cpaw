@@ -63,6 +63,10 @@ import { addPermissionRulesToSettings } from "./engine/utils/permissions/permiss
 import { asSystemPrompt, type SystemPrompt } from "./engine/utils/systemPromptType.js";
 import { getAutoMemPath } from "./engine/memdir/paths.js";
 import { enableConfigs } from "./engine/utils/config.js";
+import {
+  registerLeaderToolUseConfirmQueue,
+  unregisterLeaderToolUseConfirmQueue,
+} from "./engine/utils/swarm/leaderPermissionBridge.js";
 
 // ============================================================================
 // Engine Event type (replaces AgentEvent from klaus-agent)
@@ -107,6 +111,8 @@ interface SessionEntry {
   messageQueue: import("./engine/services/messageQueue.js").MessageQueueManager;
   /** Per-session content replacement state for tool result budget — survives across chat turns. */
   contentReplacementState: ContentReplacementState;
+  /** AppState reference — used to abort in-process teammates on session cleanup. */
+  appState?: AppState;
 }
 
 // ============================================================================
@@ -159,6 +165,11 @@ export class AgentSessionManager {
     setProjectRoot(klausHome);
     // Enable engine config reading (must be called before any getGlobalConfig)
     enableConfigs();
+    // Force in-process teammate backend — Klaus is a web service, no tmux/iTerm2
+    import("./engine/utils/swarm/backends/teammateModeSnapshot.js").then(m => {
+      m.setCliTeammateModeOverride('in-process');
+      m.captureTeammateModeSnapshot();
+    });
     // Initialize engine bundled skills (remember, verify, simplify, etc.)
     import("./engine/skills/bundled/index.js").then(m => {
       m.initBundledSkills();
@@ -339,6 +350,7 @@ export class AgentSessionManager {
         additionalDirectoriesForClaudeMd: userAdditionalDirs,
         currentMcpUserConfigPath: getUserMcpConfigPath(userId),
         memoryPathOverride: userMemoryPath,
+        claudeConfigHomeDirOverride: join(homedir(), '.klaus', 'users', userId),
       };
 
       // Ensure this user's MCP servers are loaded.
@@ -367,6 +379,36 @@ export class AgentSessionManager {
 
       // Build ToolUseContext
       const toolUseContext = this.buildToolUseContext(sessionKey, session, tools, model, thinkingConfig, apiKey, baseUrl);
+
+      // Store appState reference on session for cleanup
+      session.appState = toolUseContext.getAppState();
+
+      // Wrap setAppState to detect team events and forward to WebSocket
+      if (sendEvent) {
+        const origSetAppState = toolUseContext.setAppState;
+        toolUseContext.setAppState = (f: any) => {
+          const prev = toolUseContext.getAppState();
+          origSetAppState(f);
+          const next = toolUseContext.getAppState();
+          // Detect team creation
+          if (!prev.teamContext && next.teamContext) {
+            sendEvent(userId, { type: "team_created", teamName: next.teamContext.teamName });
+          }
+          // Detect new in-process teammate tasks
+          if (next.tasks) {
+            for (const [id, task] of Object.entries(next.tasks) as [string, any][]) {
+              if (!prev.tasks?.[id] && task.type === "in_process_teammate") {
+                sendEvent(userId, {
+                  type: "teammate_spawned",
+                  agentId: task.identity?.agentId ?? id,
+                  name: task.identity?.agentName ?? "agent",
+                  color: task.identity?.color,
+                });
+              }
+            }
+          }
+        };
+      }
 
       const attachmentMessages: Message[] = await runWithUserScope(
         userScope,
@@ -518,6 +560,38 @@ export class AgentSessionManager {
       return await runWithUserScope(userScope, async () => {
 
       console.log(`[Query] Starting query with ${session.messages.length} messages, model=${model}`);
+
+      // Register leader permission bridge — routes in-process teammate permission
+      // requests through Klaus's WebSocket permission system.
+      const parsed = parseWebSessionKey(sessionKey);
+      if (parsed && sendEvent) {
+        registerLeaderToolUseConfirmQueue((updater) => {
+          // The updater appends a new entry to the queue. Run it on an empty
+          // array to extract the new entry without needing React state.
+          const entries: any[] = [];
+          const result = updater(entries);
+          const entry = result[result.length - 1] as any;
+          if (!entry?.tool) return;
+
+          // Route through Klaus's WebSocket permission system
+          import("./permission-manager.js").then(async ({ permissionManager }) => {
+            const response = await permissionManager.requestPermission({
+              userId: parsed.userId,
+              sessionId: parsed.sessionId,
+              toolName: entry.tool.name,
+              toolInput: entry.input,
+              message: entry.description ?? `${entry.tool.name} (teammate: ${entry.workerBadge?.name ?? "agent"})`,
+              sendEvent,
+            });
+            if (response.decision === "allow") {
+              entry.onAllow?.(entry.input, false);
+            } else {
+              entry.onReject?.();
+            }
+          });
+        });
+      }
+
       startPreventSleep();
       const gen = query(queryParams);
 
@@ -677,6 +751,7 @@ export class AgentSessionManager {
 
       }); // end runWithUserScope
     } finally {
+      unregisterLeaderToolUseConfirmQueue();
       stopPreventSleep();
       session.isRunning = false;
     }
@@ -764,12 +839,16 @@ export class AgentSessionManager {
   async reset(sessionKey: string): Promise<void> {
     const entry = this.sessions.get(sessionKey);
     if (entry) {
+      this.abortTeammates(entry);
       this.sessions.delete(sessionKey);
     }
     clearSystemPromptSections();
   }
 
   async disposeAll(): Promise<void> {
+    for (const entry of this.sessions.values()) {
+      this.abortTeammates(entry);
+    }
     this.sessions.clear();
     // Shutdown path — no new requests expected, skip mutex to avoid deadlock
     // if a chat() call is still holding the lock during SIGTERM.
@@ -844,8 +923,19 @@ export class AgentSessionManager {
 
     for (const [key, entry] of this.sessions) {
       if (!entry.isRunning) {
+        this.abortTeammates(entry);
         this.sessions.delete(key);
         return;
+      }
+    }
+  }
+
+  /** Abort all in-process teammate tasks for a session. */
+  private abortTeammates(entry: SessionEntry): void {
+    if (!entry.appState?.tasks) return;
+    for (const task of Object.values(entry.appState.tasks) as any[]) {
+      if (task.type === "in_process_teammate" && task.abortController) {
+        task.abortController.abort();
       }
     }
   }

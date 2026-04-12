@@ -69,6 +69,8 @@ export async function ensureUserDirs(userId: string): Promise<void> {
     mkdir(getUserUploadsDir(userId), { recursive: true }),
     mkdir(getUserWorkspaceDir(userId), { recursive: true }),
     mkdir(getUserSkillsDir(userId), { recursive: true }),
+    mkdir(join(USERS_BASE, userId, "teams"), { recursive: true }),
+    mkdir(join(USERS_BASE, userId, "tasks"), { recursive: true }),
   ]);
   ensuredUsers.add(userId);
 }

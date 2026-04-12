@@ -1,16 +1,19 @@
 import memoize from 'lodash-es/memoize.js'
 import { homedir } from 'os'
 import { join } from 'path'
+import { getScopedClaudeConfigHomeDir } from '../bootstrap/state.js'
 
-// Memoized: 150+ callers, many on hot paths. Keyed off CLAUDE_CONFIG_DIR so
-// tests that change the env var get a fresh value without explicit cache.clear.
+// Memoized: 150+ callers, many on hot paths. Keyed off CLAUDE_CONFIG_DIR and
+// ALS-scoped override so each user gets an independent cached value.
 export const getClaudeConfigHomeDir = memoize(
   (): string => {
+    const scoped = getScopedClaudeConfigHomeDir()
+    if (scoped) return scoped.normalize('NFC')
     return (
       process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
     ).normalize('NFC')
   },
-  () => process.env.CLAUDE_CONFIG_DIR,
+  () => getScopedClaudeConfigHomeDir() ?? process.env.CLAUDE_CONFIG_DIR,
 )
 
 export function getTeamsDir(): string {

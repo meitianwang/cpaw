@@ -22,6 +22,7 @@ process.env.CLAUDE_CODE_FEATURES = [
 ].filter(Boolean).join(',')
 
 process.env.CLAUDE_CONFIG_DIR = join(homedir(), '.klaus')
+process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1'
 
 ;(globalThis as any).MACRO = {
   VERSION: '2.1.88',

@@ -83,6 +83,23 @@ export type WsEvent =
       readonly serverName: string;
       readonly url: string;
       readonly sessionId?: string;
+    }
+  | {
+      readonly type: "team_created";
+      readonly teamName: string;
+      readonly sessionId?: string;
+    }
+  | {
+      readonly type: "teammate_spawned";
+      readonly agentId: string;
+      readonly name: string;
+      readonly color?: string;
+      readonly sessionId?: string;
+    }
+  | {
+      readonly type: "teammate_killed";
+      readonly agentId: string;
+      readonly sessionId?: string;
     };
 
 export type GatewayRpcResponseEnvelope = {

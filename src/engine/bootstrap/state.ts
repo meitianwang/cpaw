@@ -1671,6 +1671,8 @@ interface UserScopedState {
   anthropicBaseUrl?: string | null
   /** Per-user memory path override — avoids process.env race under concurrency. */
   memoryPathOverride?: string | null
+  /** Per-user Claude config home dir — scopes teams/tasks/mailbox paths per user. */
+  claudeConfigHomeDirOverride?: string | null
 }
 
 const userScopedStorage = new AsyncLocalStorage<UserScopedState>()
@@ -1752,6 +1754,15 @@ export function getScopedMemoryPathOverride(): string | null {
  */
 export function getScopedUserId(): string | null {
   return userScopedStorage.getStore()?.userId ?? null
+}
+
+/**
+ * Per-user Claude config home dir override.  ALS-scoped so concurrent users
+ * get isolated teams/tasks/mailbox paths.
+ * Returns null in single-user CLI mode (no ALS store).
+ */
+export function getScopedClaudeConfigHomeDir(): string | null {
+  return userScopedStorage.getStore()?.claudeConfigHomeDirOverride ?? null
 }
 
 export function getAllowedChannels(): ChannelEntry[] {
