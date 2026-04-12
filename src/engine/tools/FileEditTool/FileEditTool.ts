@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, sep } from 'path'
 import { logEvent } from '../../services/analytics/index.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
-import { diagnosticTracker } from '../../services/diagnosticTracking.js'
+const diagnosticTracker = { beforeFileEdited: async (_path: string) => {} }
 
 import { notifyVscodeFileUpdated } from '../../services/mcp/vscodeSdkMcp.js'
 import { checkTeamMemSecrets } from '../../services/teamMemorySync/teamMemSecretGuard.js'

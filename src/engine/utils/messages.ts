@@ -129,7 +129,7 @@ import {
   LOCAL_COMMAND_CAVEAT_TAG,
   LOCAL_COMMAND_STDOUT_TAG,
 } from '../constants/xml.js'
-import { DiagnosticTrackingService } from '../services/diagnosticTracking.js'
+const DiagnosticTrackingService = { formatDiagnosticsSummary: (_files: any[]) => '' }
 import {
   findToolByName,
   type Tool,

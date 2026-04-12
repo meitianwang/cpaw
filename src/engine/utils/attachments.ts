@@ -49,8 +49,8 @@ import { getCwd } from './cwd.js'
 import { logError } from './log.js'
 import { logAntError } from './debug.js'
 import { isENOENT, toError } from './errors.js'
-import type { DiagnosticFile } from '../services/diagnosticTracking.js'
-import { diagnosticTracker } from '../services/diagnosticTracking.js'
+type DiagnosticFile = { uri: string; diagnostics: unknown[] }
+const diagnosticTracker = { getNewDiagnostics: async (): Promise<DiagnosticFile[]> => [] }
 import type {
   AttachmentMessage,
   Message,

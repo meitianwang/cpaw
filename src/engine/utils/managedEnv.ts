@@ -1,4 +1,5 @@
-import { isRemoteManagedSettingsEligible } from '../services/remoteManagedSettings/syncCache.js'
+// remoteManagedSettings removed — Klaus doesn't use Anthropic remote settings
+const isRemoteManagedSettingsEligible = () => false
 import { clearCACertsCache } from './caCerts.js'
 import { getGlobalConfig } from './config.js'
 import { isEnvTruthy } from './envUtils.js'

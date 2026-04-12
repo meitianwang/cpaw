@@ -8,7 +8,8 @@ import {
   getOriginalCwd,
   getUseCoworkPlugins,
 } from '../../bootstrap/state.js'
-import { getRemoteManagedSettingsSyncFromCache } from '../../services/remoteManagedSettings/syncCacheState.js'
+// remoteManagedSettings removed — Klaus doesn't use Anthropic remote settings
+const getRemoteManagedSettingsSyncFromCache = (): null => null
 import { uniq } from '../array.js'
 import { logForDebugging } from '../debug.js'
 import { logForDiagnosticsNoPII } from '../diagLogs.js'
