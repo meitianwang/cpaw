@@ -673,7 +673,7 @@ tr.clickable:hover { background: var(--card-bg); }
       btn_add_model: "+ Add Model", btn_refresh_models: "Refresh Models", btn_add_prompt: "+ Add Prompt",      lbl_model_id: "ID", lbl_model_name: "Name", lbl_model_provider: "Provider", lbl_model_model: "Model ID",
       lbl_model_apikey: "API Key", lbl_model_baseurl: "Base URL", lbl_model_tokens: "Max Context Tokens", lbl_model_thinking: "Thinking",
       lbl_model_cost: "Cost ($/M tokens)", lbl_cost_input: "Input", lbl_cost_output: "Output", lbl_cost_cache_read: "Cache Read", lbl_cost_cache_write: "Cache Write",
-      lbl_set_default: "Set as default", no_models: "No models configured.",
+      lbl_set_default: "Set as default", lbl_model_role: "Role", no_models: "No models configured.",
       lbl_prompt_id: "ID", lbl_prompt_name: "Name", lbl_prompt_content: "Content", no_prompts: "No prompts configured.",
       default_badge: "Default",
       confirm_delete_model: "Delete this model?", confirm_delete_prompt: "Delete this prompt?",
@@ -711,7 +711,7 @@ tr.clickable:hover { background: var(--card-bg); }
       btn_add_model: "+ 添加模型", btn_refresh_models: "刷新模型", btn_add_prompt: "+ 添加提示词",      lbl_model_id: "ID", lbl_model_name: "名称", lbl_model_provider: "提供商", lbl_model_model: "模型 ID",
       lbl_model_apikey: "API Key", lbl_model_baseurl: "API 地址", lbl_model_tokens: "最大上下文 Token", lbl_model_thinking: "思考",
       lbl_model_cost: "成本 ($/百万 Token)", lbl_cost_input: "输入", lbl_cost_output: "输出", lbl_cost_cache_read: "缓存读取", lbl_cost_cache_write: "缓存写入",
-      lbl_set_default: "设为默认", no_models: "暂无模型配置。",
+      lbl_set_default: "设为默认", lbl_model_role: "角色", no_models: "暂无模型配置。",
       lbl_prompt_id: "ID", lbl_prompt_name: "名称", lbl_prompt_content: "内容", no_prompts: "暂无提示词配置。",
       default_badge: "默认",
       confirm_delete_model: "确定删除此模型？", confirm_delete_prompt: "确定删除此提示词？",
@@ -1203,9 +1203,15 @@ tr.clickable:hover { background: var(--card-bg); }
       var models = d.models || [];
       if (!models.length) { modelsWrap.innerHTML = ""; modelsEmpty.style.display = "block"; return; }
       modelsEmpty.style.display = "none";
-      var h = "<table><thead><tr><th>ID</th><th>" + tt("lbl_model_name") + "</th><th>" + tt("lbl_model_provider") + "</th><th>" + tt("lbl_model_model") + "</th><th>" + tt("lbl_model_thinking") + "</th><th>Status</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
+      var h = "<table><thead><tr><th>ID</th><th>" + tt("lbl_model_name") + "</th><th>" + tt("lbl_model_provider") + "</th><th>" + tt("lbl_model_model") + "</th><th>" + tt("lbl_model_thinking") + "</th><th>Status</th><th>" + tt("lbl_model_role") + "</th><th>" + tt("actions") + "</th></tr></thead><tbody>";
       models.forEach(function(m) {
         var badge = m.isDefault ? "<span class='badge badge-green'>" + tt("default_badge") + "</span>" : "";
+        var roleSelect = "<select class='f-select f-select-sm' data-setrole='" + esc(m.id) + "' style='min-width:80px'>"
+          + "<option value=''" + (!m.role ? " selected" : "") + ">-</option>"
+          + "<option value='sonnet'" + (m.role === "sonnet" ? " selected" : "") + ">Sonnet</option>"
+          + "<option value='haiku'" + (m.role === "haiku" ? " selected" : "") + ">Haiku</option>"
+          + "<option value='opus'" + (m.role === "opus" ? " selected" : "") + ">Opus</option>"
+          + "</select>";
         h += "<tr>"
           + "<td><span class='code-text'>" + esc(m.id) + "</span></td>"
           + "<td>" + esc(m.name) + "</td>"
@@ -1213,6 +1219,7 @@ tr.clickable:hover { background: var(--card-bg); }
           + "<td>" + esc(m.model) + "</td>"
           + "<td>" + esc(m.thinking || "off") + "</td>"
           + "<td>" + badge + "</td>"
+          + "<td>" + roleSelect + "</td>"
           + "<td><div class='actions'>"
           + (m.isDefault ? "" : "<button class='btn btn-sm btn-ghost' data-setdefault='" + esc(m.id) + "'>" + tt("lbl_set_default") + "</button>")
           + "<button class='btn btn-sm btn-ghost' data-editmodel='" + esc(m.id) + "'>Edit</button>"
@@ -1325,6 +1332,14 @@ tr.clickable:hover { background: var(--card-bg); }
       .catch(function() { showToast(tt("failed")); })
       .finally(function() { mfSave.disabled = false; });
   };
+
+  modelsWrap.addEventListener("change", function(e) {
+    var sel = e.target.closest("select[data-setrole]");
+    if (!sel) return;
+    var id = sel.dataset.setrole;
+    var role = sel.value || null;
+    api("models?id=" + encodeURIComponent(id), "PATCH", { role: role }).then(function() { loadModels(); });
+  });
 
   modelsWrap.addEventListener("click", function(e) {
     var btn = e.target.closest("button");

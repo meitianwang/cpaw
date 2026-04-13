@@ -21,6 +21,9 @@ export interface ModelCostRecord {
   readonly cacheWrite?: number;
 }
 
+/** Valid model roles matching CC engine tiers. */
+export type ModelRole = "sonnet" | "haiku" | "opus";
+
 export interface ModelRecord {
   readonly id: string;
   readonly name: string;
@@ -31,6 +34,7 @@ export interface ModelRecord {
   readonly maxContextTokens: number;
   readonly thinking: string;
   readonly isDefault: boolean;
+  readonly role?: ModelRole;
   readonly cost?: ModelCostRecord;
   readonly authType?: "api_key" | "oauth";
   readonly refreshToken?: string;
@@ -132,6 +136,54 @@ export class SettingsStore {
     `);
   }
 
+  /**
+   * Apply model role settings to process.env so the CC engine's
+   * getDefaultSonnetModel() / getDefaultHaikuModel() / getSmallFastModel()
+   * return the correct model IDs for this Klaus instance.
+   *
+   * Three tiers matching the CC engine:
+   *   model.sonnet  — Sonnet-tier (memory relevance selection via findRelevantMemories)
+   *   model.haiku   — Haiku-tier (token counting, hooks, Web Search)
+   *   model.opus    — Opus-tier (not currently used by engine internals, reserved)
+   *
+   * If not set, falls back to the default model to prevent the engine
+   * from calling hardcoded Anthropic model IDs on third-party providers.
+   * Call once at startup after SettingsStore is initialized.
+   */
+  applyModelEnvOverrides(): void {
+    const sonnetModel = this.getModelByRole("sonnet");
+    const haikuModel = this.getModelByRole("haiku");
+    const opusModel = this.getModelByRole("opus");
+
+    if (sonnetModel) {
+      process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnetModel.model;
+    }
+    if (haikuModel) {
+      process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = haikuModel.model;
+      process.env.ANTHROPIC_SMALL_FAST_MODEL = haikuModel.model;
+    }
+    if (opusModel) {
+      process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = opusModel.model;
+    }
+
+    // Fall back to the default model for any unconfigured tier.
+    // This prevents the engine from calling hardcoded Anthropic model IDs
+    // that don't exist on the user's provider.
+    const defaultModel = this.getDefaultModel();
+    if (defaultModel) {
+      if (!sonnetModel) {
+        process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = defaultModel.model;
+      }
+      if (!haikuModel) {
+        process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = defaultModel.model;
+        process.env.ANTHROPIC_SMALL_FAST_MODEL = defaultModel.model;
+      }
+      if (!opusModel) {
+        process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = defaultModel.model;
+      }
+    }
+  }
+
   private migrate(): void {
     // Add cost columns to models table (v0.2.2)
     const cols = this.db.prepare("PRAGMA table_info(models)").all() as { name: string }[];
@@ -157,6 +209,10 @@ export class SettingsStore {
         ALTER TABLE models ADD COLUMN refresh_token TEXT;
         ALTER TABLE models ADD COLUMN token_expires_at INTEGER;
       `);
+    }
+    // Add role column (sonnet / haiku / opus / null)
+    if (!colNames.has("role")) {
+      this.db.exec(`ALTER TABLE models ADD COLUMN role TEXT`);
     }
   }
 
@@ -314,13 +370,13 @@ export class SettingsStore {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO models (id, name, provider, model, api_key, base_url, max_context_tokens, thinking, is_default, cost_input, cost_output, cost_cache_read, cost_cache_write, auth_type, refresh_token, token_expires_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO models (id, name, provider, model, api_key, base_url, max_context_tokens, thinking, is_default, role, cost_input, cost_output, cost_cache_read, cost_cache_write, auth_type, refresh_token, token_expires_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name, provider = excluded.provider, model = excluded.model,
            api_key = excluded.api_key, base_url = excluded.base_url,
            max_context_tokens = excluded.max_context_tokens, thinking = excluded.thinking,
-           is_default = excluded.is_default,
+           is_default = excluded.is_default, role = excluded.role,
            cost_input = excluded.cost_input, cost_output = excluded.cost_output,
            cost_cache_read = excluded.cost_cache_read, cost_cache_write = excluded.cost_cache_write,
            auth_type = excluded.auth_type, refresh_token = excluded.refresh_token,
@@ -331,7 +387,7 @@ export class SettingsStore {
         m.id, m.name, m.provider, m.model,
         m.apiKey ?? null, m.baseUrl ?? null,
         m.maxContextTokens, m.thinking,
-        m.isDefault ? 1 : 0,
+        m.isDefault ? 1 : 0, m.role ?? null,
         m.cost?.input ?? null, m.cost?.output ?? null,
         m.cost?.cacheRead ?? null, m.cost?.cacheWrite ?? null,
         m.authType ?? "api_key", m.refreshToken ?? null, m.tokenExpiresAt ?? null,
@@ -349,6 +405,26 @@ export class SettingsStore {
       this.db.prepare("UPDATE models SET is_default = 0").run();
       this.db.prepare("UPDATE models SET is_default = 1 WHERE id = ?").run(id);
     })();
+  }
+
+  /** Assign a role to a model. Clears the role from any other model first. */
+  setModelRole(id: string, role: ModelRole | null): void {
+    this.db.transaction(() => {
+      if (role) {
+        // Clear this role from all models
+        this.db.prepare("UPDATE models SET role = NULL WHERE role = ?").run(role);
+      }
+      // Set the role on the target model (or clear it if role is null)
+      this.db.prepare("UPDATE models SET role = ? WHERE id = ?").run(role, id);
+    })();
+  }
+
+  /** Get the model assigned to a specific role, or undefined. */
+  getModelByRole(role: ModelRole): ModelRecord | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM models WHERE role = ? LIMIT 1")
+      .get(role) as RawModelRow | undefined;
+    return row ? toModelRecord(row) : undefined;
   }
 
   // -----------------------------------------------------------------------
@@ -531,6 +607,7 @@ interface RawModelRow {
   auth_type: string | null;
   refresh_token: string | null;
   token_expires_at: number | null;
+  role: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -556,6 +633,7 @@ function toModelRecord(r: RawModelRow): ModelRecord {
     thinking: r.thinking,
     isDefault: r.is_default === 1,
     ...(cost ? { cost } : {}),
+    ...(r.role ? { role: r.role as ModelRole } : {}),
     authType: (r.auth_type as "api_key" | "oauth") ?? "api_key",
     ...(r.refresh_token ? { refreshToken: r.refresh_token } : {}),
     ...(r.token_expires_at != null ? { tokenExpiresAt: r.token_expires_at } : {}),

@@ -65,6 +65,11 @@ async function start(): Promise<void> {
   // Initialize settings store (SQLite)
   const settingsStore = new SettingsStore();
 
+  // Apply model role overrides so the engine's getDefaultSonnetModel() / getDefaultHaikuModel()
+  // return model IDs compatible with this Klaus instance's provider.
+  // Roles are set per-model in the admin panel (sonnet / haiku / opus).
+  settingsStore.applyModelEnvOverrides();
+
   // Run per-user directory migration if needed
   const { runMigrationIfNeeded } = await import("./migration/user-dirs.js");
   await runMigrationIfNeeded();

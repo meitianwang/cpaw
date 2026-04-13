@@ -1,6 +1,7 @@
 import type {
   ModelCostRecord,
   ModelRecord,
+  ModelRole,
   SettingsStore,
 } from "../../settings-store.js";
 import { GatewayError } from "../errors.js";
@@ -20,6 +21,13 @@ function parseModelCost(parsed: Record<string, unknown>): ModelCostRecord | unde
     ...(Number.isFinite(cacheRead) && cacheRead >= 0 ? { cacheRead } : {}),
     ...(Number.isFinite(cacheWrite) && cacheWrite >= 0 ? { cacheWrite } : {}),
   };
+}
+
+const VALID_ROLES = new Set<string>(["sonnet", "haiku", "opus"]);
+
+function validateRole(raw: unknown): ModelRole | undefined {
+  if (!raw || typeof raw !== "string") return undefined;
+  return VALID_ROLES.has(raw) ? (raw as ModelRole) : undefined;
 }
 
 function sanitizeModel(model: ModelRecord): Record<string, unknown> {
@@ -86,6 +94,11 @@ function normalizeModelInput(
         ? String(input.thinking ?? "off")
         : (existing?.thinking ?? "off"),
     isDefault: existing?.isDefault ?? Boolean(input.is_default),
+    ...("role" in input
+      ? { role: validateRole(input.role) }
+      : existing?.role
+        ? { role: existing.role }
+        : {}),
     ...(cost ? { cost } : {}),
     ...(existing?.authType ? { authType: existing.authType } : {}),
     ...(existing?.refreshToken ? { refreshToken: existing.refreshToken } : {}),
@@ -114,6 +127,9 @@ export function createGatewayAdminModel(params: {
   if (params.input.is_default) {
     params.settingsStore.setDefaultModel(model.id);
   }
+  if (model.role) {
+    params.settingsStore.setModelRole(model.id, model.role);
+  }
   const stored = params.settingsStore.getModel(model.id) ?? model;
   return { ok: true, model: sanitizeModel(stored) };
 }
@@ -131,6 +147,9 @@ export function updateGatewayAdminModel(params: {
   params.settingsStore.upsertModel(model);
   if (params.patch.is_default) {
     params.settingsStore.setDefaultModel(model.id);
+  }
+  if ("role" in params.patch) {
+    params.settingsStore.setModelRole(model.id, model.role ?? null);
   }
   const stored = params.settingsStore.getModel(model.id) ?? model;
   return { ok: true, model: sanitizeModel(stored) };
