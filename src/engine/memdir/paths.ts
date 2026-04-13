@@ -232,10 +232,9 @@ export const getAutoMemPath = memoize(
     if (override) {
       return override
     }
-    const projectsDir = join(getMemoryBaseDir(), 'projects')
-    return (
-      join(projectsDir, sanitizePath(getAutoMemBase()), AUTO_MEM_DIRNAME) + sep
-    ).normalize('NFC')
+    throw new Error(
+      'getAutoMemPath: no memory path override set. Klaus requires a per-user memoryPathOverride via ALS scope.',
+    )
   },
   // Key includes the ALS-scoped override so concurrent users with different
   // memory paths don't share a single cached result.
