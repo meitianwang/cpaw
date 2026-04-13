@@ -10,7 +10,14 @@ import { sequential } from '../../utils/sequential.js'
 import { getSessionIngressAuthToken } from '../../utils/sessionIngressAuth.js'
 import { sleep } from '../../utils/sleep.js'
 import { jsonStringify } from '../../utils/slowOperations.js'
-import { getOAuthHeaders } from '../../utils/teleport/api.js'
+
+function getOAuthHeaders(accessToken: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'anthropic-version': '2023-06-01',
+  }
+}
 
 interface SessionIngressError {
   error?: {

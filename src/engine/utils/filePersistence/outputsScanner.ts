@@ -10,7 +10,7 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { logForDebugging } from '../debug.js'
-import type { EnvironmentKind } from '../teleport/environments.js'
+
 import type { TurnStartTime } from './types.js'
 
 /** Shared debug logger for file persistence modules */
@@ -22,7 +22,7 @@ export function logDebug(message: string): void {
  * Get the environment kind from CLAUDE_CODE_ENVIRONMENT_KIND.
  * Returns null if not set or not a recognized value.
  */
-export function getEnvironmentKind(): EnvironmentKind | null {
+export function getEnvironmentKind(): string | null {
   const kind = process.env.CLAUDE_CODE_ENVIRONMENT_KIND
   if (kind === 'byoc' || kind === 'anthropic_cloud') {
     return kind
