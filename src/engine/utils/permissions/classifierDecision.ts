@@ -20,21 +20,6 @@ import { TODO_WRITE_TOOL_NAME } from '../../tools/TodoWriteTool/constants.js'
 import { TOOL_SEARCH_TOOL_NAME } from '../../tools/ToolSearchTool/prompt.js'
 import { YOLO_CLASSIFIER_TOOL_NAME } from './yoloClassifier.js'
 
-// Ant-only tool names: conditional require so Bun can DCE these in external builds.
-// Gates mirror tools.ts. Keeps the tool name strings out of cli.js.
-/* eslint-disable @typescript-eslint/no-require-imports */
-const VERIFY_PLAN_EXECUTION_TOOL_NAME =
-  process.env.USER_TYPE === 'ant'
-    ? (
-        require('../../tools/VerifyPlanExecutionTool/constants.js') as typeof import('../../tools/VerifyPlanExecutionTool/constants.js')
-      ).VERIFY_PLAN_EXECUTION_TOOL_NAME
-    : null
-const WORKFLOW_TOOL_NAME = feature('WORKFLOW_SCRIPTS')
-  ? (
-      require('../../tools/WorkflowTool/constants.js') as typeof import('../../tools/WorkflowTool/constants.js')
-    ).WORKFLOW_TOOL_NAME
-  : null
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 /**
  * Tools that are safe and don't need any classifier checking.
@@ -69,10 +54,6 @@ const SAFE_YOLO_ALLOWLISTED_TOOLS = new Set([
   // Agent cleanup
   TEAM_DELETE_TOOL_NAME,
   SEND_MESSAGE_TOOL_NAME,
-  // Workflow orchestration — subagents go through canUseTool individually
-  ...(WORKFLOW_TOOL_NAME ? [WORKFLOW_TOOL_NAME] : []),
-  // Misc safe
-  ...(VERIFY_PLAN_EXECUTION_TOOL_NAME ? [VERIFY_PLAN_EXECUTION_TOOL_NAME] : []),
   // Internal classifier tool
   YOLO_CLASSIFIER_TOOL_NAME,
 ])
