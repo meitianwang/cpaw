@@ -51,7 +51,7 @@ import {
 import { AGENT_TOOL_NAME } from '../../tools/AgentTool/constants.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 /* eslint-enable @typescript-eslint/no-require-imports */
-import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
+
 import { getToolsForDefaultPreset, parseToolPreset } from '../../tools.js'
 import {
   getFsImplementation,
@@ -146,37 +146,9 @@ export function isDangerousBashPermission(
   return false
 }
 
+
 /**
- * Checks if a PowerShell permission rule is dangerous for auto mode.
- * A rule is dangerous if it would auto-allow commands that execute arbitrary
- * code (nested shells, Invoke-Expression, Start-Process, etc.), bypassing the
- * classifier's safety evaluation.
- *
- * PowerShell is case-insensitive, so rule content is lowercased before matching.
- */
-export function isDangerousPowerShellPermission(
-  toolName: string,
-  ruleContent: string | undefined,
-): boolean {
-  if (toolName !== POWERSHELL_TOOL_NAME) {
-    return false
-  }
-
-  // Tool-level allow (PowerShell with no content, or PowerShell(*)) - allows ALL commands
-  if (ruleContent === undefined || ruleContent === '') {
-    return true
-  }
-
-  const content = ruleContent.trim().toLowerCase()
-
-  // Standalone wildcard (*) matches everything
-  if (content === '*') {
-    return true
-  }
-
-  // PS-specific cmdlet names. CROSS_PLATFORM_CODE_EXEC is shared with bash.
-  const patterns: readonly string[] = [
-    ...CROSS_PLATFORM_CODE_EXEC,
+ * Finds all overly broad Bash allow rules from settings and CLI arguments.
     // Nested PS + shells launchable from PS
     'pwsh',
     'powershell',
@@ -279,7 +251,6 @@ function isDangerousClassifierPermission(
   }
   return (
     isDangerousBashPermission(toolName, ruleContent) ||
-    isDangerousPowerShellPermission(toolName, ruleContent) ||
     isDangerousTaskPermission(toolName, ruleContent)
   )
 }
@@ -357,21 +328,6 @@ export function isOverlyBroadBashAllowRule(
 }
 
 /**
- * PowerShell equivalent of isOverlyBroadBashAllowRule.
- *
- * Matches: PowerShell, PowerShell(*), PowerShell() — all parse to
- * { toolName: 'PowerShell' } with no ruleContent.
- */
-export function isOverlyBroadPowerShellAllowRule(
-  ruleValue: PermissionRuleValue,
-): boolean {
-  return (
-    ruleValue.toolName === POWERSHELL_TOOL_NAME &&
-    ruleValue.ruleContent === undefined
-  )
-}
-
-/**
  * Finds all overly broad Bash allow rules from settings and CLI arguments.
  * An overly broad rule allows ALL bash commands (e.g., Bash or Bash(*)),
  * which is effectively equivalent to YOLO/bypass-permissions mode.
@@ -411,43 +367,6 @@ export function findOverlyBroadBashPermissions(
   return overlyBroad
 }
 
-/**
- * PowerShell equivalent of findOverlyBroadBashPermissions.
- */
-export function findOverlyBroadPowerShellPermissions(
-  rules: PermissionRule[],
-  cliAllowedTools: string[],
-): DangerousPermissionInfo[] {
-  const overlyBroad: DangerousPermissionInfo[] = []
-
-  for (const rule of rules) {
-    if (
-      rule.ruleBehavior === 'allow' &&
-      isOverlyBroadPowerShellAllowRule(rule.ruleValue)
-    ) {
-      overlyBroad.push({
-        ruleValue: rule.ruleValue,
-        source: rule.source,
-        ruleDisplay: `${POWERSHELL_TOOL_NAME}(*)`,
-        sourceDisplay: formatPermissionSource(rule.source),
-      })
-    }
-  }
-
-  for (const toolSpec of cliAllowedTools) {
-    const parsed = permissionRuleValueFromString(toolSpec)
-    if (isOverlyBroadPowerShellAllowRule(parsed)) {
-      overlyBroad.push({
-        ruleValue: parsed,
-        source: 'cliArg',
-        ruleDisplay: `${POWERSHELL_TOOL_NAME}(*)`,
-        sourceDisplay: '--allowed-tools',
-      })
-    }
-  }
-
-  return overlyBroad
-}
 
 /**
  * Type guard to check if a PermissionRuleSource is a valid PermissionUpdateDestination.
@@ -957,10 +876,6 @@ export async function initializeToolPermissionContext({
   ) {
     overlyBroadBashPermissions = [
       ...findOverlyBroadBashPermissions(rulesFromDisk, parsedAllowedToolsCli),
-      ...findOverlyBroadPowerShellPermissions(
-        rulesFromDisk,
-        parsedAllowedToolsCli,
-      ),
     ]
   }
 

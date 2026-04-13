@@ -18,9 +18,7 @@ import {
 import { subprocessEnv } from './subprocessEnv.js'
 import { getPlatform } from './platform.js'
 import { findGitBashPath, windowsPathToPosixPath } from './windowsPaths.js'
-import { getCachedPowerShellPath } from './shell/powershellDetection.js'
 import { DEFAULT_HOOK_SHELL } from './shell/shellProvider.js'
-import { buildPowerShellArgs } from './shell/powershellProvider.js'
 import {
   loadPluginOptions,
   substituteUserConfigVariables,
@@ -789,24 +787,13 @@ async function execCommandHook(
   // SHELL_PREFIX).
   const shellType = hook.shell ?? DEFAULT_HOOK_SHELL
 
-  const isPowerShell = shellType === 'powershell'
-
-  // --
   // Windows bash path: hooks run via Git Bash (Cygwin), NOT cmd.exe.
   //
   // This means every path we put into env vars or substitute into the command
   // string MUST be a POSIX path (/c/Users/foo), not a Windows path
   // (C:\Users\foo or C:/Users/foo). Git Bash cannot resolve Windows paths.
-  //
-  // windowsPathToPosixPath() is pure-JS regex conversion (no cygpath shell-out):
-  // C:\Users\foo -> /c/Users/foo, UNC preserved, slashes flipped. Memoized
-  // (LRU-500) so repeated calls are cheap.
-  //
-  // PowerShell path: use native paths — skip the conversion entirely.
-  // PowerShell expects Windows paths on Windows (and native paths on
-  // Unix where pwsh is also available).
   const toHookPath =
-    isWindows && !isPowerShell
+    isWindows
       ? (p: string) => windowsPathToPosixPath(p)
       : (p: string) => p
 
@@ -859,7 +846,7 @@ async function execCommandHook(
   // On Windows (bash only), auto-prepend `bash` for .sh scripts so they
   // execute instead of opening in the default file handler. PowerShell
   // runs .ps1 files natively — no prepend needed.
-  if (isWindows && !isPowerShell && command.trim().match(/\.sh(\s|$|")/)) {
+  if (isWindows && command.trim().match(/\.sh(\s|$|")/)) {
     if (!command.trim().startsWith('bash ')) {
       command = `bash ${command}`
     }
@@ -870,7 +857,7 @@ async function execCommandHook(
   // PowerShell — see design §8.1. For now PS hooks ignore the prefix;
   // a CLAUDE_CODE_PS_SHELL_PREFIX (or shell-aware prefix) is a follow-up.
   const finalCommand =
-    !isPowerShell && process.env.CLAUDE_CODE_SHELL_PREFIX
+    process.env.CLAUDE_CODE_SHELL_PREFIX
       ? formatShellPrefixCommand(process.env.CLAUDE_CODE_SHELL_PREFIX, command)
       : command
 
@@ -915,7 +902,6 @@ async function execCommandHook(
   // Skip for PS — consistent with how .sh prepend and SHELL_PREFIX are
   // already bash-only above.
   if (
-    !isPowerShell &&
     (hookEvent === 'SessionStart' ||
       hookEvent === 'Setup' ||
       hookEvent === 'CwdChanged' ||
@@ -955,22 +941,7 @@ async function execCommandHook(
   // startup, which will exit first. Relaxing that is phase 1 of the
   // design's implementation order (separate PR).
   let child: ChildProcessWithoutNullStreams
-  if (shellType === 'powershell') {
-    const pwshPath = await getCachedPowerShellPath()
-    if (!pwshPath) {
-      throw new Error(
-        `Hook "${hook.command}" has shell: 'powershell' but no PowerShell ` +
-          `executable (pwsh or powershell) was found on PATH. Install ` +
-          `PowerShell, or remove "shell": "powershell" to use bash.`,
-      )
-    }
-    child = spawn(pwshPath, buildPowerShellArgs(finalCommand), {
-      env: envVars,
-      cwd: safeCwd,
-      // Prevent visible console window on Windows (no-op on other platforms)
-      windowsHide: true,
-    }) as ChildProcessWithoutNullStreams
-  } else {
+  {
     // On Windows, use Git Bash explicitly (cmd.exe can't run bash syntax).
     // On other platforms, shell: true uses /bin/sh.
     const shell = isWindows ? findGitBashPath() : true

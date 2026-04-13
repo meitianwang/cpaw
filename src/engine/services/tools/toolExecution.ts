@@ -42,7 +42,7 @@ import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from '../../tools/NotebookEditTool/constants.js'
-import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
+
 import { parseGitCommitId } from '../../tools/shared/gitOperationTracking.js'
 import {
   isDeferredTool,
@@ -1370,7 +1370,7 @@ async function checkPermissionsAndCallTool(
     // Enrich tool parameters with git commit ID from successful git commit output
     if (
       isToolDetailsLoggingEnabled() &&
-      (tool.name === BASH_TOOL_NAME || tool.name === POWERSHELL_TOOL_NAME) &&
+      tool.name === BASH_TOOL_NAME &&
       'command' in processedInput &&
       typeof processedInput.command === 'string' &&
       processedInput.command.match(/\bgit\s+commit\b/) &&

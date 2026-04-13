@@ -462,7 +462,7 @@ export const SettingsSchema = lazySchema(() =>
         .describe('Disable all hooks and statusLine execution'),
       // Which shell backs input-box `!` (see docs/design/ps-shell-selection.md §4.2)
       defaultShell: z
-        .enum(['bash', 'powershell'])
+        .enum(['bash'])
         .optional()
         .describe(
           'Default shell for input-box ! commands. ' +

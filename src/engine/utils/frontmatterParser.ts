@@ -336,9 +336,9 @@ export function parseBooleanFrontmatter(value: unknown): boolean {
 /**
  * Shell values accepted in `shell:` frontmatter for .md `!`-block execution.
  */
-export type FrontmatterShell = 'bash' | 'powershell'
+export type FrontmatterShell = 'bash'
 
-const FRONTMATTER_SHELLS: readonly FrontmatterShell[] = ['bash', 'powershell']
+const FRONTMATTER_SHELLS: readonly FrontmatterShell[] = ['bash']
 
 /**
  * Parse and validate the `shell:` frontmatter field.

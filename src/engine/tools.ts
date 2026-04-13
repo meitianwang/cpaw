@@ -84,17 +84,9 @@ import type { ToolPermissionContext } from './Tool.js'
 import { getDenyRuleForTool } from './utils/permissions/permissions.js'
 import { hasEmbeddedSearchTools } from './utils/embeddedTools.js'
 import { isEnvTruthy } from './utils/envUtils.js'
-import { isPowerShellToolEnabled } from './utils/shell/shellToolUtils.js'
 import { isAgentSwarmsEnabled } from './utils/agentSwarmsEnabled.js'
 import { isWorktreeModeEnabled } from './utils/worktreeModeEnabled.js'
-/* eslint-disable @typescript-eslint/no-require-imports */
-const getPowerShellTool = () => {
-  if (!isPowerShellToolEnabled()) return null
-  return (
-    require('./tools/PowerShellTool/PowerShellTool.js') as typeof import('./tools/PowerShellTool/PowerShellTool.js')
-  ).PowerShellTool
-}
-/* eslint-enable @typescript-eslint/no-require-imports */
+
 
 /**
  * Predefined tool presets that can be used with --tools flag
@@ -166,7 +158,6 @@ export function getAllBaseTools(): Tools {
     ...cronTools,
     ...(RemoteTriggerTool ? [RemoteTriggerTool] : []),
     BriefTool,
-    ...(getPowerShellTool() ? [getPowerShellTool()] : []),
     ...(process.env.NODE_ENV === 'test' ? [TestingPermissionTool] : []),
     ListMcpResourcesTool,
     ReadMcpResourceTool,

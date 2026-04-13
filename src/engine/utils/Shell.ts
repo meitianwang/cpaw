@@ -35,8 +35,6 @@ import { getPlatform } from './platform.js'
 import { SandboxManager } from './sandbox/sandbox-adapter.js'
 import { invalidateSessionEnvCache } from './sessionEnvironment.js'
 import { createBashShellProvider } from './shell/bashProvider.js'
-import { getCachedPowerShellPath } from './shell/powershellDetection.js'
-import { createPowerShellProvider } from './shell/powershellProvider.js'
 import type { ShellProvider, ShellType } from './shell/shellProvider.js'
 import { subprocessEnv } from './subprocessEnv.js'
 import { posixPathToWindowsPath } from './windowsPaths.js'
@@ -145,17 +143,8 @@ async function getShellConfigImpl(): Promise<ShellConfig> {
 // Memoize the entire shell config so it only happens once per session
 export const getShellConfig = memoize(getShellConfigImpl)
 
-export const getPsProvider = memoize(async (): Promise<ShellProvider> => {
-  const psPath = await getCachedPowerShellPath()
-  if (!psPath) {
-    throw new Error('PowerShell is not available')
-  }
-  return createPowerShellProvider(psPath)
-})
-
 const resolveProvider: Record<ShellType, () => Promise<ShellProvider>> = {
   bash: async () => (await getShellConfig()).provider,
-  powershell: getPsProvider,
 }
 
 export type ExecOptions = {
@@ -244,22 +233,10 @@ export async function exec(
 
   const binShell = provider.shellPath
 
-  // Sandboxed PowerShell: wrapWithSandbox hardcodes `<binShell> -c '<cmd>'` —
-  // using pwsh there would lose -NoProfile -NonInteractive (profile load
-  // inside sandbox → delays, stray output, may hang on prompts). Instead:
-  //   • powershellProvider.buildExecCommand (useSandbox) pre-wraps as
-  //     `pwsh -NoProfile -NonInteractive -EncodedCommand <base64>` — base64
-  //     survives the runtime's shellquote.quote() layer
-  //   • pass /bin/sh as the sandbox's inner shell to exec that invocation
-  //   • outer spawn is also /bin/sh -c to parse the runtime's POSIX output
-  // /bin/sh exists on every platform where sandbox is supported.
-  const isSandboxedPowerShell = shouldUseSandbox && shellType === 'powershell'
-  const sandboxBinShell = isSandboxedPowerShell ? '/bin/sh' : binShell
-
   if (shouldUseSandbox) {
     commandString = await SandboxManager.wrapWithSandbox(
       commandString,
-      sandboxBinShell,
+      binShell,
       undefined,
       abortSignal,
     )
@@ -272,10 +249,7 @@ export async function exec(
     }
   }
 
-  const spawnBinary = isSandboxedPowerShell ? '/bin/sh' : binShell
-  const shellArgs = isSandboxedPowerShell
-    ? ['-c', commandString]
-    : provider.getSpawnArgs(commandString)
+  const shellArgs = provider.getSpawnArgs(commandString)
   const envOverrides = await provider.getEnvironmentOverrides(command)
 
   // When onStdout is provided, use pipe mode: stdout flows through
@@ -313,7 +287,7 @@ export async function exec(
   }
 
   try {
-    const childProcess = spawn(spawnBinary, shellArgs, {
+    const childProcess = spawn(binShell, shellArgs, {
       env: {
         ...subprocessEnv(),
         SHELL: shellType === 'bash' ? binShell : undefined,
