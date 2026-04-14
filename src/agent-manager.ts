@@ -6,7 +6,7 @@
 import { randomUUID } from "crypto";
 import { homedir } from "os";
 import { join } from "path";
-import { setOriginalCwd, setCwdState, setProjectRoot, runWithUserScope } from "./engine/bootstrap/state.js";
+import { setOriginalCwd, setCwdState, setProjectRoot, runWithUserScope, setIsInteractive } from "./engine/bootstrap/state.js";
 import type { SettingsStore } from "./settings-store.js";
 import { getProvider } from "./providers/registry.js";
 import { refreshAccessToken } from "./auth/oauth.js";
@@ -68,6 +68,8 @@ import {
 } from "./engine/utils/swarm/leaderPermissionBridge.js";
 import { getAgentDefinitionsWithOverrides } from "./engine/tools/AgentTool/loadAgentsDir.js";
 import type { AgentDefinitionsResult } from "./engine/tools/AgentTool/loadAgentsDir.js";
+import { runWithUserCommandQueue } from "./engine/utils/messageQueueManager.js";
+import type { QueuedCommand } from "./engine/types/textInputTypes.js";
 
 // ============================================================================
 // Engine Event type (replaces AgentEvent from klaus-agent)
@@ -151,6 +153,9 @@ export class AgentSessionManager {
   private readonly maxSessions: number;
   // Per-user MCP state — each user owns independent connections, tools, and resources.
   private readonly _mcpByUser = new Map<string, McpUserState>();
+  // Per-user command queues — persist across chat() calls so background agent
+  // notifications enqueued between user messages are not lost or cross-contaminated.
+  private readonly _commandQueueByUser = new Map<string, QueuedCommand[]>();
   private messageStore: MessageStore | null = null;
   /** Public base URL of the Klaus server (e.g. "https://example.com").
    *  Set from config, or inferred from listen address / first request.
@@ -170,6 +175,9 @@ export class AgentSessionManager {
     setOriginalCwd(klausHome);
     setCwdState(klausHome);
     setProjectRoot(klausHome);
+    // Klaus is interactive (WebSocket-based permission approval + task notifications).
+    // Required for isForkSubagentEnabled() to return true.
+    setIsInteractive(true);
     // Enable engine config reading (must be called before any getGlobalConfig)
     enableConfigs();
     // Force in-process teammate backend — Klaus is a web service, no tmux/iTerm2
@@ -395,6 +403,12 @@ export class AgentSessionManager {
       // Build ToolUseContext
       const toolUseContext = this.buildToolUseContext(sessionKey, session, tools, model, thinkingConfig, agentDefinitions, apiKey, baseUrl);
 
+      // Thread the rendered system prompt into the context so fork subagents can
+      // inherit it byte-for-byte (AgentTool.ts fork path uses this for cache-identical
+      // API prefixes; without it the fallback recomputes engine defaults, losing
+      // Klaus's custom system prompt sections entirely).
+      toolUseContext.renderedSystemPrompt = systemPrompt;
+
       // Store appState reference on session for cleanup
       session.appState = toolUseContext.getAppState();
 
@@ -580,7 +594,11 @@ export class AgentSessionManager {
       // Wrap with per-user workspace cwd so BashTool, sub-agents, and in-process
       // teammates all inherit the same isolated workspace (ALS propagates through
       // all nested async calls including spawnTeammate → inProcessRunner).
-      return await runWithCwdOverride(getUserWorkspaceDir(userId), () => runWithUserScope(userScope, async () => {
+      // Wrap with per-user command queue so background agent notifications are
+      // never visible to other users' query turns (cross-user contamination fix).
+      const userQueue = this._commandQueueByUser.get(userId) ?? [];
+      this._commandQueueByUser.set(userId, userQueue);
+      return await runWithUserCommandQueue(userQueue, () => runWithCwdOverride(getUserWorkspaceDir(userId), () => runWithUserScope(userScope, async () => {
 
       console.log(`[Query] Starting query with ${session.messages.length} messages, model=${model}`);
 
@@ -801,7 +819,7 @@ export class AgentSessionManager {
 
       return extractFinalText(session.messages);
 
-      })); // end runWithUserScope + runWithCwdOverride
+      }))); // end runWithUserScope + runWithCwdOverride + runWithUserCommandQueue
     } finally {
       unregisterLeaderToolUseConfirmQueue();
       session.isRunning = false;

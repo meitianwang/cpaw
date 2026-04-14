@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { feature } from 'bun:bundle'
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs'
 import type { Permutations } from '../types/utils.js'
@@ -55,8 +56,36 @@ const commandQueue: QueuedCommand[] = []
 let snapshot: readonly QueuedCommand[] = Object.freeze([])
 const queueChanged = createSignal()
 
+// ---------------------------------------------------------------------------
+// Per-user queue isolation (Klaus multi-user mode)
+//
+// In single-user CLI mode, all code runs in the global commandQueue above.
+// In Klaus (multi-user server), each user's async context carries its own
+// QueuedCommand[] via AsyncLocalStorage so that background agent notifications
+// are never visible to other users' query turns.
+//
+// Usage: wrap each user's chat() call with runWithUserCommandQueue(userQueue, fn).
+// getQueue() is used everywhere below in place of the bare commandQueue name.
+// ---------------------------------------------------------------------------
+
+const userQueueStorage = new AsyncLocalStorage<QueuedCommand[]>()
+
+/** Return the active queue: per-user ALS queue if inside a user context, else global. */
+function getQueue(): QueuedCommand[] {
+  return userQueueStorage.getStore() ?? commandQueue
+}
+
+/**
+ * Run fn with a specific user's command queue as the active queue.
+ * Must be called around each user session's chat() invocation so that
+ * enqueuePendingNotification / dequeue see only that user's commands.
+ */
+export function runWithUserCommandQueue<T>(queue: QueuedCommand[], fn: () => T): T {
+  return userQueueStorage.run(queue, fn)
+}
+
 function notifySubscribers(): void {
-  snapshot = Object.freeze([...commandQueue])
+  snapshot = Object.freeze([...getQueue()])
   queueChanged.emit()
 }
 
@@ -88,21 +117,21 @@ export function getCommandQueueSnapshot(): readonly QueuedCommand[] {
  * Use for one-off reads where you need the actual commands.
  */
 export function getCommandQueue(): QueuedCommand[] {
-  return [...commandQueue]
+  return [...getQueue()]
 }
 
 /**
  * Get the current queue length without copying.
  */
 export function getCommandQueueLength(): number {
-  return commandQueue.length
+  return getQueue().length
 }
 
 /**
  * Check if there are commands in the queue.
  */
 export function hasCommandsInQueue(): boolean {
-  return commandQueue.length > 0
+  return getQueue().length > 0
 }
 
 /**
@@ -111,7 +140,7 @@ export function hasCommandsInQueue(): boolean {
  * are picked up by useSyncExternalStore consumers.
  */
 export function recheckCommandQueue(): void {
-  if (commandQueue.length > 0) {
+  if (getQueue().length > 0) {
     notifySubscribers()
   }
 }
@@ -126,7 +155,7 @@ export function recheckCommandQueue(): void {
  * Defaults priority to 'next' (processed before task notifications).
  */
 export function enqueue(command: QueuedCommand): void {
-  commandQueue.push({ ...command, priority: command.priority ?? 'next' })
+  getQueue().push({ ...command, priority: command.priority ?? 'next' })
   notifySubscribers()
   logOperation(
     'enqueue',
@@ -140,7 +169,7 @@ export function enqueue(command: QueuedCommand): void {
  * is never starved by system messages.
  */
 export function enqueuePendingNotification(command: QueuedCommand): void {
-  commandQueue.push({ ...command, priority: command.priority ?? 'later' })
+  getQueue().push({ ...command, priority: command.priority ?? 'later' })
   notifySubscribers()
   logOperation(
     'enqueue',
@@ -167,15 +196,15 @@ const PRIORITY_ORDER: Record<QueuePriority, number> = {
 export function dequeue(
   filter?: (cmd: QueuedCommand) => boolean,
 ): QueuedCommand | undefined {
-  if (commandQueue.length === 0) {
+  if (getQueue().length === 0) {
     return undefined
   }
 
   // Find the first command with the highest priority (respecting filter)
   let bestIdx = -1
   let bestPriority = Infinity
-  for (let i = 0; i < commandQueue.length; i++) {
-    const cmd = commandQueue[i]!
+  for (let i = 0; i < getQueue().length; i++) {
+    const cmd = getQueue()[i]!
     if (filter && !filter(cmd)) continue
     const priority = PRIORITY_ORDER[cmd.priority ?? 'next']
     if (priority < bestPriority) {
@@ -186,7 +215,7 @@ export function dequeue(
 
   if (bestIdx === -1) return undefined
 
-  const [dequeued] = commandQueue.splice(bestIdx, 1)
+  const [dequeued] = getQueue().splice(bestIdx, 1)
   notifySubscribers()
   logOperation('dequeue')
   return dequeued
@@ -197,12 +226,12 @@ export function dequeue(
  * Logs a dequeue operation for each command.
  */
 export function dequeueAll(): QueuedCommand[] {
-  if (commandQueue.length === 0) {
+  if (getQueue().length === 0) {
     return []
   }
 
-  const commands = [...commandQueue]
-  commandQueue.length = 0
+  const commands = [...getQueue()]
+  getQueue().length = 0
   notifySubscribers()
 
   for (const _cmd of commands) {
@@ -219,13 +248,13 @@ export function dequeueAll(): QueuedCommand[] {
 export function peek(
   filter?: (cmd: QueuedCommand) => boolean,
 ): QueuedCommand | undefined {
-  if (commandQueue.length === 0) {
+  if (getQueue().length === 0) {
     return undefined
   }
   let bestIdx = -1
   let bestPriority = Infinity
-  for (let i = 0; i < commandQueue.length; i++) {
-    const cmd = commandQueue[i]!
+  for (let i = 0; i < getQueue().length; i++) {
+    const cmd = getQueue()[i]!
     if (filter && !filter(cmd)) continue
     const priority = PRIORITY_ORDER[cmd.priority ?? 'next']
     if (priority < bestPriority) {
@@ -234,7 +263,7 @@ export function peek(
     }
   }
   if (bestIdx === -1) return undefined
-  return commandQueue[bestIdx]
+  return getQueue()[bestIdx]
 }
 
 /**
@@ -246,7 +275,7 @@ export function dequeueAllMatching(
 ): QueuedCommand[] {
   const matched: QueuedCommand[] = []
   const remaining: QueuedCommand[] = []
-  for (const cmd of commandQueue) {
+  for (const cmd of getQueue()) {
     if (predicate(cmd)) {
       matched.push(cmd)
     } else {
@@ -256,8 +285,8 @@ export function dequeueAllMatching(
   if (matched.length === 0) {
     return []
   }
-  commandQueue.length = 0
-  commandQueue.push(...remaining)
+  getQueue().length = 0
+  getQueue().push(...remaining)
   notifySubscribers()
   for (const _cmd of matched) {
     logOperation('dequeue')
@@ -275,14 +304,14 @@ export function remove(commandsToRemove: QueuedCommand[]): void {
     return
   }
 
-  const before = commandQueue.length
-  for (let i = commandQueue.length - 1; i >= 0; i--) {
-    if (commandsToRemove.includes(commandQueue[i]!)) {
-      commandQueue.splice(i, 1)
+  const before = getQueue().length
+  for (let i = getQueue().length - 1; i >= 0; i--) {
+    if (commandsToRemove.includes(getQueue()[i]!)) {
+      getQueue().splice(i, 1)
     }
   }
 
-  if (commandQueue.length !== before) {
+  if (getQueue().length !== before) {
     notifySubscribers()
   }
 
@@ -299,9 +328,9 @@ export function removeByFilter(
   predicate: (cmd: QueuedCommand) => boolean,
 ): QueuedCommand[] {
   const removed: QueuedCommand[] = []
-  for (let i = commandQueue.length - 1; i >= 0; i--) {
-    if (predicate(commandQueue[i]!)) {
-      removed.unshift(commandQueue.splice(i, 1)[0]!)
+  for (let i = getQueue().length - 1; i >= 0; i--) {
+    if (predicate(getQueue()[i]!)) {
+      removed.unshift(getQueue().splice(i, 1)[0]!)
     }
   }
 
@@ -320,10 +349,10 @@ export function removeByFilter(
  * Used by ESC cancellation to discard queued notifications.
  */
 export function clearCommandQueue(): void {
-  if (commandQueue.length === 0) {
+  if (getQueue().length === 0) {
     return
   }
-  commandQueue.length = 0
+  getQueue().length = 0
   notifySubscribers()
 }
 
@@ -332,7 +361,7 @@ export function clearCommandQueue(): void {
  * Used for test cleanup.
  */
 export function resetCommandQueue(): void {
-  commandQueue.length = 0
+  getQueue().length = 0
   snapshot = Object.freeze([])
 }
 
@@ -429,12 +458,12 @@ export function popAllEditable(
   currentInput: string,
   currentCursorOffset: number,
 ): PopAllEditableResult | undefined {
-  if (commandQueue.length === 0) {
+  if (getQueue().length === 0) {
     return undefined
   }
 
   const { editable = [], nonEditable = [] } = objectGroupBy(
-    [...commandQueue],
+    [...getQueue()],
     cmd => (isQueuedCommandEditable(cmd) ? 'editable' : 'nonEditable'),
   )
 
@@ -476,8 +505,8 @@ export function popAllEditable(
   }
 
   // Replace queue contents with only the non-editable commands
-  commandQueue.length = 0
-  commandQueue.push(...nonEditable)
+  getQueue().length = 0
+  getQueue().push(...nonEditable)
   notifySubscribers()
 
   return { text: newInput, cursorOffset, images }
@@ -526,7 +555,7 @@ export function getCommandsByMaxPriority(
   maxPriority: QueuePriority,
 ): QueuedCommand[] {
   const threshold = PRIORITY_ORDER[maxPriority]
-  return commandQueue.filter(
+  return getQueue().filter(
     cmd => PRIORITY_ORDER[cmd.priority ?? 'next'] <= threshold,
   )
 }
