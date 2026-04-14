@@ -390,10 +390,13 @@ export class AgentSessionManager {
       const { getAttachmentMessages } = await import("./engine/utils/attachments.js");
       const { toArray } = await import("./engine/utils/generators.js");
 
+      // buildQueryConfig calls getSystemPrompt() which reads cwd from ALS.
+      // Wrap with runWithCwdOverride so the system prompt shows the user's
+      // own workspace (getUserWorkspaceDir) instead of the global ~/.klaus.
       const { systemPrompt, userContext, systemContext, apiKey, baseUrl, model, fallbackModel, maxContextTokens, thinkingConfig, tools, toolSchemas } =
-        await runWithUserScope(baseScope, async () => {
+        await runWithCwdOverride(getUserWorkspaceDir(userId), () => runWithUserScope(baseScope, async () => {
           return this.buildQueryConfig(sessionKey);
-        });
+        }));
 
       // Full scope includes API credentials — used for the query loop and
       // everything that may create an Anthropic client.
