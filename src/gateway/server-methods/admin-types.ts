@@ -21,7 +21,6 @@ export type GatewaySettingsSnapshot = {
     readonly max_age_days: number;
   };
   readonly cron: {
-    readonly enabled: boolean;
     readonly max_concurrent_runs: number | null;
   };
   readonly hooks: import("../../hooks.js").HooksConfig;

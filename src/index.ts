@@ -223,10 +223,9 @@ async function start(): Promise<void> {
   const cronExecutor = (sessionKey: string, prompt: string) =>
     agentManager.chat(sessionKey, prompt);
 
-  // Initialize cron scheduler if configured
+  // Initialize cron scheduler
   let cronScheduler: import("./cron.js").CronScheduler | null = null;
-  const cronEnabled = settingsStore.getBool("cron.enabled", false);
-  if (cronEnabled) {
+  {
     const tasks = settingsStore.listTasks();
     const { CronScheduler } = await import("./cron.js");
     const deliverers = manager.buildDeliverers();

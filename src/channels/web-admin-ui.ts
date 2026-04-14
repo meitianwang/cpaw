@@ -340,10 +340,6 @@ tr.clickable:hover { background: var(--card-bg); }
         <div class="section-header" data-i18n="sec_cron">Cron</div>
         <div class="card">
           <div class="card-row">
-            <div class="card-label" data-i18n="lbl_cron_enabled">Enabled</div>
-            <div class="card-control"><label><input type="checkbox" id="s-cron-enabled"> <span data-i18n="on">On</span></label></div>
-          </div>
-          <div class="card-row">
             <div class="card-label" data-i18n="lbl_cron_max_concurrent">Max Concurrent Runs</div>
             <div class="card-control"><input id="s-cron-max" type="number" class="f-input f-input-sm" min="0"></div>
           </div>
@@ -658,7 +654,7 @@ tr.clickable:hover { background: var(--card-bg); }
       lbl_auth_expire: "Auth Session Expiry",
       hint_auth_expire: "Days before login sessions expire",
       lbl_tx_max_files: "Max Files", lbl_tx_age: "Retention",
-      lbl_cron_enabled: "Enabled", lbl_cron_max_concurrent: "Max Concurrent Runs",
+      lbl_cron_max_concurrent: "Max Concurrent Runs",
       unit_days: "days", unit_minutes: "min",
       btn_save: "Save", btn_create: "Create", btn_cancel: "Cancel",
       on: "On", off: "Off",
@@ -696,7 +692,7 @@ tr.clickable:hover { background: var(--card-bg); }
       lbl_auth_expire: "登录过期时间",
       hint_auth_expire: "登录会话过期天数",
       lbl_tx_max_files: "最大文件数", lbl_tx_age: "保留时间",
-      lbl_cron_enabled: "启用", lbl_cron_max_concurrent: "最大并发数",
+      lbl_cron_max_concurrent: "最大并发数",
       unit_days: "天", unit_minutes: "分钟",
       btn_save: "保存", btn_create: "创建", btn_cancel: "取消",
       on: "开启", off: "关闭",
@@ -873,7 +869,6 @@ tr.clickable:hover { background: var(--card-bg); }
   var sWebSesAge = document.getElementById("s-web-session-age");
   var sTxMaxFiles = document.getElementById("s-tx-max-files");
   var sTxAge = document.getElementById("s-tx-age");
-  var sCronEnabled = document.getElementById("s-cron-enabled");
   var sCronMax = document.getElementById("s-cron-max");
   var saveBtn = document.getElementById("save-settings-btn");
   var saveStatus = document.getElementById("settings-status");
@@ -885,7 +880,6 @@ tr.clickable:hover { background: var(--card-bg); }
       sWebSesAge.value = (d.web && d.web.session_max_age_days) || 7;
       sTxMaxFiles.value = (d.transcripts && d.transcripts.max_files) || 200;
       sTxAge.value = (d.transcripts && d.transcripts.max_age_days) || 30;
-      sCronEnabled.checked = d.cron && d.cron.enabled;
       sCronMax.value = (d.cron && d.cron.max_concurrent_runs) || 0;
     });
   }
@@ -901,7 +895,6 @@ tr.clickable:hover { background: var(--card-bg); }
         max_age_days: parseInt(sTxAge.value, 10) || 30,
       },
       cron: {
-        enabled: sCronEnabled.checked,
         max_concurrent_runs: parseInt(sCronMax.value, 10) || 0,
       },
     })

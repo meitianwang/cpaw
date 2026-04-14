@@ -269,6 +269,9 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
           `To search the content of files, use ${GREP_TOOL_NAME} instead of grep or rg`,
         ]),
     `Reserve using the ${BASH_TOOL_NAME} exclusively for system commands and terminal operations that require shell execution. If you are unsure and there is a relevant dedicated tool, default to using the dedicated tool and only fallback on using the ${BASH_TOOL_NAME} tool for these if it is absolutely necessary.`,
+    ...(enabledTools.has('CronCreate')
+      ? [`For reminders, delayed actions, or any scheduled/recurring tasks, use CronCreate instead of Bash sleep or setTimeout. CronCreate persists to the server, survives restarts, and delivers results to the user's chat.`]
+      : []),
   ]
 
   const items = [

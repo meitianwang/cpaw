@@ -32,7 +32,6 @@ function buildSettingsSnapshot(settingsStore: SettingsStore): GatewaySettingsSna
       max_age_days: settingsStore.getNumber("transcripts.max_age_days", 30),
     },
     cron: {
-      enabled: settingsStore.getBool("cron.enabled", false),
       max_concurrent_runs: settingsStore.getNumber("cron.max_concurrent_runs", 0) || null,
     },
     hooks: settingsStore.getHooks(),
@@ -216,9 +215,6 @@ export function updateGatewayAdminSettings(params: {
   }
   if ("cron" in params.input && typeof params.input.cron === "object" && params.input.cron) {
     const cron = params.input.cron as Record<string, unknown>;
-    if ("enabled" in cron) {
-      params.settingsStore.set("cron.enabled", String(Boolean(cron.enabled)));
-    }
     if ("max_concurrent_runs" in cron) {
       const value = cron.max_concurrent_runs;
       params.settingsStore.set(

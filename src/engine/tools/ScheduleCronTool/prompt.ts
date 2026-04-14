@@ -21,11 +21,13 @@ export const CRON_DELETE_TOOL_NAME = 'CronDelete'
 export const CRON_LIST_TOOL_NAME = 'CronList'
 
 export function buildCronCreateDescription(_durableEnabled: boolean): string {
-  return 'Schedule a prompt to run at a future time — either recurring on a cron schedule, or once at a specific time. Tasks are persisted and managed by the server.'
+  return 'Schedule a prompt to run at a future time — either recurring on a cron schedule, or once at a specific time. Tasks are persisted and managed by the server. ALWAYS use this instead of Bash sleep for any reminder, delayed action, or scheduled task.'
 }
 
 export function buildCronCreatePrompt(_durableEnabled: boolean): string {
   return `Schedule a prompt to be enqueued at a future time. Use for both recurring schedules and one-shot reminders.
+
+IMPORTANT: For ANY request involving reminders, scheduled tasks, delayed actions, or "do X in N minutes/hours" — ALWAYS use this tool. NEVER use Bash sleep, setTimeout, or other workarounds. This tool persists tasks to the server, survives restarts, and delivers results to the user's chat.
 
 Uses standard 5-field cron in the user's local timezone: minute hour day-of-month month day-of-week. "0 9 * * *" means 9am local — no timezone conversion needed.
 

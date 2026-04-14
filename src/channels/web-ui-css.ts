@@ -766,6 +766,8 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 .s-badge-green{background:#dcfce7;color:#166534}
 .s-badge-gray{background:var(--bg-surface);color:var(--fg-tertiary);border:1px solid var(--border)}
 .s-badge-red{background:#fee2e2;color:#991b1b}
+.s-badge-blue{background:#dbeafe;color:#1e40af}
+.s-badge-purple{background:#f3e8ff;color:#6b21a8}
 .s-empty{text-align:center;padding:32px 24px;color:var(--fg-tertiary);font-size:14px}
 .s-scheduler-bar{display:flex;align-items:center;gap:16px;padding:12px 16px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;margin-bottom:16px;font-size:13px;color:var(--fg-tertiary);flex-wrap:wrap}
 .s-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
@@ -775,9 +777,13 @@ html,body{height:100dvh;width:100vw;font-family:var(--font);background:var(--bg)
 .s-toast.show{opacity:1}
 [data-theme="dark"] .s-badge-green{background:#14532d;color:#86efac}
 [data-theme="dark"] .s-badge-red{background:#450a0a;color:#fca5a5}
+[data-theme="dark"] .s-badge-blue{background:#1e3a5f;color:#93c5fd}
+[data-theme="dark"] .s-badge-purple{background:#3b0764;color:#d8b4fe}
 @media(prefers-color-scheme:dark){
   :root:not([data-theme="light"]) .s-badge-green{background:#14532d;color:#86efac}
   :root:not([data-theme="light"]) .s-badge-red{background:#450a0a;color:#fca5a5}
+  :root:not([data-theme="light"]) .s-badge-blue{background:#1e3a5f;color:#93c5fd}
+  :root:not([data-theme="light"]) .s-badge-purple{background:#3b0764;color:#d8b4fe}
 }
 /* Skills tab */
 .settings-section-desc{font-size:14px;color:var(--fg-tertiary);margin-bottom:16px}

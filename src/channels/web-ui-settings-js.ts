@@ -10,7 +10,7 @@ export function getSettingsJs(): string {
     sTabPanels.forEach(function(p) { p.classList.toggle("active", p.id === "stab-" + id); });
     if (id === "skills") loadAllSkillData();
     if (id === "mcp" && isAdmin) loadMcpServers();
-    if (id === "cron" && isAdmin) loadCronTasks();
+    if (id === "cron") loadCronTasks();
     if (id === "channels") loadSettingsChannels();
   }
   sNavItems.forEach(function(b) { b.addEventListener("click", function() { switchSettingsTab(b.getAttribute("data-stab")); }); });
@@ -457,15 +457,26 @@ export function getSettingsJs(): string {
         + (sched.nextWakeAt ? "<span>" + tt("settings_cron_next") + ": " + new Date(sched.nextWakeAt).toLocaleString() + "</span>" : "");
       if (!tasks.length) { sCronWrap.innerHTML = ""; sCronEmpty.style.display = "block"; return; }
       sCronEmpty.style.display = "none";
-      var h = "<table class='s-table'><thead><tr><th>ID</th><th>" + tt("settings_cron_task_name") + "</th><th>" + tt("settings_cron_schedule") + "</th><th>Status</th><th>" + tt("settings_cron_next") + "</th><th></th></tr></thead><tbody>";
+      var h = "<table class='s-table'><thead><tr><th>ID</th><th>" + tt("settings_cron_task_name") + "</th><th>" + tt("settings_cron_type") + "</th><th>" + tt("settings_cron_schedule") + "</th><th>Status</th><th>" + tt("settings_cron_next") + "</th><th></th></tr></thead><tbody>";
       tasks.forEach(function(t) {
-        var badge = t.enabled
-          ? "<span class='s-badge s-badge-green'>" + tt("settings_on") + "</span>"
-          : "<span class='s-badge s-badge-gray'>" + tt("settings_off") + "</span>";
-        if (t.lastRun && t.lastRun.error) badge = "<span class='s-badge s-badge-red'>Error</span>";
+        var isOneShot = t.deleteAfterRun;
+        var typeBadge = isOneShot
+          ? "<span class='s-badge s-badge-blue'>" + tt("settings_cron_oneshot") + "</span>"
+          : "<span class='s-badge s-badge-purple'>" + tt("settings_cron_recurring") + "</span>";
+        var badge;
+        if (t.lastRun && t.lastRun.error) {
+          badge = "<span class='s-badge s-badge-red'>Error</span>";
+        } else if (isOneShot && !t.nextRun && t.lastRun) {
+          badge = "<span class='s-badge s-badge-gray'>" + tt("settings_cron_fired") + "</span>";
+        } else if (t.enabled) {
+          badge = "<span class='s-badge s-badge-green'>" + tt("settings_on") + "</span>";
+        } else {
+          badge = "<span class='s-badge s-badge-gray'>" + tt("settings_off") + "</span>";
+        }
         h += "<tr>"
           + "<td><span class='s-code'>" + escS(t.id) + "</span></td>"
           + "<td>" + escS(t.name || "-") + "</td>"
+          + "<td>" + typeBadge + "</td>"
           + "<td class='s-muted'>" + escS(t.schedule) + "</td>"
           + "<td>" + badge + "</td>"
           + "<td class='s-muted'>" + (t.nextRun ? new Date(t.nextRun).toLocaleString() : "-") + "</td>"

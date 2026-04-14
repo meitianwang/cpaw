@@ -238,6 +238,14 @@ function getUnsupportedToolReferencePatterns(): string[] {
  */
 export function modelSupportsToolReference(model: string): boolean {
   const normalizedModel = model.toLowerCase()
+
+  // Only Claude models support tool_reference. Non-Claude models (kimi-code,
+  // gpt-*, deepseek, etc.) don't understand tool_reference content blocks in
+  // tool_result and will reject with 400.
+  if (!normalizedModel.includes('claude')) {
+    return false
+  }
+
   const unsupportedPatterns = getUnsupportedToolReferencePatterns()
 
   // Check if model matches any unsupported pattern
@@ -247,7 +255,7 @@ export function modelSupportsToolReference(model: string): boolean {
     }
   }
 
-  // New models are assumed to support tool_reference
+  // New Claude models are assumed to support tool_reference
   return true
 }
 

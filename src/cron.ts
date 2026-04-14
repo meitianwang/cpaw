@@ -203,12 +203,16 @@ export class CronScheduler {
     // Reset schedule error count on successful parse
     this.updateTaskState(task.id, { scheduleErrorCount: 0 });
     this.jobs.set(task.id, job);
+
+    const nextRun = job.nextRun();
+    console.log(`[Cron] Task "${task.id}" scheduled: expr="${schedule}", isOneShot=${this.isOneShotTask(task)}, maxRuns=${opts.maxRuns ?? "unlimited"}, nextRun=${nextRun ? nextRun.toISOString() : "never"}, hasExecutor=${!!this.executor}`);
   }
 
   private async executeWithStagger(
     task: CronTask,
     staggerMs: number,
   ): Promise<void> {
+    console.log(`[Cron] Callback fired for task "${task.id}", stagger=${staggerMs}ms`);
     if (staggerMs > 0) {
       console.log(
         `[Cron] Task "${task.id}" staggering ${Math.round(staggerMs / 1000)}s`,
@@ -457,14 +461,9 @@ export class CronScheduler {
   // --- One-shot handling
 
   private handleOneShotCompletion(task: CronTask): void {
-    const deleteAfterRun = task.deleteAfterRun !== false; // default true for one-shot
-    if (deleteAfterRun) {
-      this.removeTaskInternal(task.id);
-      console.log(`[Cron] One-shot task "${task.id}" completed, removed`);
-    } else {
-      this.disableTaskInternal(task.id);
-      console.log(`[Cron] One-shot task "${task.id}" completed, disabled`);
-    }
+    // Always disable (not delete) so the user can see "fired" status in their task list.
+    this.disableTaskInternal(task.id);
+    console.log(`[Cron] One-shot task "${task.id}" completed, disabled`);
   }
 
   private handleOneShotError(

@@ -42,5 +42,5 @@ export function getKlausCronScheduler(): KlausCronScheduler | null {
 }
 
 export function isKlausCronAvailable(): boolean {
-  return _store !== null && _store.getBool("cron.enabled", false);
+  return _store !== null;
 }

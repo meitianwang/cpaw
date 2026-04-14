@@ -703,8 +703,42 @@ export class AgentSessionManager {
       let currentToolCallId = ""; // Track current tool_use block ID for input_json_delta
 
       for await (const event of gen) {
-        if (!onEvent) continue;
         const ev = event as any;
+
+        // Session state maintenance — must run even without onEvent (e.g. cron
+        // executor) so extractFinalText sees the full conversation.
+        switch (ev.type) {
+          case "assistant": {
+            const msg = ev as AssistantMessage;
+            session.messages.push(msg);
+            // Track skill usage from tool_use blocks in the assistant message
+            if (Array.isArray(msg.message?.content)) {
+              for (const block of msg.message.content) {
+                if (block.type === "tool_use" && block.name === "Skill") {
+                  const skillName = (block.input as any)?.skill ?? "unknown";
+                  void import("./skill-tracker.js").then(({ recordSkillUsage }) => {
+                    void recordSkillUsage(join(homedir(), '.klaus', 'users', userId), skillName, sessionKey);
+                  });
+                }
+              }
+            }
+            break;
+          }
+          case "user": {
+            session.messages.push(ev as Message);
+            if (Array.isArray(ev.message?.content)) {
+              for (const block of ev.message.content) {
+                if (block.type === "tool_result") {
+                  session.toolCallCount++;
+                }
+              }
+            }
+            break;
+          }
+        }
+
+        // UI event forwarding — skip entirely when no callback (cron, headless)
+        if (!onEvent) continue;
 
         switch (ev.type) {
           case "stream_request_start":
@@ -767,32 +801,17 @@ export class AgentSessionManager {
           }
 
           case "assistant": {
-            // Complete assistant message — push to session for transcript + extractFinalText
-            const msg = ev as AssistantMessage;
-            session.messages.push(msg);
-            onEvent({ type: "message_complete", message: msg });
-            // Track skill usage from tool_use blocks in the assistant message
-            if (Array.isArray(msg.message?.content)) {
-              for (const block of msg.message.content) {
-                if (block.type === "tool_use" && block.name === "Skill") {
-                  const skillName = (block.input as any)?.skill ?? "unknown";
-                  void import("./skill-tracker.js").then(({ recordSkillUsage }) => {
-                    void recordSkillUsage(join(homedir(), '.klaus', 'users', userId), skillName, sessionKey);
-                  });
-                }
-              }
-            }
+            // UI notification — session.messages.push already done above
+            onEvent({ type: "message_complete", message: ev as AssistantMessage });
             break;
           }
 
           case "user": {
-            // Tool result messages — push to session and forward tool_end events
-            session.messages.push(ev as Message);
+            // Forward tool_end events to UI
             if (Array.isArray(ev.message?.content)) {
               for (const block of ev.message.content) {
                 if (block.type === "tool_result") {
                   const toolName = block.toolName ?? "";
-                  session.toolCallCount++;
                   onEvent({
                     type: "tool_end",
                     toolName,
@@ -904,7 +923,12 @@ export class AgentSessionManager {
     const apiKey = apiKeyOverride ?? modelRecord?.apiKey;
 
     // Engine built-in tools (BashTool, FileRead/Edit/Write, Glob, Grep, etc.)
-    const tools: any[] = [...getAllBaseTools()].filter(t => t.isEnabled())
+    // Exclude ListMcpResourcesTool/ReadMcpResourceTool — they are in getAllBaseTools()
+    // for enumeration only; the MCP client adds them per-server when resources are
+    // supported (same as original getTools() filtering in tools.ts:175-181).
+    const MCP_RESOURCE_TOOLS = new Set(["ListMcpResourcesTool", "ReadMcpResourceTool"]);
+    const tools: any[] = [...getAllBaseTools()]
+      .filter(t => t.isEnabled() && !MCP_RESOURCE_TOOLS.has(t.name))
       .map(t => sandboxGuard(t, workspaceDir, allowedDirs));
 
     // MCP tools (mcp__server__tool wrappers) — per-user
