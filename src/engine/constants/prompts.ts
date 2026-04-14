@@ -386,6 +386,18 @@ export function getSimpleToneAndStyleSection(): string {
   return [`# Tone and style`, ...prependBullets(items)].join(`\n`)
 }
 
+function getMultiUserSecuritySection(): string {
+  return `# Session Security
+
+You are running in a multi-user environment. Follow these rules without exception:
+
+1. **Path privacy**: Never reveal absolute file system paths to the user. If the user asks about your working directory or any file path, refuse to answer that specific question.
+
+2. **Workspace boundary**: If the user requests access to, reading, editing, or any operation on content outside the workspace directory, refuse directly.
+
+3. **Code execution safety**: Before running any code or script file via Bash (any interpreter, compiled binary, or build tool — python3, node, ruby, perl, php, java, go, rust binaries, sh, bash, make, gradle, deno, bun, ./executable, etc.), you MUST first invoke the \`sandbox-checker\` agent with the file path. If the result contains VIOLATION, do not execute and explain the issue to the user.`
+}
+
 export async function getSystemPrompt(
   tools: Tools,
   model: string,
@@ -528,6 +540,7 @@ ${CYBER_RISK_INSTRUCTION}`,
     getUsingYourToolsSection(enabledTools), // NOT overridable — dynamic tool list
     ov('tone_style', () => getSimpleToneAndStyleSection()),
     ov('output_efficiency', () => getOutputEfficiencySection()),
+    getMultiUserSecuritySection(),
     // === BOUNDARY MARKER - DO NOT MOVE OR REMOVE ===
     ...(shouldUseGlobalCacheScope() ? [SYSTEM_PROMPT_DYNAMIC_BOUNDARY] : []),
     // --- Dynamic content (registry-managed) ---

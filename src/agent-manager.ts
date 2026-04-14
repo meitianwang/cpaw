@@ -5,7 +5,7 @@
 
 import { randomUUID } from "crypto";
 import { homedir } from "os";
-import { join } from "path";
+import { join, resolve, isAbsolute } from "path";
 import { setOriginalCwd, setCwdState, setProjectRoot, runWithUserScope, setIsInteractive } from "./engine/bootstrap/state.js";
 import type { SettingsStore } from "./settings-store.js";
 import { getProvider } from "./providers/registry.js";
@@ -30,7 +30,7 @@ import type { Command } from "./engine/commands.js";
 // SkillTool removed from engine — define type locally
 import { dirname } from "path";
 import { fileURLToPath } from "url";
-import { extractUserId, ensureUserDirs, getUserWorkspaceDir } from "./user-dirs.js";
+import { extractUserId, ensureUserDirs, getUserWorkspaceDir, getUserUploadsDir } from "./user-dirs.js";
 import { runWithCwdOverride } from "./engine/utils/cwd.js";
 import { initContextCollapse, resetContextCollapse } from "./engine/services/contextCollapse/index.js";
 import type { ContextCollapseStats } from "./engine/services/contextCollapse/index.js";
@@ -896,12 +896,16 @@ export class AgentSessionManager {
 
   /** Build the current tool list. */
   async buildTools(userId: string, apiKeyOverride?: string): Promise<any[]> {
+    const workspaceDir = getUserWorkspaceDir(userId);
+    const uploadsDir   = getUserUploadsDir(userId);
+    const allowedDirs  = [workspaceDir, uploadsDir];
     const modelRecord = this.store.getDefaultModel();
     const providerDef = modelRecord?.provider ? getProvider(modelRecord.provider) : undefined;
     const apiKey = apiKeyOverride ?? modelRecord?.apiKey;
 
     // Engine built-in tools (BashTool, FileRead/Edit/Write, Glob, Grep, etc.)
-    const tools: any[] = [...getAllBaseTools()].filter(t => t.isEnabled());
+    const tools: any[] = [...getAllBaseTools()].filter(t => t.isEnabled())
+      .map(t => sandboxGuard(t, workspaceDir, allowedDirs));
 
     // MCP tools (mcp__server__tool wrappers) — per-user
     const mcpState = this._mcpByUser.get(userId);
@@ -1357,6 +1361,120 @@ function extractFinalText(messages: Message[]): string | null {
     }
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox path guards — restrict file tools and bash to user workspace.
+// ---------------------------------------------------------------------------
+
+// Tool name → path argument key for file-system tools
+const FILE_PATH_ARG_KEYS: Record<string, string> = {
+  Read:  "file_path",
+  Write: "file_path",
+  Edit:  "file_path",
+  Glob:  "path",
+  Grep:  "path",
+};
+
+// Absolute path prefixes that are safe to reference in bash commands
+// (system binaries, temp dirs, macOS frameworks — not user data).
+const BASH_SAFE_PATH_PREFIXES = [
+  "/usr/", "/bin/", "/sbin/", "/lib/", "/opt/",
+  "/tmp/", "/dev/",
+  "/System/", "/Library/", "/Applications/", // macOS
+  "/proc/", "/sys/",                          // Linux
+];
+
+function isSandboxPath(absPath: string, allowedDirs: string[]): boolean {
+  const p = resolve(absPath);
+  return allowedDirs.some(dir => {
+    const d = resolve(dir);
+    return p === d || p.startsWith(d + "/");
+  });
+}
+
+function isBashSafePath(p: string): boolean {
+  return BASH_SAFE_PATH_PREFIXES.some(prefix => p.startsWith(prefix));
+}
+
+// Extract absolute path tokens from a bash command string.
+// Handles both /absolute/path and ~/tilde/path forms.
+function extractAbsolutePaths(command: string, home: string): string[] {
+  const paths: string[] = [];
+  const SEP = /(?:^|[\s'"`|&;<>()])/;
+
+  // Match /foo/bar style absolute paths
+  const absRe = /(?:^|[\s'"`|&;<>()])(\/([\w.\-_][^\s'"`|&;<>()]*)?)/g;
+  let m: RegExpExecArray | null;
+  while ((m = absRe.exec(command)) !== null) {
+    paths.push(m[1]);
+  }
+
+  // Match ~/foo style tilde paths and resolve to absolute using real HOME
+  const tildeRe = /(?:^|[\s'"`|&;<>(]])(~(?:\/[^\s'"`|&;<>()]*)?)/g;
+  while ((m = tildeRe.exec(command)) !== null) {
+    const tildePath = m[1];
+    const resolved = tildePath === "~" ? home : tildePath.replace(/^~/, home);
+    paths.push(resolved);
+  }
+
+  return paths;
+}
+
+/**
+ * Wrap a tool with sandbox path enforcement:
+ *   - File tools: reject path arguments outside the user's allowed dirs
+ *   - Bash tool:  reject commands that reference absolute paths outside allowed dirs
+ *     (excluding safe system paths like /usr, /bin, /tmp, etc.)
+ * Returns the original tool unchanged for tools with no path concerns.
+ */
+function sandboxGuard(tool: any, cwd: string, allowedDirs: string[]): any {
+  const pathKey = FILE_PATH_ARG_KEYS[tool.name];
+
+  if (pathKey) {
+    return new Proxy(tool, {
+      get(target: any, prop: string | symbol, receiver: any) {
+        if (prop !== "call") return Reflect.get(target, prop, receiver);
+        return async (args: any, ctx: any, cb: any, appState: any) => {
+          const val = args?.[pathKey];
+          if (typeof val === "string" && val) {
+            const abs = isAbsolute(val) ? val : resolve(cwd, val);
+            if (!isSandboxPath(abs, allowedDirs)) {
+              return {
+                content: `<tool_use_error>Access denied: "${val}" is outside your workspace. Only ~/workspace and ~/uploads are accessible.</tool_use_error>`,
+                is_error: true,
+              };
+            }
+          }
+          return target.call(args, ctx, cb, appState);
+        };
+      },
+    });
+  }
+
+  if (tool.name === "Bash") {
+    return new Proxy(tool, {
+      get(target: any, prop: string | symbol, receiver: any) {
+        if (prop !== "call") return Reflect.get(target, prop, receiver);
+        return async (args: any, ctx: any, cb: any, appState: any) => {
+          const command = typeof args?.command === "string" ? args.command : "";
+          const paths = extractAbsolutePaths(command, homedir());
+          const blocked = paths.filter(
+            p => !isSandboxPath(p, allowedDirs) && !isBashSafePath(p),
+          );
+          if (blocked.length > 0) {
+            return {
+              content: `<tool_use_error>Access denied: command references path(s) outside your workspace: ${blocked.join(", ")}. Only ~/workspace and ~/uploads are accessible.</tool_use_error>`,
+              is_error: true,
+            };
+          }
+          return target.call(args, ctx, cb, appState);
+        };
+      },
+    });
+  }
+
+  return tool;
 }
 
 // ---------------------------------------------------------------------------
