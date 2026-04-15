@@ -136,12 +136,30 @@ final class EngineProcess {
         proc.standardOutput = stdout
         proc.standardError = stderr
 
-        // Inherit environment
+        // Inherit environment + admin config overrides
         var env = ProcessInfo.processInfo.environment
-        // Ensure engine finds ~/.claude config
         if let home = env["HOME"] {
             env["CLAUDE_CONFIG_DIR"] = "\(home)/.claude"
         }
+
+        // Apply admin panel config (API key, base URL, model roles)
+        let adminConfig = AdminConfigReader.shared
+        for (key, value) in adminConfig.engineEnvironment() {
+            env[key] = value
+        }
+
+        // Use admin default model if no explicit override
+        if modelOverride == nil, let adminModel = adminConfig.defaultModelName {
+            args.append("--model")
+            args.append(adminModel)
+        }
+
+        // Write system prompt file from admin prompts
+        if let promptFileURL = adminConfig.buildSystemPromptFile() {
+            args.append("--system-prompt")
+            args.append(promptFileURL.path)
+        }
+
         if let cwdPath = cwd {
             proc.currentDirectoryURL = URL(fileURLWithPath: cwdPath)
         }

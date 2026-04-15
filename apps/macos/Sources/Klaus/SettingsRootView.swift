@@ -69,6 +69,7 @@ struct SettingsRootView: View {
 
 struct GeneralSettingsView: View {
     @Bindable var state: AppState
+    @State private var apiKey = UserDefaults.standard.string(forKey: "klaus.apiKey") ?? ""
 
     var body: some View {
         Form {
@@ -98,16 +99,25 @@ struct GeneralSettingsView: View {
                 Toggle("Show Dock Icon", isOn: $state.showDockIcon)
             }
 
+            Section("API Key") {
+                SecureField("ANTHROPIC_API_KEY", text: $apiKey)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: apiKey) { _, newValue in
+                        UserDefaults.standard.set(newValue, forKey: "klaus.apiKey")
+                    }
+
+                Text("Or set via ~/.claude/credentials.json or ANTHROPIC_API_KEY env var.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Model") {
                 Picker("Model", selection: $state.modelOverride) {
-                    Text("Default").tag("")
+                    Text("Default (engine decides)").tag("")
                     Divider()
                     Text("claude-opus-4-6").tag("claude-opus-4-6")
                     Text("claude-sonnet-4-6").tag("claude-sonnet-4-6")
                     Text("claude-haiku-4-5").tag("claude-haiku-4-5")
-                }
-                .onChange(of: state.modelOverride) { _, _ in
-                    // Model change takes effect on next engine restart
                 }
 
                 HStack {
