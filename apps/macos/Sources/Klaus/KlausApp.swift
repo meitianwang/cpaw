@@ -18,6 +18,13 @@ struct KlausApp: App {
     }
 
     var body: some Scene {
+        // Main window (three-column layout)
+        Window("Klaus", id: "main") {
+            MainWindowView()
+                .frame(minWidth: 900, minHeight: 600)
+        }
+        .defaultSize(width: 1200, height: 750)
+
         MenuBarExtra {
             MenuContentView(state: state, engine: engine)
         } label: {
@@ -52,6 +59,11 @@ struct KlausApp: App {
                     WebChatManager.shared.toggle()
                 }
                 .keyboardShortcut("o")
+
+                Button("Show Main Window") {
+                    MainWindowManager.shared.show()
+                }
+                .keyboardShortcut("1")
             }
 
             CommandGroup(after: .sidebar) {
