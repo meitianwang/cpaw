@@ -9,5 +9,6 @@ directories:
   buildResources: resources
 files:
   - dist/**/*
+  - src/renderer/**/*
   - node_modules/**/*
   - package.json

@@ -10,7 +10,10 @@ import { registerIpcHandlers } from './ipc-handlers.js'
 import { createMainWindow } from './window.js'
 import { createTray } from './tray.js'
 
-// Prevent EPIPE crashes when stdout/stderr pipe breaks (e.g. launched from sandboxed environments)
+// Ensure we run as Electron app, not Node.js (Claude Code sets ELECTRON_RUN_AS_NODE=1)
+delete process.env.ELECTRON_RUN_AS_NODE
+
+// Prevent EPIPE crashes when stdout/stderr pipe breaks
 process.stdout?.on?.('error', () => {})
 process.stderr?.on?.('error', () => {})
 
