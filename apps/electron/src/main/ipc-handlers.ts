@@ -101,4 +101,29 @@ export function registerIpcHandlers(engine: EngineHost, store: SettingsStore): v
   ipcMain.handle('mcp:status', async () => {
     return engine.getMcpStatus()
   })
+
+  // --- Skills ---
+  ipcMain.handle('skills:list', async () => {
+    return engine.listSkills()
+  })
+
+  ipcMain.handle('skills:toggle', async (_e, { name, enabled }) => {
+    engine.toggleSkill(name, enabled)
+  })
+
+  // --- Channels (stub — channel management requires channel plugins) ---
+  ipcMain.handle('channels:list', async () => {
+    // TODO: integrate with ChannelManager when available
+    return []
+  })
+
+  ipcMain.handle('channels:connect', async (_e, { id, config }) => {
+    // TODO: channel connect
+    return { ok: false, error: 'Channel management not yet implemented in desktop app' }
+  })
+
+  ipcMain.handle('channels:disconnect', async (_e, { id }) => {
+    // TODO: channel disconnect
+    return { ok: false }
+  })
 }

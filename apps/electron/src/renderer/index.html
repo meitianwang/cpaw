@@ -62,8 +62,20 @@
       <!-- Messages -->
       <div id="messages" style="display:none"></div>
 
+      <!-- Agent panel -->
+      <div id="agent-panel" style="display:none">
+        <div id="agent-panel-header">
+          <span id="agent-panel-toggle">&#9660;</span>
+          <span id="agent-panel-title"></span>
+          <span id="agent-panel-count"></span>
+          <button id="agent-panel-close" title="Close">&times;</button>
+        </div>
+        <div id="agent-panel-body"></div>
+      </div>
+
       <!-- Input -->
       <div id="input-wrapper">
+        <div id="slash-menu" class="slash-menu hidden"></div>
         <div id="input-area">
           <div id="previews"></div>
           <div class="input-row">
@@ -91,7 +103,10 @@
             <div class="settings-sidebar-nav">
               <button class="settings-nav-item active" data-stab="models">Models</button>
               <button class="settings-nav-item" data-stab="prompts">Prompts</button>
+              <button class="settings-nav-item" data-stab="channels">Channels</button>
+              <button class="settings-nav-item" data-stab="skills">Skills</button>
               <button class="settings-nav-item" data-stab="mcp">MCP</button>
+              <button class="settings-nav-item" data-stab="cron">Tasks</button>
               <button class="settings-nav-item" data-stab="preferences">Preferences</button>
             </div>
           </div>

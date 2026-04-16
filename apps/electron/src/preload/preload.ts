@@ -54,6 +54,19 @@ contextBridge.exposeInMainWorld('klaus', {
     status: () => ipcRenderer.invoke('mcp:status'),
   },
 
+  // Skills
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+    toggle: (name: string, enabled: boolean) => ipcRenderer.invoke('skills:toggle', { name, enabled }),
+  },
+
+  // Channels
+  channels: {
+    list: () => ipcRenderer.invoke('channels:list'),
+    connect: (id: string, config: any) => ipcRenderer.invoke('channels:connect', { id, config }),
+    disconnect: (id: string) => ipcRenderer.invoke('channels:disconnect', { id }),
+  },
+
   // Event listeners (main → renderer push)
   on: {
     chatEvent: (cb: (event: any) => void) => {

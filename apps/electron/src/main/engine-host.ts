@@ -188,6 +188,27 @@ export class EngineHost {
     await this.initMcp()
   }
 
+  // --- Skills ---
+
+  listSkills(): Array<{ name: string; description?: string; enabled: boolean; source: string }> {
+    const settings = this.store.getSkillSettings()
+    const skills: Array<{ name: string; description?: string; enabled: boolean; source: string }> = []
+    for (const [name, config] of settings) {
+      skills.push({
+        name,
+        description: undefined,
+        enabled: config.enabled !== false,
+        source: 'installed',
+      })
+    }
+    return skills
+  }
+
+  toggleSkill(name: string, enabled: boolean): void {
+    const current = this.store.getSkillSettings().get(name) ?? {}
+    this.store.set(`skill:${name}`, JSON.stringify({ ...current, enabled }))
+  }
+
   // --- Sessions ---
 
   newSession(): SessionInfo {
