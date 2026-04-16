@@ -54,11 +54,19 @@ contextBridge.exposeInMainWorld('klaus', {
   mcp: {
     reconnect: () => ipcRenderer.invoke('mcp:reconnect'),
     status: () => ipcRenderer.invoke('mcp:status'),
+    list: () => ipcRenderer.invoke('mcp:list'),
+    create: (input: any) => ipcRenderer.invoke('mcp:create', input),
+    toggle: (name: string, enabled: boolean) => ipcRenderer.invoke('mcp:toggle', { name, enabled }),
+    remove: (name: string) => ipcRenderer.invoke('mcp:remove', { name }),
+    importJson: (json: string) => ipcRenderer.invoke('mcp:import', { json }),
   },
 
   // Skills
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
+    market: () => ipcRenderer.invoke('skills:market'),
+    install: (name: string) => ipcRenderer.invoke('skills:install', { name }),
+    uninstall: (name: string) => ipcRenderer.invoke('skills:uninstall', { name }),
     toggle: (name: string, enabled: boolean) => ipcRenderer.invoke('skills:toggle', { name, enabled }),
   },
 

@@ -4,6 +4,7 @@
 const settingsApi = window.klaus.settings
 let settingsVisible = false
 let currentSettingsTab = 'models'
+let skillsView = 'installed' // installed | market | enabled | disabled
 
 function toggleSettings() {
   settingsVisible = !settingsVisible
@@ -37,7 +38,6 @@ async function loadModelsTab(container) {
       <div class="card-actions">${!m.isDefault ? `<button class="btn-xs" onclick="setDefaultModel('${esc(m.id)}')">Set Default</button>` : ''}<button class="btn-xs btn-danger" onclick="deleteModel('${esc(m.id)}')">Delete</button></div>
     </div>`).join('')}</div><div id="model-form" style="display:none"></div></div>`
 }
-
 window.showAddModelForm = function() {
   const form = document.getElementById('model-form'); form.style.display = 'block'
   form.innerHTML = `<div class="settings-card"><h4 style="margin-bottom:12px">Add Model</h4>
@@ -45,12 +45,11 @@ window.showAddModelForm = function() {
     <div class="form-row"><label>Model ID</label><input id="mf-model" placeholder="claude-sonnet-4-20250514"></div>
     <div class="form-row"><label>API Key</label><input id="mf-apikey" type="password" placeholder="sk-ant-..."></div>
     <div class="form-row"><label>Provider</label><select id="mf-provider"><option value="anthropic">Anthropic</option><option value="bedrock">AWS Bedrock</option><option value="vertex">Google Vertex</option></select></div>
-    <div class="form-row"><label>Base URL (optional)</label><input id="mf-baseurl" placeholder="https://api.anthropic.com"></div>
+    <div class="form-row"><label>Base URL (optional)</label><input id="mf-baseurl"></div>
     <div class="form-row"><label>Max Context Tokens</label><input id="mf-tokens" type="number" value="200000"></div>
     <div class="form-row"><label>Thinking</label><select id="mf-thinking"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
     <div class="form-actions"><button class="btn-sm btn-primary" onclick="saveModel()">Save</button><button class="btn-sm" onclick="document.getElementById('model-form').style.display='none'">Cancel</button></div></div>`
 }
-
 window.saveModel = async function() {
   const now = Date.now()
   await settingsApi.models.upsert({ id: crypto.randomUUID(), name: gv('mf-name') || 'Untitled', provider: gv('mf-provider'), model: gv('mf-model') || 'claude-sonnet-4-20250514', apiKey: gv('mf-apikey') || undefined, baseUrl: gv('mf-baseurl') || undefined, maxContextTokens: parseInt(gv('mf-tokens')) || 200000, thinking: gv('mf-thinking'), isDefault: false, createdAt: now, updatedAt: now })
@@ -62,79 +61,252 @@ window.deleteModel = async (id) => { if (confirm('Delete this model?')) { await 
 // ==================== Prompts ====================
 async function loadPromptsTab(container) {
   const prompts = await settingsApi.prompts.list()
-  container.innerHTML = `<div class="settings-section"><h3>System Prompt Sections</h3><p class="hint-text">Customize sections of the system prompt. Leave empty to use engine defaults.</p><div id="prompts-list">${prompts.map(p => `
+  container.innerHTML = `<div class="settings-section"><h3>System Prompt Sections</h3><p class="hint-text">Customize sections of the system prompt. Leave empty to use engine defaults.</p><div>${prompts.map(p => `
     <div class="settings-card"><div class="card-header"><strong>${esc(p.name)}</strong><span style="font-size:11px;color:var(--fg-quaternary)">${esc(p.id)}</span></div>
     <textarea class="prompt-editor" data-prompt-id="${esc(p.id)}" placeholder="(using engine default)" rows="4">${esc(p.content)}</textarea>
     <button class="btn-xs" onclick="savePrompt('${esc(p.id)}','${esc(p.name)}',this)">Save</button></div>`).join('')}</div></div>`
 }
 window.savePrompt = async function(id, name, btn) {
   const textarea = btn.parentElement.querySelector('.prompt-editor')
-  const now = Date.now()
-  await settingsApi.prompts.upsert({ id, name, content: textarea.value, isDefault: false, createdAt: now, updatedAt: now })
+  await settingsApi.prompts.upsert({ id, name, content: textarea.value, isDefault: false, createdAt: Date.now(), updatedAt: Date.now() })
   btn.textContent = 'Saved!'; setTimeout(() => btn.textContent = 'Save', 1500)
 }
 
 // ==================== Channels ====================
 async function loadChannelsTab(container) {
-  let channels = []
-  try { channels = await window.klaus.channels.list() } catch {}
-  const chConfigs = [
+  const channels = await window.klaus.channels.list()
+  const chDefs = [
     { id: 'feishu', name: 'Feishu', icon: '💬', inputs: [['app_id','App ID'],['app_secret','App Secret']] },
     { id: 'dingtalk', name: 'DingTalk', icon: '💬', inputs: [['client_id','Client ID'],['client_secret','Client Secret']] },
     { id: 'wechat', name: 'WeChat', icon: '💬', inputs: [] },
     { id: 'wecom', name: 'WeCom', icon: '💬', inputs: [['bot_id','Bot ID'],['secret','Secret']] },
     { id: 'qq', name: 'QQ', icon: '💬', inputs: [['app_id','App ID'],['client_secret','Client Secret']] },
-    { id: 'telegram', name: 'Telegram', icon: '💬', inputs: [['bot_token','Bot Token']] },
+    { id: 'telegram', name: 'Telegram', icon: '✈️', inputs: [['bot_token','Bot Token']] },
   ]
-  container.innerHTML = `<div class="settings-section"><h3>IM Channels</h3><p class="hint-text">Connect messaging platforms to Klaus.</p><div class="ch-grid">${chConfigs.map(ch => {
-    const connected = channels.find(c => c.id === ch.id && c.connected)
+  container.innerHTML = `<div class="settings-section"><h3>IM Channels</h3><p class="hint-text">Connect messaging platforms to Klaus.</p><div class="ch-grid">${chDefs.map(ch => {
+    const state = channels.find(c => c.id === ch.id)
+    const connected = state?.connected
     return `<div class="ch-card"><div class="ch-card-header"><span style="font-size:20px">${ch.icon}</span><span class="ch-card-name">${ch.name}</span><span class="ch-card-status">${connected ? '<span class="s-badge s-badge-green">Connected</span>' : '<span class="s-badge s-badge-gray">Off</span>'}</span></div>
-    <div class="ch-card-body">${connected ? `<button class="btn-xs btn-danger" onclick="disconnectChannel('${ch.id}')">Disconnect</button>` : ch.inputs.map(([key, label]) => `<div class="ch-form-field"><label>${label}</label><input id="ch-${ch.id}-${key}" placeholder="${label}"></div>`).join('') + (ch.inputs.length ? `<button class="btn-xs" onclick="connectChannel('${ch.id}')">Connect</button>` : '<p class="s-muted" style="font-size:12px">QR code login required</p>')}</div></div>`
+    <div class="ch-card-body">${connected
+      ? `<button class="btn-xs btn-danger" onclick="disconnectChannel('${ch.id}')">Disconnect</button>`
+      : ch.inputs.map(([key, label]) => `<div class="ch-form-field"><label>${label}</label><input id="ch-${ch.id}-${key}" placeholder="${label}" value="${esc(state?.credentials?.[key] || '')}"></div>`).join('') + (ch.inputs.length ? `<button class="btn-xs" onclick="connectChannel('${ch.id}')">Connect</button>` : '<p class="s-muted" style="font-size:12px">QR code login — coming soon</p>')
+    }</div></div>`
   }).join('')}</div></div>`
 }
 window.connectChannel = async function(id) {
-  const chConfigs = { feishu: ['app_id','app_secret'], dingtalk: ['client_id','client_secret'], wecom: ['bot_id','secret'], qq: ['app_id','client_secret'], telegram: ['bot_token'] }
-  const inputs = chConfigs[id] || []
+  const fieldMap = { feishu: ['app_id','app_secret'], dingtalk: ['client_id','client_secret'], wecom: ['bot_id','secret'], qq: ['app_id','client_secret'], telegram: ['bot_token'] }
+  const fields = fieldMap[id] || []
   const config = {}
-  for (const key of inputs) { config[key] = document.getElementById('ch-' + id + '-' + key)?.value?.trim() || '' }
+  for (const key of fields) config[key] = document.getElementById('ch-' + id + '-' + key)?.value?.trim() || ''
   const result = await window.klaus.channels.connect(id, config)
   if (result.ok) { showToast('Connected!'); loadSettingsTab('channels') }
-  else { showToast(result.error || 'Connection failed') }
+  else showToast(result.error || 'Connection failed')
 }
 window.disconnectChannel = async function(id) {
   if (!confirm('Disconnect this channel?')) return
-  await window.klaus.channels.disconnect(id)
+  window.klaus.channels.disconnect(id)
   showToast('Disconnected'); loadSettingsTab('channels')
 }
 
-// ==================== Skills ====================
+// ==================== Skills (5 views + search + install) ====================
 async function loadSkillsTab(container) {
-  let skills = []
-  try { skills = await window.klaus.skills.list() } catch {}
+  const [installed, market] = await Promise.all([window.klaus.skills.list(), window.klaus.skills.market()])
+
+  const views = { installed, market, enabled: installed.filter(s => s.userEnabled), disabled: installed.filter(s => !s.userEnabled) }
+  const current = views[skillsView] || views.installed
+
   container.innerHTML = `<div class="settings-section"><div class="settings-section-header"><h3>Skills</h3></div>
-    ${skills.length === 0 ? '<p class="empty-text">No skills installed</p>' : `<div class="sk-grid">${skills.map(s => `
-    <div class="sk-card"><div class="sk-card-head"><div class="sk-card-info"><div class="sk-card-emoji">🧩</div><div class="sk-card-name">${esc(s.name)}</div></div>
-    <label class="sk-toggle"><input type="checkbox" class="sk-toggle-input" data-skill="${esc(s.name)}" ${s.enabled ? 'checked' : ''}><span class="sk-slider"></span></label></div>
-    <div class="sk-card-desc">${esc(s.description || '')}</div>
-    <div class="sk-card-badges"><span class="s-badge s-badge-gray">${esc(s.source || 'installed')}</span></div></div>`).join('')}</div>`}</div>`
-  container.querySelectorAll('.sk-toggle-input').forEach(el => {
+    <div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
+      ${['installed','market','enabled','disabled'].map(v => `<button class="btn-sm ${skillsView === v ? 'btn-primary' : ''}" onclick="switchSkillsView('${v}')">${v.charAt(0).toUpperCase() + v.slice(1)}</button>`).join('')}
+    </div>
+    <div style="margin-bottom:12px"><input class="s-form-input" id="sk-search" placeholder="Search skills..." style="width:100%" oninput="filterSkills()"></div>
+    <div class="sk-grid" id="sk-grid">${renderSkillCards(current, skillsView)}</div></div>`
+
+  bindSkillEvents()
+}
+
+function renderSkillCards(skills, view) {
+  if (skills.length === 0) return '<p class="empty-text">No skills found</p>'
+  return skills.map(s => {
+    const isMarket = view === 'market'
+    const toggle = !isMarket ? `<label class="sk-toggle"><input type="checkbox" class="sk-toggle-input" data-skill="${esc(s.dirName || s.name)}" ${s.userEnabled ? 'checked' : ''}><span class="sk-slider"></span></label>` : ''
+    const installBtn = isMarket ? `<button class="btn-xs ${s.installed ? '' : 'btn-primary'}" data-install="${esc(s.dirName || s.name)}" ${s.installed ? 'disabled' : ''}>${s.installed ? 'Installed' : 'Install'}</button>` : ''
+    const uninstallBtn = !isMarket && s.source === 'installed' ? `<button class="btn-xs btn-danger" data-uninstall="${esc(s.dirName || s.name)}">Uninstall</button>` : ''
+    const srcBadge = `<span class="s-badge s-badge-gray">${esc(s.source)}</span>`
+    return `<div class="sk-card" data-name="${esc(s.name)}"><div class="sk-card-head"><div class="sk-card-info"><div class="sk-card-emoji">🧩</div><div class="sk-card-name">${esc(s.name)}</div></div>${toggle}</div>
+      <div class="sk-card-desc">${esc(s.description || '')}</div>
+      <div class="sk-card-actions">${installBtn}${uninstallBtn}</div>
+      <div class="sk-card-badges">${srcBadge}</div></div>`
+  }).join('')
+}
+
+function bindSkillEvents() {
+  document.querySelectorAll('.sk-toggle-input').forEach(el => {
     el.addEventListener('change', async () => {
       await window.klaus.skills.toggle(el.dataset.skill, el.checked)
       showToast(el.checked ? 'Skill enabled' : 'Skill disabled')
     })
   })
+  document.querySelectorAll('[data-install]').forEach(el => {
+    el.addEventListener('click', async () => {
+      el.disabled = true; el.textContent = 'Installing...'
+      const result = await window.klaus.skills.install(el.dataset.install)
+      if (result.ok) { showToast('Installed: ' + result.name); loadSettingsTab('skills') }
+      else { showToast('Error: ' + (result.error || 'unknown')); el.disabled = false; el.textContent = 'Install' }
+    })
+  })
+  document.querySelectorAll('[data-uninstall]').forEach(el => {
+    el.addEventListener('click', async () => {
+      if (!confirm('Uninstall skill: ' + el.dataset.uninstall + '?')) return
+      await window.klaus.skills.uninstall(el.dataset.uninstall)
+      showToast('Uninstalled'); loadSettingsTab('skills')
+    })
+  })
 }
 
-// ==================== MCP ====================
+window.switchSkillsView = function(view) { skillsView = view; loadSettingsTab('skills') }
+window.filterSkills = function() {
+  const q = document.getElementById('sk-search')?.value?.toLowerCase() || ''
+  document.querySelectorAll('.sk-card').forEach(card => {
+    const name = card.dataset.name?.toLowerCase() || ''
+    card.style.display = !q || name.includes(q) ? '' : 'none'
+  })
+}
+
+// ==================== MCP (full management) ====================
 async function loadMcpTab(container) {
-  let servers = []
-  try { servers = await window.klaus.mcp.status() } catch {}
-  container.innerHTML = `<div class="settings-section"><div class="settings-section-header"><h3>MCP Servers</h3><button class="btn-sm" onclick="window.klaus.mcp.reconnect().then(()=>{showToast('Reconnected');loadSettingsTab('mcp')})">Reconnect All</button></div>
-    <p class="hint-text">MCP servers are configured in ~/.klaus/.mcp.json</p>
-    ${servers.length === 0 ? '<p class="empty-text">No MCP servers connected</p>' : `<div class="sk-grid">${servers.map(s => `
-    <div class="sk-card"><div class="sk-card-head"><div class="sk-card-info"><div class="sk-card-emoji">🔌</div><div class="sk-card-name">${esc(s.name)}</div></div></div>
-    <div class="sk-card-desc">${s.toolCount} tool${s.toolCount === 1 ? '' : 's'}</div>
-    <div class="sk-card-badges"><span class="s-badge ${s.status === 'connected' ? 's-badge-green' : 's-badge-red'}">${esc(s.status)}</span></div></div>`).join('')}</div>`}</div>`
+  const [servers, status] = await Promise.all([window.klaus.mcp.list(), window.klaus.mcp.status()])
+  const statusMap = new Map(status.map(s => [s.name, s]))
+
+  container.innerHTML = `<div class="settings-section"><div class="settings-section-header"><h3>MCP Servers</h3>
+      <div style="display:flex;gap:6px"><button class="btn-sm" id="mcp-add-manual">+ Add Server</button><button class="btn-sm" id="mcp-add-json">Import JSON</button><button class="btn-sm" onclick="window.klaus.mcp.reconnect().then(()=>{showToast('Reconnected');loadSettingsTab('mcp')})">Reconnect</button></div></div>
+
+    <!-- Manual form (hidden) -->
+    <div id="mcp-manual-form" style="display:none"><div class="settings-card">
+      <div class="form-row"><label>Name</label><input id="mcpf-name" placeholder="server-name" class="s-form-input" style="width:100%"></div>
+      <div class="form-row"><label>Type</label><select id="mcpf-type" class="s-form-input" style="width:100%"><option value="stdio">stdio</option><option value="sse">SSE</option><option value="http">HTTP</option></select></div>
+      <div id="mcpf-command-wrap"><div class="form-row"><label>Command</label><input id="mcpf-command" placeholder='npx -y @modelcontextprotocol/server-everything' class="s-form-input" style="width:100%"></div></div>
+      <div id="mcpf-url-wrap" style="display:none"><div class="form-row"><label>URL</label><input id="mcpf-url" placeholder="https://..." class="s-form-input" style="width:100%"></div></div>
+      <div class="form-row"><label>Timeout (seconds, optional)</label><input id="mcpf-timeout" type="number" class="s-form-input" style="width:100%"></div>
+      <div class="form-row"><label>Environment Variables</label><div id="mcpf-env-rows"></div>
+        <div style="display:flex;gap:6px;margin-top:4px"><button class="btn-xs" id="mcpf-add-env">+ Add</button><button class="btn-xs" id="mcpf-paste-env">Paste</button></div></div>
+      <div class="form-actions"><button class="btn-sm btn-primary" id="mcpf-save">Save</button><button class="btn-sm" id="mcpf-cancel">Cancel</button></div></div></div>
+
+    <!-- JSON import form (hidden) -->
+    <div id="mcp-json-form" style="display:none"><div class="settings-card">
+      <div class="form-row"><label>Paste .mcp.json content</label><textarea id="mcpf-json" rows="8" class="prompt-editor" placeholder='{ "mcpServers": { "name": { "command": "..." } } }'></textarea></div>
+      <div class="form-actions"><button class="btn-sm btn-primary" id="mcpf-json-import">Import</button><button class="btn-sm" id="mcpf-json-cancel">Cancel</button></div></div></div>
+
+    <!-- Server list -->
+    <div id="mcp-list">${servers.length === 0 ? '<p class="empty-text">No MCP servers configured</p>' : `<div class="sk-grid">${servers.map(s => {
+      const st = statusMap.get(s.name)
+      const cfg = s.config || {}
+      const type = cfg.type || 'stdio'
+      let detail = ''
+      if (type === 'stdio') { detail = (cfg.command || '') + (cfg.args ? ' ' + cfg.args.join(' ') : '') }
+      else { detail = cfg.url || '' }
+      return `<div class="sk-card"><div class="sk-card-head"><div class="sk-card-info"><div class="sk-card-emoji">🔌</div><div class="sk-card-name">${esc(s.name)}</div></div>
+        <label class="sk-toggle"><input type="checkbox" class="mcp-toggle-input" data-mcp="${esc(s.name)}" ${s.enabled ? 'checked' : ''}><span class="sk-slider"></span></label></div>
+        <div class="sk-card-desc">${esc(detail)}</div>
+        <div class="sk-card-actions"><button class="btn-xs btn-danger" data-delmcp="${esc(s.name)}">Uninstall</button></div>
+        <div class="sk-card-badges"><span class="s-badge s-badge-gray">${esc(type.toUpperCase())}</span>${st ? `<span class="s-badge ${st.status === 'connected' ? 's-badge-green' : 's-badge-red'}">${st.toolCount} tools</span>` : ''}</div></div>`
+    }).join('')}</div>`}</div></div>`
+
+  // Event bindings
+  document.getElementById('mcp-add-manual')?.addEventListener('click', () => {
+    document.getElementById('mcp-manual-form').style.display = 'block'
+    document.getElementById('mcp-list').style.display = 'none'
+  })
+  document.getElementById('mcp-add-json')?.addEventListener('click', () => {
+    document.getElementById('mcp-json-form').style.display = 'block'
+    document.getElementById('mcp-list').style.display = 'none'
+  })
+  document.getElementById('mcpf-cancel')?.addEventListener('click', () => {
+    document.getElementById('mcp-manual-form').style.display = 'none'
+    document.getElementById('mcp-list').style.display = ''
+  })
+  document.getElementById('mcpf-json-cancel')?.addEventListener('click', () => {
+    document.getElementById('mcp-json-form').style.display = 'none'
+    document.getElementById('mcp-list').style.display = ''
+  })
+  document.getElementById('mcpf-type')?.addEventListener('change', function() {
+    document.getElementById('mcpf-command-wrap').style.display = this.value === 'stdio' ? '' : 'none'
+    document.getElementById('mcpf-url-wrap').style.display = this.value === 'stdio' ? 'none' : ''
+  })
+  document.getElementById('mcpf-add-env')?.addEventListener('click', () => addMcpEnvRow('', ''))
+  document.getElementById('mcpf-paste-env')?.addEventListener('click', () => {
+    navigator.clipboard.readText().then(text => {
+      text.trim().split('\n').forEach(line => {
+        const eq = line.indexOf('=')
+        if (eq > 0) addMcpEnvRow(line.slice(0, eq).trim(), line.slice(eq + 1).trim())
+      })
+    }).catch(() => {})
+  })
+  document.getElementById('mcpf-save')?.addEventListener('click', async () => {
+    const name = gv('mcpf-name')
+    if (!name) { showToast('Name is required'); return }
+    const type = gv('mcpf-type')
+    const payload = { name }
+    if (type === 'stdio') {
+      const cmdStr = gv('mcpf-command')
+      if (!cmdStr) { showToast('Command is required'); return }
+      const parts = cmdStr.match(/(?:[^\s"]+|"[^"]*")+/g) || [cmdStr]
+      payload.command = parts[0].replace(/^"|"$/g, '')
+      if (parts.length > 1) payload.args = parts.slice(1).map(p => p.replace(/^"|"$/g, ''))
+    } else {
+      const url = gv('mcpf-url')
+      if (!url) { showToast('URL is required'); return }
+      payload.type = type; payload.url = url
+    }
+    const env = getMcpEnvVars()
+    if (env) payload.env = env
+    const timeout = parseInt(gv('mcpf-timeout'))
+    if (timeout > 0) payload.timeout = timeout
+    const result = await window.klaus.mcp.create(payload)
+    if (result.ok) { showToast('Server added'); loadSettingsTab('mcp') }
+    else showToast(result.error || 'Failed')
+  })
+  document.getElementById('mcpf-json-import')?.addEventListener('click', async () => {
+    const json = document.getElementById('mcpf-json')?.value?.trim()
+    if (!json) return
+    const result = await window.klaus.mcp.importJson(json)
+    if (result.imported?.length) showToast('Imported: ' + result.imported.join(', '))
+    if (result.errors?.length) showToast('Errors: ' + result.errors.join(', '))
+    loadSettingsTab('mcp')
+  })
+
+  // Toggle + uninstall
+  container.querySelectorAll('.mcp-toggle-input').forEach(el => {
+    el.addEventListener('change', async () => {
+      await window.klaus.mcp.toggle(el.dataset.mcp, el.checked)
+      showToast(el.checked ? 'Enabled' : 'Disabled')
+    })
+  })
+  container.querySelectorAll('[data-delmcp]').forEach(el => {
+    el.addEventListener('click', async () => {
+      if (!confirm('Remove MCP server: ' + el.dataset.delmcp + '?')) return
+      await window.klaus.mcp.remove(el.dataset.delmcp)
+      showToast('Removed'); loadSettingsTab('mcp')
+    })
+  })
+}
+
+function addMcpEnvRow(key, val) {
+  const rows = document.getElementById('mcpf-env-rows')
+  const row = document.createElement('div')
+  row.style.cssText = 'display:flex;gap:8px;margin-bottom:4px;align-items:center'
+  row.innerHTML = `<input class="s-form-input" placeholder="KEY" value="${esc(key)}" style="flex:1" data-envkey><input class="s-form-input" placeholder="value" value="${esc(val)}" style="flex:1" data-envval><button class="s-btn" style="padding:4px 8px;font-size:16px;opacity:0.5" onclick="this.parentElement.remove()">&times;</button>`
+  rows.appendChild(row)
+}
+
+function getMcpEnvVars() {
+  const env = {}
+  document.querySelectorAll('#mcpf-env-rows [data-envkey]').forEach(el => {
+    const key = el.value.trim()
+    const val = el.parentElement.querySelector('[data-envval]').value
+    if (key) env[key] = val
+  })
+  return Object.keys(env).length ? env : undefined
 }
 
 // ==================== Cron Tasks ====================
@@ -143,19 +315,19 @@ async function loadCronTab(container) {
   container.innerHTML = `<div class="settings-section"><div class="settings-section-header"><h3>Scheduled Tasks</h3><button class="btn-sm" id="cron-add-btn">+ New Task</button></div>
     <div id="cron-form" style="display:none"><div class="settings-card">
       <div class="form-row"><label>Task ID</label><input id="cf-id" placeholder="my-task"></div>
-      <div class="form-row"><label>Name (optional)</label><input id="cf-name" placeholder="Friendly name"></div>
+      <div class="form-row"><label>Name</label><input id="cf-name" placeholder="Friendly name"></div>
       <div class="form-row"><label>Schedule (cron)</label><input id="cf-schedule" placeholder="0 9 * * *"></div>
       <div class="form-row"><label>Prompt</label><textarea id="cf-prompt" rows="3" class="prompt-editor" placeholder="What should the agent do?"></textarea></div>
       <div class="form-actions"><button class="btn-sm btn-primary" id="cf-save">Save</button><button class="btn-sm" id="cf-cancel">Cancel</button></div></div></div>
     <div id="cron-list">${tasks.length === 0 ? '<p class="empty-text">No scheduled tasks</p>' : `<table class="s-table"><thead><tr><th>ID</th><th>Name</th><th>Schedule</th><th>Status</th><th></th></tr></thead><tbody>${tasks.map(t => `
     <tr><td><span class="s-code">${esc(t.id)}</span></td><td>${esc(t.name || '-')}</td><td class="s-muted">${esc(t.schedule)}</td>
     <td>${t.enabled ? '<span class="s-badge s-badge-green">On</span>' : '<span class="s-badge s-badge-gray">Off</span>'}</td>
-    <td><div class="s-actions"><button class="s-btn s-btn-ghost" onclick="toggleCron('${esc(t.id)}',${t.enabled ? 'false' : 'true'})">${t.enabled ? 'Disable' : 'Enable'}</button><button class="s-btn s-btn-danger" onclick="deleteCron('${esc(t.id)}')">Delete</button></div></td></tr>`).join('')}</tbody></table>`}</div></div>`
-  document.getElementById('cron-add-btn')?.addEventListener('click', () => { document.getElementById('cron-form').style.display = 'block' })
-  document.getElementById('cf-cancel')?.addEventListener('click', () => { document.getElementById('cron-form').style.display = 'none' })
+    <td><div class="s-actions"><button class="s-btn s-btn-ghost" onclick="toggleCron('${esc(t.id)}',${!t.enabled})">${t.enabled ? 'Disable' : 'Enable'}</button><button class="s-btn s-btn-danger" onclick="deleteCron('${esc(t.id)}')">Delete</button></div></td></tr>`).join('')}</tbody></table>`}</div></div>`
+  document.getElementById('cron-add-btn')?.addEventListener('click', () => document.getElementById('cron-form').style.display = 'block')
+  document.getElementById('cf-cancel')?.addEventListener('click', () => document.getElementById('cron-form').style.display = 'none')
   document.getElementById('cf-save')?.addEventListener('click', async () => {
     const id = gv('cf-id'), schedule = gv('cf-schedule'), prompt = gv('cf-prompt')
-    if (!id || !schedule || !prompt) return
+    if (!id || !schedule || !prompt) { showToast('All fields required'); return }
     await settingsApi.cron.upsert({ id, name: gv('cf-name') || undefined, schedule, prompt, enabled: true, createdAt: Date.now(), updatedAt: Date.now() })
     showToast('Task saved'); loadSettingsTab('cron')
   })
@@ -163,7 +335,7 @@ async function loadCronTab(container) {
 window.toggleCron = async function(id, enabled) {
   const tasks = await settingsApi.cron.list()
   const t = tasks.find(x => x.id === id)
-  if (t) { await settingsApi.cron.upsert({ ...t, enabled: enabled === 'true' || enabled === true, updatedAt: Date.now() }); loadSettingsTab('cron') }
+  if (t) { await settingsApi.cron.upsert({ ...t, enabled, updatedAt: Date.now() }); loadSettingsTab('cron') }
 }
 window.deleteCron = async function(id) { if (confirm('Delete this task?')) { await settingsApi.cron.delete(id); showToast('Deleted'); loadSettingsTab('cron') } }
 
@@ -191,33 +363,21 @@ async function loadPreferencesTab(container) {
         <div class="settings-theme-card ${lang === 'zh' ? 'active' : ''}" data-lang="zh"><div class="settings-theme-label">中文</div></div>
       </div></div></div>`
 
-  // Theme selection
   container.querySelector('#theme-options')?.addEventListener('click', async (e) => {
-    const card = e.target.closest('.settings-theme-card')
-    if (!card) return
-    const t = card.dataset.theme
-    container.querySelectorAll('#theme-options .settings-theme-card').forEach(c => c.classList.toggle('active', c.dataset.theme === t))
-    await settingsApi.kv.set('theme', t)
-    applyTheme(t)
+    const card = e.target.closest('.settings-theme-card'); if (!card) return
+    container.querySelectorAll('#theme-options .settings-theme-card').forEach(c => c.classList.toggle('active', c.dataset.theme === card.dataset.theme))
+    await settingsApi.kv.set('theme', card.dataset.theme); applyTheme(card.dataset.theme)
   })
-
-  // Permission mode
   container.querySelector('#perm-options')?.addEventListener('click', async (e) => {
-    const card = e.target.closest('.settings-perm-card')
-    if (!card) return
-    const mode = card.dataset.perm
-    container.querySelectorAll('.settings-perm-card').forEach(c => c.classList.toggle('active', c.dataset.perm === mode))
-    await settingsApi.kv.set('permission_mode', mode)
-    showToast('Permission mode saved')
+    const card = e.target.closest('.settings-perm-card'); if (!card) return
+    container.querySelectorAll('.settings-perm-card').forEach(c => c.classList.toggle('active', c.dataset.perm === card.dataset.perm))
+    await settingsApi.kv.set('permission_mode', card.dataset.perm); showToast('Permission mode saved')
   })
-
-  // Language
   container.querySelectorAll('[data-lang]').forEach(card => {
     card.addEventListener('click', async () => {
-      const l = card.dataset.lang
-      container.querySelectorAll('[data-lang]').forEach(c => c.classList.toggle('active', c.dataset.lang === l))
-      await settingsApi.kv.set('language', l)
-      if (typeof setLanguage === 'function') setLanguage(l)
+      container.querySelectorAll('[data-lang]').forEach(c => c.classList.toggle('active', c.dataset.lang === card.dataset.lang))
+      await settingsApi.kv.set('language', card.dataset.lang)
+      if (typeof setLanguage === 'function') setLanguage(card.dataset.lang)
       showToast('Language saved')
     })
   })
@@ -228,9 +388,9 @@ function esc(str) { return str ? String(str).replace(/&/g,'&amp;').replace(/</g,
 function gv(id) { return document.getElementById(id)?.value?.trim() || '' }
 function showToast(msg) {
   let toast = document.getElementById('settings-toast')
-  if (!toast) { toast = document.createElement('div'); toast.id = 'settings-toast'; toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:8px;font-size:13px;z-index:9999;animation:fade-in .15s ease'; document.body.appendChild(toast) }
-  toast.textContent = msg; toast.style.display = 'block'
-  setTimeout(() => { toast.style.display = 'none' }, 2500)
+  if (!toast) { toast = document.createElement('div'); toast.id = 'settings-toast'; toast.className = 's-toast'; document.body.appendChild(toast) }
+  toast.textContent = msg; toast.classList.add('show')
+  setTimeout(() => toast.classList.remove('show'), 2500)
 }
 
 window.toggleSettings = toggleSettings

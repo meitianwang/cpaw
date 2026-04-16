@@ -2,6 +2,9 @@ import { app } from 'electron'
 import { SettingsStore } from './settings-store.js'
 import { EngineHost } from './engine-host.js'
 import { MessageStore } from './message-store.js'
+import { SkillsManager } from './skills-manager.js'
+import { McpConfigManager } from './mcp-config.js'
+import { ChannelConfigManager } from './channel-config.js'
 import { registerIpcHandlers } from './ipc-handlers.js'
 import { createMainWindow } from './window.js'
 import { createTray } from './tray.js'
@@ -38,25 +41,30 @@ app.whenReady().then(async () => {
     const messageStore = new MessageStore()
     messageStore.prune()
 
-    // 3. Engine
+    // 3. Managers
+    const skillsManager = new SkillsManager(settingsStore)
+    const mcpConfig = new McpConfigManager(settingsStore)
+    const channelConfig = new ChannelConfigManager(settingsStore)
+
+    // 4. Engine
     engineHost = new EngineHost(settingsStore)
     engineHost.setMessageStore(messageStore)
 
-    // 4. IPC
-    registerIpcHandlers(engineHost, settingsStore)
+    // 5. IPC — pass all managers
+    registerIpcHandlers(engineHost, settingsStore, skillsManager, mcpConfig, channelConfig)
 
-    // 5. Window
+    // 6. Window
     const mainWindow = createMainWindow()
     engineHost.setMainWindow(mainWindow)
 
-    // 5. Tray
+    // 7. Tray
     createTray()
 
-    // 7. Init engine (MCP, prompts, etc.)
+    // 8. Init engine (MCP, prompts, etc.)
     mainWindow.webContents.send('engine:status', { status: 'initializing' })
     await engineHost.init()
 
-    // 8. AutoDream (background memory consolidation)
+    // 9. AutoDream (background memory consolidation)
     try {
       const { initAutoDream } = await import('../engine/services/autoDream/autoDream.js')
       initAutoDream()
@@ -65,7 +73,6 @@ app.whenReady().then(async () => {
     }
 
     mainWindow.webContents.send('engine:status', { status: 'ready' })
-
     console.log('[Klaus] Desktop app ready')
   } catch (err) {
     console.error('[Klaus] Startup failed:', err)
@@ -73,10 +80,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  // macOS: keep running in tray
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('activate', () => {

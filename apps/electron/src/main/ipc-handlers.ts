@@ -1,11 +1,23 @@
 import { ipcMain } from 'electron'
+import { join } from 'path'
+import { homedir } from 'os'
+import { mkdirSync, writeFileSync } from 'fs'
+import { randomUUID } from 'crypto'
 import type { EngineHost } from './engine-host.js'
 import type { SettingsStore } from './settings-store.js'
+import type { SkillsManager } from './skills-manager.js'
+import type { McpConfigManager } from './mcp-config.js'
+import type { ChannelConfigManager } from './channel-config.js'
 
-export function registerIpcHandlers(engine: EngineHost, store: SettingsStore): void {
+export function registerIpcHandlers(
+  engine: EngineHost,
+  store: SettingsStore,
+  skills: SkillsManager,
+  mcpConfig: McpConfigManager,
+  channels: ChannelConfigManager,
+): void {
   // --- Chat ---
   ipcMain.handle('chat:send', async (_e, { sessionId, text, media }) => {
-    // Fire and forget — events stream back via webContents.send
     engine.chat(sessionId, text, media).catch(err => {
       console.error('[IPC] chat:send error:', err)
     })
@@ -16,10 +28,6 @@ export function registerIpcHandlers(engine: EngineHost, store: SettingsStore): v
   })
 
   ipcMain.handle('chat:upload', async (_e, { name, type, buffer }) => {
-    const { join } = require('path')
-    const { homedir } = require('os')
-    const { mkdirSync, writeFileSync } = require('fs')
-    const { randomUUID } = require('crypto')
     const uploadDir = join(homedir(), '.klaus', 'uploads')
     mkdirSync(uploadDir, { recursive: true })
     const id = randomUUID()
@@ -31,77 +39,31 @@ export function registerIpcHandlers(engine: EngineHost, store: SettingsStore): v
   })
 
   // --- Sessions ---
-  ipcMain.handle('session:new', async () => {
-    return engine.newSession()
-  })
-
-  ipcMain.handle('session:list', async () => {
-    return engine.listSessions()
-  })
-
-  ipcMain.handle('session:delete', async (_e, { sessionId }) => {
-    engine.deleteSession(sessionId)
-  })
-
-  ipcMain.handle('session:rename', async (_e, { sessionId, title }) => {
-    engine.renameSession(sessionId, title)
-  })
-
-  ipcMain.handle('session:history', async (_e, { sessionId }) => {
-    return engine.getHistory(sessionId)
-  })
+  ipcMain.handle('session:new', async () => engine.newSession())
+  ipcMain.handle('session:list', async () => engine.listSessions())
+  ipcMain.handle('session:delete', async (_e, { sessionId }) => engine.deleteSession(sessionId))
+  ipcMain.handle('session:rename', async (_e, { sessionId, title }) => engine.renameSession(sessionId, title))
+  ipcMain.handle('session:history', async (_e, { sessionId }) => engine.getHistory(sessionId))
 
   // --- Settings: Models ---
-  ipcMain.handle('settings:models:list', async () => {
-    return store.listModels()
-  })
-
-  ipcMain.handle('settings:models:upsert', async (_e, model) => {
-    store.upsertModel(model)
-  })
-
-  ipcMain.handle('settings:models:default', async (_e, { id }) => {
-    store.setDefaultModel(id)
-  })
-
-  ipcMain.handle('settings:models:delete', async (_e, { id }) => {
-    return store.deleteModel(id)
-  })
+  ipcMain.handle('settings:models:list', async () => store.listModels())
+  ipcMain.handle('settings:models:upsert', async (_e, model) => store.upsertModel(model))
+  ipcMain.handle('settings:models:default', async (_e, { id }) => store.setDefaultModel(id))
+  ipcMain.handle('settings:models:delete', async (_e, { id }) => store.deleteModel(id))
 
   // --- Settings: Prompts ---
-  ipcMain.handle('settings:prompts:list', async () => {
-    return store.listPrompts()
-  })
-
-  ipcMain.handle('settings:prompts:upsert', async (_e, prompt) => {
-    store.upsertPrompt(prompt)
-  })
-
-  ipcMain.handle('settings:prompts:delete', async (_e, { id }) => {
-    return store.deletePrompt(id)
-  })
+  ipcMain.handle('settings:prompts:list', async () => store.listPrompts())
+  ipcMain.handle('settings:prompts:upsert', async (_e, prompt) => store.upsertPrompt(prompt))
+  ipcMain.handle('settings:prompts:delete', async (_e, { id }) => store.deletePrompt(id))
 
   // --- Settings: KV ---
-  ipcMain.handle('settings:kv:get', async (_e, { key }) => {
-    return store.get(key)
-  })
-
-  ipcMain.handle('settings:kv:set', async (_e, { key, value }) => {
-    store.set(key, value)
-  })
+  ipcMain.handle('settings:kv:get', async (_e, { key }) => store.get(key))
+  ipcMain.handle('settings:kv:set', async (_e, { key, value }) => store.set(key, value))
 
   // --- Settings: Cron ---
-  ipcMain.handle('settings:cron:list', async () => {
-    return store.listTasks()
-  })
-
-  ipcMain.handle('settings:cron:upsert', async (_e, task) => {
-    store.upsertTask(task)
-  })
-
-  ipcMain.handle('settings:cron:delete', async (_e, { id }) => {
-    return store.deleteTask(id)
-  })
+  ipcMain.handle('settings:cron:list', async () => store.listTasks())
+  ipcMain.handle('settings:cron:upsert', async (_e, task) => store.upsertTask(task))
+  ipcMain.handle('settings:cron:delete', async (_e, { id }) => store.deleteTask(id))
 
   // --- Permissions ---
   ipcMain.handle('permission:respond', async (_e, { requestId, decision, acceptedSuggestionIndices }) => {
@@ -112,33 +74,22 @@ export function registerIpcHandlers(engine: EngineHost, store: SettingsStore): v
   ipcMain.handle('mcp:reconnect', async () => {
     await engine.reconnectMcp()
   })
-
-  ipcMain.handle('mcp:status', async () => {
-    return engine.getMcpStatus()
-  })
+  ipcMain.handle('mcp:status', async () => engine.getMcpStatus())
+  ipcMain.handle('mcp:list', async () => mcpConfig.list())
+  ipcMain.handle('mcp:create', async (_e, input) => mcpConfig.create(input))
+  ipcMain.handle('mcp:toggle', async (_e, { name, enabled }) => mcpConfig.toggle(name, enabled))
+  ipcMain.handle('mcp:remove', async (_e, { name }) => mcpConfig.remove(name))
+  ipcMain.handle('mcp:import', async (_e, { json }) => mcpConfig.importJson(json))
 
   // --- Skills ---
-  ipcMain.handle('skills:list', async () => {
-    return engine.listSkills()
-  })
+  ipcMain.handle('skills:list', async () => skills.listAll())
+  ipcMain.handle('skills:market', async () => skills.listMarket())
+  ipcMain.handle('skills:install', async (_e, { name }) => skills.install(name))
+  ipcMain.handle('skills:uninstall', async (_e, { name }) => skills.uninstall(name))
+  ipcMain.handle('skills:toggle', async (_e, { name, enabled }) => skills.toggle(name, enabled))
 
-  ipcMain.handle('skills:toggle', async (_e, { name, enabled }) => {
-    engine.toggleSkill(name, enabled)
-  })
-
-  // --- Channels (stub — channel management requires channel plugins) ---
-  ipcMain.handle('channels:list', async () => {
-    // TODO: integrate with ChannelManager when available
-    return []
-  })
-
-  ipcMain.handle('channels:connect', async (_e, { id, config }) => {
-    // TODO: channel connect
-    return { ok: false, error: 'Channel management not yet implemented in desktop app' }
-  })
-
-  ipcMain.handle('channels:disconnect', async (_e, { id }) => {
-    // TODO: channel disconnect
-    return { ok: false }
-  })
+  // --- Channels ---
+  ipcMain.handle('channels:list', async () => channels.list())
+  ipcMain.handle('channels:connect', async (_e, { id, config }) => channels.connect(id, config))
+  ipcMain.handle('channels:disconnect', async (_e, { id }) => channels.disconnect(id))
 }
