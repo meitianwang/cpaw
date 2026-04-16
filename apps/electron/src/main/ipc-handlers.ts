@@ -15,6 +15,21 @@ export function registerIpcHandlers(engine: EngineHost, store: SettingsStore): v
     engine.interrupt(sessionId)
   })
 
+  ipcMain.handle('chat:upload', async (_e, { name, type, buffer }) => {
+    const { join } = require('path')
+    const { homedir } = require('os')
+    const { mkdirSync, writeFileSync } = require('fs')
+    const { randomUUID } = require('crypto')
+    const uploadDir = join(homedir(), '.klaus', 'uploads')
+    mkdirSync(uploadDir, { recursive: true })
+    const id = randomUUID()
+    const ext = name.includes('.') ? '.' + name.split('.').pop() : ''
+    const filename = id + ext
+    const filepath = join(uploadDir, filename)
+    writeFileSync(filepath, Buffer.from(buffer))
+    return { path: filepath, id, name }
+  })
+
   // --- Sessions ---
   ipcMain.handle('session:new', async () => {
     return engine.newSession()

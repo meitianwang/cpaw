@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('klaus', {
       ipcRenderer.invoke('chat:send', { sessionId, text, media }),
     interrupt: (sessionId: string) =>
       ipcRenderer.invoke('chat:interrupt', { sessionId }),
+    uploadFile: (name: string, type: string, buffer: ArrayBuffer) =>
+      ipcRenderer.invoke('chat:upload', { name, type, buffer }),
   },
 
   // Sessions

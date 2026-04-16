@@ -15,6 +15,10 @@ let slashActiveIdx = -1
 let agentPanel = { team: null, agents: new Map() }
 
 const AGENT_COLOR_MAP = { blue: '#3b82f6', green: '#16a34a', purple: '#9333ea', orange: '#ea580c', red: '#dc2626', yellow: '#eab308' }
+let pendingFiles = []  // { file, objectUrl, uploadId, uploading }
+let sessionDom = new Map()  // sessionId → DocumentFragment cache
+let sidebarCollapsed = localStorage.getItem('klaus_sidebar_collapsed') === '1'
+let userMenuOpen = false
 
 // --- DOM refs ---
 const messagesEl = document.getElementById('messages')
@@ -49,6 +53,9 @@ if (typeof marked !== 'undefined') {
 
 // --- Init ---
 async function init() {
+  // Sidebar collapse state
+  if (sidebarCollapsed) document.getElementById('sidebar')?.classList.add('collapsed')
+
   sessions = await klaus.session.list()
   renderSessionList()
   updateWelcomeGreeting()
@@ -76,16 +83,31 @@ function renderSessionList() {
 }
 
 async function switchSession(id) {
+  // Save current session's DOM
+  if (currentSessionId && messagesEl.childNodes.length) {
+    const frag = document.createDocumentFragment()
+    while (messagesEl.firstChild) frag.appendChild(messagesEl.firstChild)
+    sessionDom.set(currentSessionId, frag)
+  }
+
   currentSessionId = id
   renderSessionList()
   messagesEl.style.display = 'block'
   welcomeEl.style.display = 'none'
   messagesEl.innerHTML = ''
   resetStreamState()
-  const history = await klaus.session.history(id)
-  for (const msg of history) {
-    if (msg.role === 'user') appendUserMsg(msg.text)
-    else appendFinalAssistantMsg(msg.text)
+
+  // Restore from DOM cache if available
+  const cached = sessionDom.get(id)
+  if (cached) {
+    messagesEl.appendChild(cached)
+    sessionDom.delete(id)
+  } else {
+    const history = await klaus.session.history(id)
+    for (const msg of history) {
+      if (msg.role === 'user') appendUserMsg(msg.text)
+      else appendFinalAssistantMsg(msg.text)
+    }
   }
   scrollToBottom()
 }
@@ -101,6 +123,7 @@ async function newChat() {
 async function deleteSession(id) {
   await klaus.session.delete(id)
   sessions = sessions.filter(s => s.id !== id)
+  sessionDom.delete(id)
   if (currentSessionId === id) {
     if (sessions.length > 0) await switchSession(sessions[0].id)
     else { currentSessionId = null; messagesEl.style.display = 'none'; welcomeEl.style.display = 'flex' }
@@ -118,13 +141,27 @@ function resetStreamState() {
 
 async function send() {
   const text = inputEl.value.trim()
-  if (!text || busy) return
+  if (!text && pendingFiles.length === 0) return
+  if (busy) return
   if (!currentSessionId) await newChat()
   busy = true; btnSend.disabled = true
+  const finalText = inputEl.value.trim()
   inputEl.value = ''; autoResize(); hideSlashMenu()
-  appendUserMsg(text)
+
+  // Collect uploaded file paths
+  const media = pendingFiles
+    .filter(e => e.uploadPath)
+    .map(e => ({ type: e.file.type.startsWith('image/') ? 'image' : 'file', path: e.uploadPath, name: e.file.name }))
+  const fileNames = pendingFiles.map(e => e.file.name)
+  pendingFiles = []; renderPreviews()
+
+  // Show user message with file badges
+  const displayText = fileNames.length > 0
+    ? `[Files: ${fileNames.join(', ')}]${finalText ? ' ' + finalText : ''}`
+    : finalText
+  appendUserMsg(displayText)
   resetStreamState()
-  await klaus.chat.send(currentSessionId, text)
+  await klaus.chat.send(currentSessionId, finalText, media.length > 0 ? media : undefined)
 }
 
 window.sendQuickPrompt = (topic) => { inputEl.value = topic + ': '; inputEl.focus() }
@@ -574,8 +611,32 @@ inputEl.addEventListener('input', () => { autoResize(); updateSendBtn(); handleS
 btnSend.addEventListener('click', send)
 btnNewChat.addEventListener('click', newChat)
 
-// Settings
-document.getElementById('sidebar-user')?.addEventListener('click', () => toggleSettings())
+// Sidebar toggle
+document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+  sidebarCollapsed = !sidebarCollapsed
+  document.getElementById('sidebar')?.classList.toggle('collapsed', sidebarCollapsed)
+  localStorage.setItem('klaus_sidebar_collapsed', sidebarCollapsed ? '1' : '0')
+})
+
+// User menu
+document.getElementById('sidebar-user')?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  userMenuOpen = !userMenuOpen
+  document.getElementById('user-menu')?.classList.toggle('open', userMenuOpen)
+})
+document.addEventListener('click', () => {
+  if (userMenuOpen) { userMenuOpen = false; document.getElementById('user-menu')?.classList.remove('open') }
+})
+document.getElementById('menu-settings')?.addEventListener('click', () => {
+  userMenuOpen = false; document.getElementById('user-menu')?.classList.remove('open')
+  toggleSettings()
+})
+document.getElementById('menu-help')?.addEventListener('click', () => {
+  userMenuOpen = false; document.getElementById('user-menu')?.classList.remove('open')
+  window.open('https://github.com/anthropics/claude-code/issues', '_blank')
+})
+
+// Settings back
 document.getElementById('settings-back')?.addEventListener('click', () => toggleSettings())
 document.querySelectorAll('.settings-nav-item').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -592,21 +653,79 @@ document.getElementById('agent-panel-close')?.addEventListener('click', (e) => {
 // File attach
 btnAttach.addEventListener('click', () => fileInput.click())
 fileInput.addEventListener('change', () => {
-  if (fileInput.files?.length) { inputEl.value += `[Files: ${[...fileInput.files].map(f => f.name).join(', ')}]`; autoResize(); updateSendBtn() }
+  if (fileInput.files?.length) addFiles([...fileInput.files])
+  fileInput.value = ''
 })
+
+function addFiles(files) {
+  for (const f of files) {
+    if (f.size > 10 * 1024 * 1024) { appendError('File too large (max 10MB): ' + f.name); continue }
+    const entry = { file: f, objectUrl: null, uploadPath: null, uploading: true }
+    if (f.type.startsWith('image/')) entry.objectUrl = URL.createObjectURL(f)
+    pendingFiles.push(entry)
+    // Upload via IPC — saves to ~/.klaus/uploads/
+    uploadFileEntry(entry)
+  }
+  renderPreviews()
+  updateSendBtn()
+}
+
+async function uploadFileEntry(entry) {
+  try {
+    // Read file as ArrayBuffer and send to main process
+    const buffer = await entry.file.arrayBuffer()
+    const result = await klaus.chat.uploadFile(entry.file.name, entry.file.type, buffer)
+    entry.uploadPath = result.path
+  } catch (err) {
+    appendError('Upload failed: ' + entry.file.name)
+    pendingFiles = pendingFiles.filter(e => e !== entry)
+  }
+  entry.uploading = false
+  renderPreviews()
+  updateSendBtn()
+}
+
+function renderPreviews() {
+  const previewsEl = document.getElementById('previews')
+  if (!previewsEl) return
+  previewsEl.innerHTML = ''
+  previewsEl.classList.toggle('has-files', pendingFiles.length > 0)
+  for (const entry of pendingFiles) {
+    const item = document.createElement('div')
+    item.className = 'preview-item'
+    if (entry.objectUrl) {
+      item.innerHTML = `<img src="${entry.objectUrl}"><button class="remove">&times;</button>`
+    } else {
+      item.innerHTML = `<div class="file-info">${entry.uploading ? 'uploading... ' : ''}${escapeHtml(entry.file.name)}</div><button class="remove">&times;</button>`
+    }
+    item.querySelector('.remove').onclick = () => {
+      pendingFiles = pendingFiles.filter(e => e !== entry)
+      if (entry.objectUrl) URL.revokeObjectURL(entry.objectUrl)
+      renderPreviews(); updateSendBtn()
+    }
+    previewsEl.appendChild(item)
+  }
+}
 
 // Drag-drop
 document.addEventListener('dragover', (e) => { e.preventDefault(); dropOverlay.classList.add('active') })
 document.addEventListener('dragleave', (e) => { if (e.relatedTarget === null) dropOverlay.classList.remove('active') })
 document.addEventListener('drop', (e) => {
   e.preventDefault(); dropOverlay.classList.remove('active')
-  if (e.dataTransfer?.files?.length) { inputEl.value += `[Files: ${[...e.dataTransfer.files].map(f => f.name).join(', ')}]`; autoResize(); updateSendBtn() }
+  if (e.dataTransfer?.files?.length) addFiles([...e.dataTransfer.files])
 })
 
 // Image paste
 inputEl.addEventListener('paste', (e) => {
-  for (const item of (e.clipboardData?.items || [])) {
-    if (item.type.startsWith('image/')) { e.preventDefault(); inputEl.value += '[Pasted image]'; autoResize(); updateSendBtn(); break }
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault()
+      const f = item.getAsFile()
+      if (f) addFiles([f])
+      break
+    }
   }
 })
 
