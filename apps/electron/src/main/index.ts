@@ -1,4 +1,6 @@
 import { app } from 'electron'
+import { join } from 'path'
+import { homedir } from 'os'
 import { SettingsStore } from './settings-store.js'
 import { EngineHost } from './engine-host.js'
 import { MessageStore } from './message-store.js'
@@ -12,6 +14,24 @@ import { createTray } from './tray.js'
 
 // Ensure we run as Electron app, not Node.js (Claude Code sets ELECTRON_RUN_AS_NODE=1)
 delete process.env.ELECTRON_RUN_AS_NODE
+
+// 把 CC 引擎的 home 重定向到 ~/.klaus — skills / MCP / settings / permissions / user memory 全局共享到这里
+// 必须在任何 engine 模块加载前设置，getClaudeConfigHomeDir() 会读这个 env
+process.env.CLAUDE_CONFIG_DIR = join(homedir(), '.klaus')
+process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1'
+
+// CC 引擎的 MACRO 全局 — bundle 里只有 `MACRO.VERSION` 之类的运行时引用，没有编译期替换
+// Web 端通过 src/engine/shims/register-bun-bundle.ts 设置，Electron 端没走那条路，这里显式设
+;(globalThis as any).MACRO = {
+  VERSION: '2.1.88',
+  BUILD_TIME: new Date().toISOString(),
+  PACKAGE_URL: '@anthropic-ai/claude-code',
+  NATIVE_PACKAGE_URL: '',
+  FEEDBACK_CHANNEL: 'https://github.com/anthropics/claude-code/issues',
+  ISSUES_EXPLAINER: 'report the issue at https://github.com/anthropics/claude-code/issues',
+  VERSION_CHANGELOG: '',
+  IS_CI: false,
+}
 
 // Prevent EPIPE crashes when stdout/stderr pipe breaks
 process.stdout?.on?.('error', () => {})

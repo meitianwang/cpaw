@@ -3,8 +3,12 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('klaus', {
   // Chat
   chat: {
-    send: (sessionId: string, text: string, media?: any[]) =>
-      ipcRenderer.invoke('chat:send', { sessionId, text, media }),
+    send: (sessionId: string, text: string, media?: any[]) => {
+      console.log('[preload] chat.send invoked', { sessionId, textLen: text?.length })
+      return ipcRenderer.invoke('chat:send', { sessionId, text, media })
+        .then((r) => { console.log('[preload] chat.send resolved'); return r })
+        .catch((e) => { console.error('[preload] chat.send ERROR', e); throw e })
+    },
     interrupt: (sessionId: string) =>
       ipcRenderer.invoke('chat:interrupt', { sessionId }),
     uploadFile: (name: string, type: string, buffer: ArrayBuffer) =>

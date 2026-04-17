@@ -29,18 +29,27 @@ import { addPermissionRulesToSettings } from '../engine/utils/permissions/permis
 import { setOriginalCwd, setCwdState, setProjectRoot, setIsInteractive } from '../engine/bootstrap/state.js'
 import { createContentReplacementState, type ContentReplacementState } from '../engine/utils/toolResultStorage.js'
 import { initContextCollapse } from '../engine/services/contextCollapse/index.js'
+import { runWithCwdOverride } from '../engine/utils/cwd.js'
+import { getDefaultAppState, type AppState } from '../engine/state/AppState.js'
 import type { MCPServerConnection, ServerResource } from '../engine/services/mcp/types.js'
 import type { Tool } from '../engine/Tool.js'
 import { getMcpToolsCommandsAndResources } from '../engine/services/mcp/client.js'
 import { getAllMcpConfigs } from '../engine/services/mcp/config.js'
 
 const CONFIG_DIR = join(homedir(), '.klaus')
+const SESSIONS_DIR = join(CONFIG_DIR, 'sessions')
+
+// sessionId 可能来自 channel(含冒号等非法字符），做成安全的目录名
+function sessionDirFor(sessionId: string): string {
+  const safe = sessionId.replace(/[^\w-]/g, '_')
+  return join(SESSIONS_DIR, safe || '__default__')
+}
 
 interface SessionEntry {
   id: string
   title: string
   messages: Message[]
-  appState: any | null
+  appState: AppState
   toolPermissionContext: ToolPermissionContext | null
   loopDetector: ToolLoopDetector
   isRunning: boolean
@@ -107,9 +116,11 @@ export class EngineHost {
   }
 
   private async _doInit(): Promise<void> {
-    const cwd = homedir()
-    setOriginalCwd(cwd)
-    setCwdState(cwd)
+    // Fallback cwd — 实际每次 chat() 会通过 runWithCwdOverride 切到 session 自己的目录
+    const defaultSessionDir = join(SESSIONS_DIR, '__default__')
+    mkdirSync(defaultSessionDir, { recursive: true })
+    setOriginalCwd(defaultSessionDir)
+    setCwdState(defaultSessionDir)
     setProjectRoot(CONFIG_DIR)
     setIsInteractive(true)
 
@@ -220,7 +231,7 @@ export class EngineHost {
       id,
       title: 'New Chat',
       messages: [],
-      appState: null,
+      appState: getDefaultAppState(),
       toolPermissionContext: null,
       loopDetector: new ToolLoopDetector(),
       isRunning: false,
@@ -266,8 +277,10 @@ export class EngineHost {
   // --- Chat ---
 
   async chat(sessionId: string, text: string, _media?: any[]): Promise<void> {
+    console.log('[Engine] chat() called', { sessionId, textLen: text?.length })
     // 等待引擎初始化完成（init 仍在后台进行时，chat 自然排队，用户感知不到）
     await this.init()
+    console.log('[Engine] chat() init done, entering query')
 
     let session = this.sessions.get(sessionId)
     if (!session) {
@@ -276,7 +289,7 @@ export class EngineHost {
         id: sessionId,
         title: text.slice(0, 50) || 'New Chat',
         messages: [],
-        appState: null,
+        appState: getDefaultAppState(),
         toolPermissionContext: null,
         loopDetector: new ToolLoopDetector(),
         isRunning: false,
@@ -316,6 +329,7 @@ export class EngineHost {
           sectionOverrides[prompt.id] = prompt.content
         }
       }
+      console.log('[Engine] building systemPrompt...')
       const systemPromptParts = await getSystemPrompt(
         tools as any,
         this.getModel(),
@@ -324,6 +338,7 @@ export class EngineHost {
         sectionOverrides,
       )
       const systemPrompt = asSystemPrompt(systemPromptParts)
+      console.log('[Engine] systemPrompt built, parts=', systemPromptParts?.length)
 
       // Build permission context
       let toolPermissionCtx: ToolPermissionContext = {
@@ -341,6 +356,19 @@ export class EngineHost {
 
       // Store permission context and appState on session
       session.toolPermissionContext = toolPermissionCtx
+
+      // 把 EngineHost 外部维护的状态（MCP 连接、权限 ctx）同步进 session.appState，
+      // 这样 getAppState 返回的始终是一份完整、最新的 AppState（结构对齐 CC getDefaultAppState）
+      session.appState = {
+        ...session.appState,
+        toolPermissionContext: toolPermissionCtx,
+        mcp: {
+          ...session.appState.mcp,
+          clients: this.mcpState.clients,
+          tools: this.mcpState.tools,
+          resources: this.mcpState.resources,
+        },
+      }
 
       // Permission callback — routes to renderer via IPC
       const onAsk: OnAskCallback = async ({ tool: askTool, input: askInput, message, suggestions }) => {
@@ -407,6 +435,12 @@ export class EngineHost {
         ? { type: 'disabled' as const }
         : { type: 'enabled' as const, budgetTokens: Math.floor(maxCtx * 0.8) }
 
+      // Pick fallback model: 同 provider 下的另一个可用模型（和 Web 端一致）
+      const allModels = this.store.listModels()
+      const fallbackRecord = allModels.find(
+        (m: any) => m.id !== modelRecord?.id && m.provider === modelRecord?.provider && m.model && m.apiKey,
+      )
+
       // Build query params
       const queryParams: QueryParams = {
         messages: session.messages,
@@ -415,6 +449,15 @@ export class EngineHost {
         systemContext: {},
         canUseTool,
         toolUseContext: {
+          // 消息数组 —— 从 session 来，processUserInput 里会调 setMessages 改它
+          messages: session.messages,
+          setMessages: (fn: (prev: Message[]) => Message[]) => {
+            session.messages = fn(session.messages)
+          },
+          // 桌面端不切 API key，no-op
+          onChangeAPIKey: () => {},
+          // MCP server 要求用户交互时触发，桌面端简单 deny
+          handleElicitation: async () => ({ action: 'decline' as const }),
           options: {
             commands: [],
             debug: false,
@@ -424,54 +467,84 @@ export class EngineHost {
             thinkingConfig,
             mcpClients: this.mcpState.clients,
             mcpResources: this.mcpState.resources,
+            ideInstallationStatus: null,
             isNonInteractiveSession: false,
-            agentDefinitions: { bundledAgents: [], userAgents: [] } as any,
+            customSystemPrompt: undefined,
+            appendSystemPrompt: undefined,
+            // CC 结构：activeAgents = 当前可用列表，allAgents = 包含 disabled 的完整列表
+            agentDefinitions: { activeAgents: [], allAgents: [] },
+            theme: 'dark',
+            maxBudgetUsd: undefined,
+            hooksConfig: {},
           },
           abortController: new AbortController(),
           readFileState: new Map() as any,
-          getAppState: () => ({
-            toolPermissionContext: toolPermissionCtx,
-            tasks: new Map(),
-            teamContext: session.appState?.teamContext,
-          } as any),
-          setAppState: (fn: (prev: any) => any) => {
-            const prev = session.appState ?? { toolPermissionContext: toolPermissionCtx, tasks: new Map() }
+          // CC 原版 toolUseContext 要求这几个 Set 用于 nested memory / skill discovery 追踪
+          nestedMemoryAttachmentTriggers: new Set<string>(),
+          loadedNestedMemoryPaths: new Set<string>(),
+          dynamicSkillDirTriggers: new Set<string>(),
+          discoveredSkillNames: new Set<string>(),
+          // CC 引擎要求 toolUseContext 必须有这 4 个 setter，桌面端不接入 UI 状态管理，全部 no-op
+          setInProgressToolUseIDs: () => {},
+          setResponseLength: () => {},
+          updateFileHistoryState: () => {},
+          updateAttributionState: () => {},
+          setSDKStatus: () => {},
+          contentReplacementState: session.contentReplacementState,
+          // API 凭证 —— 子 agent (AgentTool) 创建时会读这两个
+          apiKey: (modelRecord as any)?.apiKey,
+          baseURL: (modelRecord as any)?.baseUrl ?? undefined,
+          // 同步外部状态进 session.appState（MCP 连接、权限 ctx 都是 EngineHost 级别的）
+          // 照搬 CC 模式：getAppState/setAppState 读写同一份完整 AppState
+          getAppState: () => session.appState,
+          setAppState: (fn: (prev: AppState) => AppState) => {
+            const prev = session.appState
             const next = fn(prev)
-            // Detect team events
-            if (!prev.teamContext && next.teamContext) {
-              this.pushEvent({ type: 'team_created' as any, sessionId, teamName: next.teamContext.name ?? 'Team' })
-            }
-            // Detect new tasks (agents spawned)
-            if (next.tasks && prev.tasks) {
-              for (const [id, task] of next.tasks) {
-                if (!prev.tasks.has(id)) {
-                  this.pushEvent({ type: 'teammate_spawned' as any, sessionId, agentId: id, name: (task as any).name ?? id, color: (task as any).color })
+            // Detect new tasks (agents spawned) — CC 里 tasks 是 Record，按 key 枚举
+            for (const id of Object.keys(next.tasks ?? {})) {
+              if (!(id in (prev.tasks ?? {}))) {
+                const task = (next.tasks as any)[id]
+                this.pushEvent({ type: 'teammate_spawned' as any, sessionId, agentId: id, name: task?.name ?? id, color: task?.color })
+              }
+              const prevTask = (prev.tasks as any)?.[id]
+              const nextTask = (next.tasks as any)[id]
+              if (prevTask && nextTask) {
+                if (prevTask.toolUseCount !== nextTask.toolUseCount) {
+                  this.pushEvent({ type: 'agent_progress' as any, sessionId, agentId: id, toolUseCount: nextTask.toolUseCount ?? 0 })
                 }
-                const prevTask = prev.tasks.get(id) as any
-                const nextTask = task as any
-                if (prevTask && nextTask) {
-                  if (prevTask.toolUseCount !== nextTask.toolUseCount) {
-                    this.pushEvent({ type: 'agent_progress' as any, sessionId, agentId: id, toolUseCount: nextTask.toolUseCount ?? 0 })
-                  }
-                  if (prevTask.status !== nextTask.status && (nextTask.status === 'completed' || nextTask.status === 'failed')) {
-                    this.pushEvent({ type: 'agent_done' as any, sessionId, agentId: id, status: nextTask.status })
-                  }
+                if (prevTask.status !== nextTask.status && (nextTask.status === 'completed' || nextTask.status === 'failed')) {
+                  this.pushEvent({ type: 'agent_done' as any, sessionId, agentId: id, status: nextTask.status })
                 }
               }
             }
             session.appState = next
           },
-          messages: session.messages,
         } as any,
         querySource: 'repl_main_thread' as any,
         maxTurns: 100,
+        maxOutputTokensOverride: undefined,
+        fallbackModel: fallbackRecord?.model,
+        taskBudget: undefined,
       } as any
 
-      // Run query
-      const gen = query(queryParams)
-      for await (const event of gen) {
-        this.processStreamEvent(sessionId, event as any, session)
-      }
+      // Per-session cwd 作用域 — JSONL 历史、auto-memory 自动落到 ~/.klaus/projects/<session>/
+      // skills / MCP / user memory / permissions 来自 CLAUDE_CONFIG_DIR=~/.klaus，全局共享
+      const sessionDir = sessionDirFor(sessionId)
+      mkdirSync(sessionDir, { recursive: true })
+
+      console.log('[Engine] sessionDir=', sessionDir, 'model=', this.getModel(), 'apiKey.len=', (modelRecord as any)?.apiKey?.length, 'baseURL=', (modelRecord as any)?.baseUrl)
+      await runWithCwdOverride(sessionDir, async () => {
+        console.log('[Engine] calling query()')
+        const gen = query(queryParams)
+        console.log('[Engine] query() returned generator, awaiting first event...')
+        let n = 0
+        for await (const event of gen) {
+          n++
+          console.log(`[Engine] event #${n}:`, (event as any)?.type)
+          this.processStreamEvent(sessionId, event as any, session)
+        }
+        console.log('[Engine] for-await exited, total events=', n)
+      })
     } catch (err: any) {
       this.pushEvent({ type: 'api_error', sessionId, error: err?.message ?? String(err) })
     } finally {
@@ -537,52 +610,114 @@ export class EngineHost {
     if (!event || !event.type) return
 
     switch (event.type) {
+      // 引擎发起 API 请求
+      case 'stream_request_start': {
+        this.pushEvent({ type: 'stream_mode', sessionId, mode: 'requesting' })
+        this.pushEvent({ type: 'requesting' as any, sessionId })
+        break
+      }
+
+      // 完整的 assistant 消息 —— 把里面的 content 块拆成 UI 能渲染的事件
+      // CC query() 默认不发 stream_event（partial messages），所以这里兜底全量
       case 'assistant': {
         session.messages.push(event as Message)
-        // Check for tool_use blocks to forward tool_end
         const content = (event as any).message?.content
         if (Array.isArray(content)) {
           for (const block of content) {
-            if (block.type === 'tool_use') {
+            if (block.type === 'text' && block.text) {
+              this.pushEvent({ type: 'stream_mode', sessionId, mode: 'responding' })
+              this.pushEvent({ type: 'text_delta', sessionId, text: block.text } as any)
+            } else if ((block.type === 'thinking' || block.type === 'redacted_thinking') && (block.thinking || block.data)) {
+              this.pushEvent({ type: 'stream_mode', sessionId, mode: 'thinking' })
+              this.pushEvent({ type: 'thinking_delta', sessionId, thinking: block.thinking ?? block.data ?? '' } as any)
+            } else if (block.type === 'tool_use') {
               this.pushEvent({ type: 'stream_mode', sessionId, mode: 'tool-use' })
+              this.pushEvent({
+                type: 'tool_start', sessionId,
+                toolName: block.name ?? '', toolCallId: block.id ?? '', args: block.input ?? {},
+              })
+              // 一次性把完整 input 作为 JSON 推给前端（前端靠累积 tool_input_delta 显示工具参数）
+              if (block.input) {
+                this.pushEvent({
+                  type: 'tool_input_delta' as any, sessionId,
+                  toolCallId: block.id ?? '',
+                  delta: JSON.stringify(block.input),
+                })
+              }
             }
           }
         }
-        this.pushEvent({ type: 'message_complete', sessionId } as any)
+        this.pushEvent({ type: 'message_complete' as any, sessionId, message: event })
         break
       }
+
+      // user 消息（工具结果）
       case 'user': {
         session.messages.push(event as Message)
-        session.toolCallCount++
-        // Forward tool results
         const userContent = (event as any).message?.content
         if (Array.isArray(userContent)) {
           for (const block of userContent) {
             if (block.type === 'tool_result') {
+              session.toolCallCount++
               this.pushEvent({
                 type: 'tool_end', sessionId,
-                toolName: '', toolCallId: block.tool_use_id ?? '', isError: block.is_error ?? false,
+                toolName: (block as any).toolName ?? '',
+                toolCallId: block.tool_use_id ?? '',
+                isError: block.is_error ?? false,
               })
             }
           }
         }
         break
       }
+
+      // API 原始流式事件（includePartialMessages=true 时才会有；桌面端目前 false，基本不会走到）
       case 'stream_event': {
         const se = event.event ?? event
         this.processApiStreamEvent(sessionId, se)
         break
       }
-      // Tool progress events
+
+      // 系统消息：压缩边界 / API 错误 / 重试
+      case 'system': {
+        if (event.subtype === 'compact_boundary') {
+          this.pushEvent({ type: 'compaction_end' as any, sessionId })
+          this.pushEvent({ type: 'compact_boundary' as any, sessionId })
+        } else if (event.subtype === 'api_error') {
+          this.pushEvent({
+            type: 'api_error', sessionId,
+            error: event.error?.message ?? 'API error',
+          })
+          this.pushEvent({
+            type: 'api_retry' as any, sessionId,
+            attempt: event.retryAttempt ?? 0,
+            maxRetries: event.maxRetries ?? 0,
+            error: event.error?.message ?? 'API error',
+            delayMs: event.delayMs ?? 0,
+          })
+        }
+        break
+      }
+
+      // 消息被压缩掉
+      case 'tombstone': {
+        this.pushEvent({ type: 'tombstone' as any, sessionId, messageUuid: event.messageUuid ?? event.uuid ?? '' })
+        break
+      }
+
+      // 工具执行进度
+      case 'progress':
       case 'tool_progress': {
         this.pushEvent({
           type: 'progress', sessionId,
-          toolName: event.toolName ?? '', toolCallId: event.toolUseId ?? event.toolCallId ?? '',
+          toolName: event.toolName ?? '',
+          toolCallId: event.toolCallId ?? event.tool_use_id ?? event.toolUseId ?? '',
           content: event.content ?? '',
         })
         break
       }
-      // Context collapse
+
+      // 上下文折叠统计
       case 'context_collapse_stats': {
         this.pushEvent({
           type: 'context_collapse_stats', sessionId,
@@ -591,7 +726,8 @@ export class EngineHost {
         })
         break
       }
-      // File generated
+
+      // 文件产物
       case 'file': {
         this.pushEvent({ type: 'file' as any, sessionId, name: event.name, url: event.url })
         break

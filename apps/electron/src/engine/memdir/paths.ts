@@ -3,10 +3,10 @@ import { homedir } from 'os'
 import { isAbsolute, join, normalize, sep } from 'path'
 import {
   getIsNonInteractiveSession,
-  getProjectRoot,
   getScopedMemoryPathOverride,
 } from '../bootstrap/state.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
+import { getCwd } from '../utils/cwd.js'
 import {
   getClaudeConfigHomeDir,
   isEnvDefinedFalsy,
@@ -202,12 +202,15 @@ export function hasAutoMemPathOverride(): boolean {
 }
 
 /**
- * Returns the canonical git repo root if available, otherwise falls back to
- * the stable project root. Uses findCanonicalGitRoot so all worktrees of the
- * same repo share one auto-memory directory (anthropics/claude-code#24382).
+ * Returns the auto-memory base directory.
+ *
+ * CC 原版用 getProjectRoot()，这样同一个 repo 的 worktree 共享 memory。
+ * Klaus 桌面端改用 ALS-scoped cwd（由 runWithCwdOverride 设置），
+ * 这样每个 chat session 独立的虚拟 cwd 就自然推导出独立的 memory 目录。
  */
 function getAutoMemBase(): string {
-  return findCanonicalGitRoot(getProjectRoot()) ?? getProjectRoot()
+  const base = getCwd()
+  return findCanonicalGitRoot(base) ?? base
 }
 
 /**
@@ -232,13 +235,16 @@ export const getAutoMemPath = memoize(
     if (override) {
       return override
     }
-    throw new Error(
-      'getAutoMemPath: no memory path override set. Klaus requires a per-user memoryPathOverride via ALS scope.',
-    )
+    // 还原 CC 原版 fallback：<memoryBase>/projects/<sanitized-git-root-or-cwd>/memory/
+    // 桌面端每个 session 有独立 cwd，自然 per-session 隔离
+    const projectsDir = join(getMemoryBaseDir(), 'projects')
+    return (
+      join(projectsDir, sanitizePath(getAutoMemBase()), AUTO_MEM_DIRNAME) + sep
+    ).normalize('NFC')
   },
-  // Key includes the ALS-scoped override so concurrent users with different
-  // memory paths don't share a single cached result.
-  () => `${getProjectRoot()}::${getScopedMemoryPathOverride() ?? ''}`,
+  // Key includes ALS-scoped cwd + memory override so concurrent sessions with
+  // different per-session cwd (runWithCwdOverride) don't share a cached result.
+  () => `${getCwd()}::${getScopedMemoryPathOverride() ?? ''}`,
 )
 
 /**

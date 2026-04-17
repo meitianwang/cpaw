@@ -18,6 +18,7 @@ export function registerIpcHandlers(
 ): void {
   // --- Chat ---
   ipcMain.handle('chat:send', async (_e, { sessionId, text, media }) => {
+    console.log('[IPC] chat:send received', { sessionId, textLen: text?.length })
     engine.chat(sessionId, text, media).catch(err => {
       console.error('[IPC] chat:send error:', err)
     })
