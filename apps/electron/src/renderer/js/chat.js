@@ -125,6 +125,7 @@ async function init() {
   renderSessionList()
   updateWelcomeGreeting()
   refreshAuthPill()
+  if (typeof window.bootstrapProfile === 'function') window.bootstrapProfile()
   if (sessions.length > 0) await switchSession(sessions[0].id)
 }
 

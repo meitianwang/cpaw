@@ -907,27 +907,93 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 }
 .settings-btn-save:hover { background: var(--accent-hover); }
 
-/* Theme cards */
+/* Theme cards — 紧凑、像一张迷你 app 截图 */
 .settings-theme-options { display: flex; gap: 12px; }
 .settings-theme-card {
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  padding: 4px;
-  width: 120px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  width: 170px;
   cursor: pointer;
-  transition: border-color var(--transition);
+  transition: all 0.15s;
+  background: var(--bg);
+  user-select: none;
 }
 .settings-theme-card:hover { border-color: var(--fg-tertiary); }
-.settings-theme-card.active { border-color: var(--accent); }
+.settings-theme-card.active {
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+
 .settings-theme-preview {
   width: 100%;
-  aspect-ratio: 4/3;
-  border-radius: 8px;
+  aspect-ratio: 16/10;
+  border-radius: 6px;
   overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  margin-bottom: 8px;
 }
-.settings-theme-preview-light { background: #f8fafc; }
-.settings-theme-preview-dark { background: #1e293b; }
-.settings-theme-label { text-align: center; font-size: 12px; padding: 6px 0; color: var(--fg-secondary); }
+/* 左侧栏 */
+.settings-theme-preview::before {
+  content: '';
+  width: 26%;
+  height: 100%;
+  display: block;
+}
+/* 主区域 */
+.settings-theme-preview::after {
+  content: '';
+  flex: 1;
+  height: 100%;
+  display: block;
+  background-image:
+    /* 底部输入条 */
+    linear-gradient(to bottom, transparent calc(100% - 10px), rgba(127,127,127,0.18) calc(100% - 10px) calc(100% - 3px), transparent calc(100% - 3px)),
+    /* 气泡 1 右上 */
+    radial-gradient(ellipse 20px 6px at 75% 25%, currentColor 100%, transparent 100%),
+    /* 气泡 2 左中 */
+    radial-gradient(ellipse 28px 6px at 35% 55%, currentColor 100%, transparent 100%);
+  background-repeat: no-repeat;
+}
+
+/* Light 主题 */
+.settings-theme-preview-light { background: #f5f6f8; }
+.settings-theme-preview-light::before { background: #ebecef; }
+.settings-theme-preview-light::after { background-color: #ffffff; color: rgba(0,0,0,0.15); }
+
+/* Dark 主题 */
+.settings-theme-preview-dark { background: #0f1720; }
+.settings-theme-preview-dark::before { background: #1a2434; }
+.settings-theme-preview-dark::after { background-color: #111a26; color: rgba(255,255,255,0.25); }
+
+.settings-theme-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+.settings-theme-radio {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  flex-shrink: 0;
+  transition: all 0.15s;
+  position: relative;
+}
+.settings-theme-card.active .settings-theme-radio {
+  border-color: var(--accent, #2563eb);
+  background: var(--accent, #2563eb);
+}
+.settings-theme-card.active .settings-theme-radio::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #fff;
+}
+.settings-theme-label { font-size: 13px; color: var(--fg); font-weight: 500; }
 
 /* Permission mode cards */
 .settings-perm-card {

@@ -101,7 +101,7 @@ const I18N = {
     settings_cron_fired: 'Fired', settings_cron_delete_confirm: 'Delete this task?',
     settings_on: 'On', settings_off: 'Off',
     // Preferences
-    preferences: 'Preferences', color_mode: 'Color mode',
+    preferences: 'Preferences', color_mode: 'Theme',
     light: 'Light', dark: 'Dark', system: 'System',
     permission_mode: 'Permission Mode', language: 'Language',
     perm_default: 'Default', perm_default_desc: 'Ask permission for potentially risky operations',
@@ -212,7 +212,7 @@ const I18N = {
     settings_cron_fired: '已执行', settings_cron_delete_confirm: '删除此任务？',
     settings_on: '开', settings_off: '关',
     // Preferences
-    preferences: '偏好设置', color_mode: '颜色模式',
+    preferences: '偏好设置', color_mode: '主题',
     light: '浅色', dark: '深色', system: '跟随系统',
     permission_mode: '权限模式', language: '语言',
     perm_default: '默认', perm_default_desc: '对有风险的操作请求许可',

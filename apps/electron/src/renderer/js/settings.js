@@ -25,19 +25,61 @@ function loadSettingsTab(tab) {
     case 'skills': loadSkillsTab(content); break
     case 'mcp': loadMcpTab(content); break
     case 'cron': loadCronTab(content); break
-    case 'preferences': loadPreferencesTab(content); break
   }
 }
 
-// ==================== Profile ====================
+// 把 dataURL 头像应用到所有头像 DOM（设置页 + 侧栏），无图时用首字母占位
+function applyAvatar(dataUrl, displayName) {
+  const initial = (displayName || 'U').charAt(0).toUpperCase()
+  document.querySelectorAll('.sidebar-avatar').forEach(el => {
+    if (dataUrl) {
+      el.style.backgroundImage = `url("${dataUrl}")`
+      el.style.backgroundSize = 'cover'
+      el.style.backgroundPosition = 'center'
+      el.style.color = 'transparent'
+      // 保留子元素（hidden file input），只清掉文字节点
+      Array.from(el.childNodes).forEach(n => { if (n.nodeType === 3) n.remove() })
+      if (!el.textContent.trim()) el.textContent = ''
+      // 把首字母文字放在 ::after 伪元素也行，这里简单清掉让背景图透出来
+      el.childNodes.forEach?.(() => {})
+    } else {
+      el.style.backgroundImage = ''
+      el.style.color = ''
+      Array.from(el.childNodes).forEach(n => { if (n.nodeType === 3) n.remove() })
+      el.insertBefore(document.createTextNode(initial), el.firstChild)
+    }
+  })
+}
+
+// 启动时把保存过的 display_name 和 avatar 应用到侧栏
+async function bootstrapProfile() {
+  try {
+    const name = await settingsApi.kv.get('display_name') || 'User'
+    const dataUrl = await settingsApi.kv.get('avatar_data_url')
+    // 侧栏名字
+    const sidebarName = document.querySelector('.sidebar-username')
+    if (sidebarName) sidebarName.textContent = name
+    // 侧栏头像（有图片就用图，没有就用首字母）
+    applyAvatar(dataUrl, name)
+  } catch {}
+}
+window.bootstrapProfile = bootstrapProfile
+// 向后兼容旧名字
+window.bootstrapAvatar = bootstrapProfile
+
+// ==================== Profile（含偏好设置：主题 / 权限 / 语言） ====================
 async function loadProfileTab(container) {
   const displayName = await settingsApi.kv.get('display_name') || tt('profile') || 'User'
   const email = await settingsApi.kv.get('email') || 'user@local'
+  const avatarDataUrl = await settingsApi.kv.get('avatar_data_url')
+  const lang = await settingsApi.kv.get('language') || 'en'
+  const theme = await settingsApi.kv.get('theme') || 'light'
+  const permMode = await settingsApi.kv.get('permission_mode') || 'default'
 
   container.innerHTML = `<div class="settings-section">
     <div class="settings-profile-header" style="display:flex;gap:16px;margin-bottom:20px;align-items:center">
-      <div class="sidebar-avatar" style="width:56px;height:56px;font-size:22px;cursor:pointer;position:relative" id="profile-avatar-wrap">
-        ${displayName.charAt(0).toUpperCase()}
+      <div class="sidebar-avatar" style="width:56px;height:56px;font-size:22px;cursor:pointer;position:relative;${avatarDataUrl ? `background-image:url('${avatarDataUrl}');background-size:cover;background-position:center;color:transparent` : ''}" id="profile-avatar-wrap" title="点击上传头像">
+        ${avatarDataUrl ? '' : esc(displayName.charAt(0).toUpperCase())}
         <input type="file" id="profile-avatar-input" accept="image/*" hidden>
       </div>
       <div>
@@ -51,10 +93,90 @@ async function loadProfileTab(container) {
     </div>
     <button class="settings-btn-save" id="profile-save-btn">${tt('save')}</button>
     <span id="profile-save-status" style="margin-left:8px;font-size:12px;color:var(--fg-tertiary)"></span>
+
+    <div class="settings-field" style="margin-top:24px">
+      <label class="settings-field-label">${tt("color_mode")}</label>
+      <div class="settings-theme-options" id="theme-options">
+        <div class="settings-theme-card ${theme === 'light' ? 'active' : ''}" data-theme="light">
+          <div class="settings-theme-preview settings-theme-preview-light"></div>
+          <div class="settings-theme-footer">
+            <div class="settings-theme-radio"></div>
+            <div class="settings-theme-label">${tt('light') || 'Light'}</div>
+          </div>
+        </div>
+        <div class="settings-theme-card ${theme === 'dark' ? 'active' : ''}" data-theme="dark">
+          <div class="settings-theme-preview settings-theme-preview-dark"></div>
+          <div class="settings-theme-footer">
+            <div class="settings-theme-radio"></div>
+            <div class="settings-theme-label">${tt('dark') || 'Dark'}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="settings-field">
+      <label class="settings-field-label">${tt("permission_mode")}</label>
+      <div id="perm-options">
+        <div class="settings-perm-card ${permMode === 'default' ? 'active' : ''}" data-perm="default"><div class="settings-perm-icon">🛡</div><div><div class="settings-perm-label">Default</div><div class="settings-perm-desc">Ask permission for potentially risky operations</div></div></div>
+        <div class="settings-perm-card ${permMode === 'auto' ? 'active' : ''}" data-perm="auto"><div class="settings-perm-icon">⚡</div><div><div class="settings-perm-label">Auto</div><div class="settings-perm-desc">Automatically approve safe operations</div></div></div>
+        <div class="settings-perm-card ${permMode === 'bypassPermissions' ? 'active' : ''}" data-perm="bypassPermissions"><div class="settings-perm-icon">🔓</div><div><div class="settings-perm-label">Bypass All</div><div class="settings-perm-desc">Skip all permission prompts (use with caution)</div></div></div>
+      </div>
+    </div>
+    <div class="settings-field">
+      <label class="settings-field-label">${tt("language")}</label>
+      <div class="settings-theme-options">
+        <div class="settings-theme-card ${lang === 'en' ? 'active' : ''}" data-lang="en"><div class="settings-theme-label">English</div></div>
+        <div class="settings-theme-card ${lang === 'zh' ? 'active' : ''}" data-lang="zh"><div class="settings-theme-label">中文</div></div>
+      </div>
+    </div>
   </div>`
 
   document.getElementById('profile-avatar-wrap')?.addEventListener('click', () => {
     document.getElementById('profile-avatar-input')?.click()
+  })
+  // 选文件 → Canvas 缩到 128x128（避免大图塞爆 SQLite KV）→ 存 dataURL → 同步所有头像 DOM
+  document.getElementById('profile-avatar-input')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0]
+    if (!file || !file.type.startsWith('image/')) return
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const resized = await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          const size = 128
+          const canvas = document.createElement('canvas')
+          canvas.width = size; canvas.height = size
+          const ctx = canvas.getContext('2d')
+          // 居中裁剪成正方形再缩
+          const s = Math.min(img.width, img.height)
+          const sx = (img.width - s) / 2
+          const sy = (img.height - s) / 2
+          ctx.drawImage(img, sx, sy, s, s, 0, 0, size, size)
+          resolve(canvas.toDataURL('image/png'))
+        }
+        img.onerror = reject
+        img.src = dataUrl
+      })
+      await settingsApi.kv.set('avatar_data_url', resized)
+      const name = document.getElementById('profile-name-input')?.value?.trim() || 'User'
+      applyAvatar(resized, name)
+      // 设置页内的 avatar-wrap 也刷新（applyAvatar 会处理，但它的 initial 逻辑针对侧栏，这里直接设背景）
+      const wrap = document.getElementById('profile-avatar-wrap')
+      if (wrap) {
+        wrap.style.backgroundImage = `url("${resized}")`
+        wrap.style.backgroundSize = 'cover'
+        wrap.style.backgroundPosition = 'center'
+        wrap.style.color = 'transparent'
+        Array.from(wrap.childNodes).forEach(n => { if (n.nodeType === 3) n.remove() })
+      }
+      showToast('头像已更新')
+    } catch (err) {
+      showToast('头像上传失败: ' + (err?.message || String(err)))
+    }
   })
   document.getElementById('profile-save-btn')?.addEventListener('click', async () => {
     const name = document.getElementById('profile-name-input')?.value?.trim()
@@ -63,12 +185,29 @@ async function loadProfileTab(container) {
       document.getElementById('profile-name-display').textContent = name
       document.getElementById('profile-save-status').textContent = 'Saved!'
       setTimeout(() => document.getElementById('profile-save-status').textContent = '', 2000)
-      // Update sidebar
-      const sidebarName = document.querySelector('.sidebar-username')
-      if (sidebarName) sidebarName.textContent = name
-      const avatar = document.querySelector('.sidebar-avatar')
-      if (avatar) avatar.textContent = name.charAt(0).toUpperCase()
+      // 统一走 bootstrapProfile —— 会正确处理头像（有图时不被首字母覆盖）和侧栏名
+      if (typeof window.bootstrapProfile === 'function') window.bootstrapProfile()
     }
+  })
+
+  // 主题 / 权限 / 语言 切换（原 loadPreferencesTab 的逻辑）
+  container.querySelector('#theme-options')?.addEventListener('click', async (e) => {
+    const card = e.target.closest('.settings-theme-card'); if (!card) return
+    container.querySelectorAll('#theme-options .settings-theme-card').forEach(c => c.classList.toggle('active', c.dataset.theme === card.dataset.theme))
+    await settingsApi.kv.set('theme', card.dataset.theme); applyTheme(card.dataset.theme)
+  })
+  container.querySelector('#perm-options')?.addEventListener('click', async (e) => {
+    const card = e.target.closest('.settings-perm-card'); if (!card) return
+    container.querySelectorAll('.settings-perm-card').forEach(c => c.classList.toggle('active', c.dataset.perm === card.dataset.perm))
+    await settingsApi.kv.set('permission_mode', card.dataset.perm); showToast('Permission mode saved')
+  })
+  container.querySelectorAll('[data-lang]').forEach(card => {
+    card.addEventListener('click', async () => {
+      container.querySelectorAll('[data-lang]').forEach(c => c.classList.toggle('active', c.dataset.lang === card.dataset.lang))
+      await settingsApi.kv.set('language', card.dataset.lang)
+      if (typeof setLanguage === 'function') setLanguage(card.dataset.lang)
+      showToast('Language saved')
+    })
   })
 }
 
@@ -870,48 +1009,7 @@ window.toggleCron = async function(id, enabled) {
 window.deleteCron = async function(id) { if (confirm(tt('settings_cron_delete_confirm'))) { await settingsApi.cron.delete(id); showToast('Deleted'); loadSettingsTab('cron') } }
 
 // ==================== Preferences ====================
-async function loadPreferencesTab(container) {
-  const lang = await settingsApi.kv.get('language') || 'en'
-  const theme = await settingsApi.kv.get('theme') || 'light'
-  const permMode = await settingsApi.kv.get('permission_mode') || 'default'
-
-  container.innerHTML = `<div class="settings-section"><h3>${tt("preferences")}</h3>
-    <div class="settings-field"><label class="settings-field-label">${tt("color_mode")}</label>
-      <div class="settings-theme-options" id="theme-options">
-        <div class="settings-theme-card ${theme === 'light' ? 'active' : ''}" data-theme="light"><div class="settings-theme-preview settings-theme-preview-light"></div><div class="settings-theme-label">Light</div></div>
-        <div class="settings-theme-card ${theme === 'dark' ? 'active' : ''}" data-theme="dark"><div class="settings-theme-preview settings-theme-preview-dark"></div><div class="settings-theme-label">Dark</div></div>
-      </div></div>
-    <div class="settings-field"><label class="settings-field-label">${tt("permission_mode")}</label>
-      <div id="perm-options">
-        <div class="settings-perm-card ${permMode === 'default' ? 'active' : ''}" data-perm="default"><div class="settings-perm-icon">🛡</div><div><div class="settings-perm-label">Default</div><div class="settings-perm-desc">Ask permission for potentially risky operations</div></div></div>
-        <div class="settings-perm-card ${permMode === 'auto' ? 'active' : ''}" data-perm="auto"><div class="settings-perm-icon">⚡</div><div><div class="settings-perm-label">Auto</div><div class="settings-perm-desc">Automatically approve safe operations</div></div></div>
-        <div class="settings-perm-card ${permMode === 'bypassPermissions' ? 'active' : ''}" data-perm="bypassPermissions"><div class="settings-perm-icon">🔓</div><div><div class="settings-perm-label">Bypass All</div><div class="settings-perm-desc">Skip all permission prompts (use with caution)</div></div></div>
-      </div></div>
-    <div class="settings-field"><label class="settings-field-label">${tt("language")}</label>
-      <div class="settings-theme-options">
-        <div class="settings-theme-card ${lang === 'en' ? 'active' : ''}" data-lang="en"><div class="settings-theme-label">English</div></div>
-        <div class="settings-theme-card ${lang === 'zh' ? 'active' : ''}" data-lang="zh"><div class="settings-theme-label">中文</div></div>
-      </div></div></div>`
-
-  container.querySelector('#theme-options')?.addEventListener('click', async (e) => {
-    const card = e.target.closest('.settings-theme-card'); if (!card) return
-    container.querySelectorAll('#theme-options .settings-theme-card').forEach(c => c.classList.toggle('active', c.dataset.theme === card.dataset.theme))
-    await settingsApi.kv.set('theme', card.dataset.theme); applyTheme(card.dataset.theme)
-  })
-  container.querySelector('#perm-options')?.addEventListener('click', async (e) => {
-    const card = e.target.closest('.settings-perm-card'); if (!card) return
-    container.querySelectorAll('.settings-perm-card').forEach(c => c.classList.toggle('active', c.dataset.perm === card.dataset.perm))
-    await settingsApi.kv.set('permission_mode', card.dataset.perm); showToast('Permission mode saved')
-  })
-  container.querySelectorAll('[data-lang]').forEach(card => {
-    card.addEventListener('click', async () => {
-      container.querySelectorAll('[data-lang]').forEach(c => c.classList.toggle('active', c.dataset.lang === card.dataset.lang))
-      await settingsApi.kv.set('language', card.dataset.lang)
-      if (typeof setLanguage === 'function') setLanguage(card.dataset.lang)
-      showToast('Language saved')
-    })
-  })
-}
+// loadPreferencesTab 已合并到 loadProfileTab
 
 // ==================== Utils ====================
 function esc(str) { return str ? String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') : '' }
