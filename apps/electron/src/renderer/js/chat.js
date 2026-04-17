@@ -200,8 +200,6 @@ async function switchSession(id) {
 
   currentSessionId = id
   renderSessionList()
-  messagesEl.style.display = 'block'
-  welcomeEl.style.display = 'none'
   messagesEl.innerHTML = ''
   resetStreamState()
 
@@ -217,6 +215,11 @@ async function switchSession(id) {
       else appendFinalAssistantMsg(msg.text)
     }
   }
+
+  // 空 session → 显示 welcome（带 chips）；有消息 → 隐藏
+  const hasContent = messagesEl.childNodes.length > 0
+  messagesEl.style.display = hasContent ? 'block' : 'none'
+  welcomeEl.style.display = hasContent ? 'none' : 'flex'
   scrollToBottom()
 }
 
@@ -270,13 +273,23 @@ async function send() {
   const displayText = fileNames.length > 0
     ? `[Files: ${fileNames.join(', ')}]${finalText ? ' ' + finalText : ''}`
     : finalText
+  // 从 welcome 态切到消息态（第一条消息发送时）
+  welcomeEl.style.display = 'none'
+  messagesEl.style.display = 'block'
   appendUserMsg(displayText)
   resetStreamState()
   thinkingUI.show() // 立即显示"三个点在转"，覆盖 requesting 到 thinking 开始之间的空白期
   await klausApi.chat.send(currentSessionId, finalText, media.length > 0 ? media : undefined)
 }
 
-window.sendQuickPrompt = (topic) => { inputEl.value = topic + ': '; inputEl.focus() }
+// 欢迎页 chip 点击：把 chip 文字填到输入框并触发 input 事件（对齐 Web 端，不自动发送）
+document.querySelectorAll('.welcome-chip[data-chip]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    inputEl.value = chip.textContent || ''
+    inputEl.dispatchEvent(new Event('input'))
+    inputEl.focus()
+  })
+})
 
 // ==================== Slash command menu ====================
 

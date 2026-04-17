@@ -14,6 +14,7 @@ const I18N = {
     // Welcome
     welcome_title: 'Klaus AI', welcome_sub: 'How can I help you today?',
     good_morning: 'Good morning', good_afternoon: 'Good afternoon', good_evening: 'Good evening',
+    chip_write: 'Help me write', chip_code: 'Write code', chip_explain: 'Explain a concept', chip_brainstorm: 'Brainstorm ideas',
     // Settings
     settings: 'Settings', back: 'Back', save: 'Save', saved: 'Saved!',
     cancel: 'Cancel', delete_title: 'Delete',
@@ -159,6 +160,7 @@ const I18N = {
     // Welcome
     welcome_title: 'Klaus AI', welcome_sub: '有什么可以帮你的？',
     good_morning: '早上好', good_afternoon: '下午好', good_evening: '晚上好',
+    chip_write: '帮我写一段文字', chip_code: '帮我写代码', chip_explain: '解释一个概念', chip_brainstorm: '头脑风暴',
     // Settings
     settings: '设置', back: '返回', save: '保存', saved: '已保存！',
     cancel: '取消', delete_title: '删除',
