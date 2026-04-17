@@ -466,10 +466,10 @@ function buildClaudeMdMessage(): Anthropic.MessageParam | null {
       {
         type: 'text',
         text:
-          `The following is the user's CLAUDE.md configuration. These are ` +
+          `The following is the user's KLAUS.md configuration. These are ` +
           `instructions the user provided to the agent and should be treated ` +
           `as part of the user's intent when evaluating actions.\n\n` +
-          `<user_claude_md>\n${claudeMd}\n</user_claude_md>`,
+          `<user_klaus_md>\n${claudeMd}\n</user_klaus_md>`,
         cache_control: getCacheControl({ querySource: 'auto_mode' }),
       },
     ],

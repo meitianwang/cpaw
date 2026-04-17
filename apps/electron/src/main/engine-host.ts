@@ -69,7 +69,7 @@ export const OFFICIAL_STATIC_SECTIONS: Array<{ id: string; name: string; default
 // 官方动态段 —— 依赖运行时状态（cwd / date / model / tools / memory），UI 只读展示
 export const OFFICIAL_DYNAMIC_SECTIONS: Array<{ id: string; name: string; desc: string }> = [
   { id: 'session_guidance', name: 'Session Guidance', desc: '依赖当前可用工具与技能' },
-  { id: 'memory', name: 'Memory (CLAUDE.md)', desc: '读项目/用户 CLAUDE.md 内容' },
+  { id: 'memory', name: 'Memory (KLAUS.md)', desc: '读项目/用户 KLAUS.md 内容' },
   { id: 'env_info_simple', name: 'Environment Info', desc: '当前工作目录、日期、模型' },
   { id: 'ant_model_override', name: 'Ant Model Override', desc: '依赖当前模型' },
   { id: 'language', name: 'Language Preference', desc: '依赖用户语言设置' },
