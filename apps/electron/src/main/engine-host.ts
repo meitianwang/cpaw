@@ -20,7 +20,18 @@ import {
 } from '../engine/index.js'
 import { createCanUseTool, type OnAskCallback } from '../engine/hooks/useCanUseTool.js'
 import { getAllBaseTools } from '../engine/tools.js'
-import { getSystemPrompt } from '../engine/constants/prompts.js'
+import {
+  getSystemPrompt,
+  getSimpleIntroSection,
+  getSimpleSystemSection,
+  getSimpleDoingTasksSection,
+  getActionsSection,
+  getSimpleToneAndStyleSection,
+  getOutputEfficiencySection,
+  getScratchpadInstructions,
+  SUMMARIZE_TOOL_RESULTS_SECTION,
+} from '../engine/constants/prompts.js'
+import { DEFAULT_PREFIX as CLI_PREFIX_DEFAULT } from '../engine/constants/system.js'
 import { asSystemPrompt } from '../engine/utils/systemPromptType.js'
 import { loadAllPermissionRulesFromDisk } from '../engine/utils/permissions/permissionsLoader.js'
 import { applyPermissionRulesToPermissionContext } from '../engine/utils/permissions/permissions.js'
@@ -38,6 +49,37 @@ import { getAllMcpConfigs } from '../engine/services/mcp/config.js'
 
 const CONFIG_DIR = join(homedir(), '.klaus')
 const SESSIONS_DIR = join(CONFIG_DIR, 'sessions')
+
+// 官方静态段 —— seed 到数据库,UI 可编辑,chat 时通过 sectionOverrides 覆盖引擎默认
+// id 必须和 Klaus 版 prompts.ts 里 ov(...) 的 key 一致，否则 override 不生效
+export const OFFICIAL_STATIC_SECTIONS: Array<{ id: string; name: string; defaultText: () => string | null }> = [
+  // CLI 顶部身份 prefix — 这段 CC 原版写死在 services/api/claude.ts:1338 通过 getCLISyspromptPrefix 硬 prepend
+  // Klaus 改造：getCLISyspromptPrefix 优先读 process.env.KLAUS_CLI_PREFIX，运行时 engine-host.chat 注入数据库值
+  { id: 'cli_prefix', name: 'CLI Identity', defaultText: () => CLI_PREFIX_DEFAULT },
+  { id: 'intro', name: 'Identity & Role', defaultText: () => getSimpleIntroSection(null as any) },
+  { id: 'system', name: 'System Rules', defaultText: () => getSimpleSystemSection() },
+  { id: 'doing_tasks', name: 'Coding Standards', defaultText: () => getSimpleDoingTasksSection() },
+  { id: 'actions', name: 'Action Safety', defaultText: () => getActionsSection() },
+  { id: 'tone_style', name: 'Tone & Style', defaultText: () => getSimpleToneAndStyleSection() },
+  { id: 'output_efficiency', name: 'Output Efficiency', defaultText: () => getOutputEfficiencySection() },
+  { id: 'scratchpad', name: 'Scratchpad Instructions', defaultText: () => getScratchpadInstructions() },
+  { id: 'summarize_tool_results', name: 'Summarize Tool Results', defaultText: () => SUMMARIZE_TOOL_RESULTS_SECTION },
+]
+
+// 官方动态段 —— 依赖运行时状态（cwd / date / model / tools / memory），UI 只读展示
+export const OFFICIAL_DYNAMIC_SECTIONS: Array<{ id: string; name: string; desc: string }> = [
+  { id: 'session_guidance', name: 'Session Guidance', desc: '依赖当前可用工具与技能' },
+  { id: 'memory', name: 'Memory (CLAUDE.md)', desc: '读项目/用户 CLAUDE.md 内容' },
+  { id: 'env_info_simple', name: 'Environment Info', desc: '当前工作目录、日期、模型' },
+  { id: 'ant_model_override', name: 'Ant Model Override', desc: '依赖当前模型' },
+  { id: 'language', name: 'Language Preference', desc: '依赖用户语言设置' },
+  { id: 'output_style', name: 'Output Style Config', desc: '依赖 outputStyle 配置文件' },
+  { id: 'frc', name: 'Function Result Clearing', desc: '依赖当前模型' },
+]
+
+const OFFICIAL_STATIC_IDS = new Set(OFFICIAL_STATIC_SECTIONS.map(s => s.id))
+const OFFICIAL_DYNAMIC_IDS = new Set(OFFICIAL_DYNAMIC_SECTIONS.map(s => s.id))
+const ALL_OFFICIAL_IDS = new Set([...OFFICIAL_STATIC_IDS, ...OFFICIAL_DYNAMIC_IDS])
 
 // sessionId 可能来自 channel(含冒号等非法字符），做成安全的目录名
 function sessionDirFor(sessionId: string): string {
@@ -155,28 +197,26 @@ export class EngineHost {
   }
 
   private seedDefaultPrompts(): void {
-    const existing = this.store.listPrompts()
-    if (existing.length > 0) return
-
-    // Import prompt section getters lazily
+    // Seed 所有官方静态段 —— 把引擎 getter 的默认文案"搬"进数据库作为初始值
+    // 已有 id 不覆盖（用户可能已编辑过）；content 为空的重新填默认文案
+    const existing = new Map(this.store.listPrompts().map(p => [p.id, p]))
     const now = Date.now()
-    const defaults = [
-      { id: 'intro', name: 'Identity & Role' },
-      { id: 'system', name: 'System Rules' },
-      { id: 'doing_tasks', name: 'Coding Standards' },
-      { id: 'actions', name: 'Action Safety' },
-      { id: 'tone_style', name: 'Tone & Style' },
-      { id: 'output_efficiency', name: 'Output Efficiency' },
-    ]
-    for (const d of defaults) {
-      this.store.upsertPrompt({
-        id: d.id,
-        name: d.name,
-        content: '', // Empty = use engine default
-        isDefault: false,
-        createdAt: now,
-        updatedAt: now,
-      })
+    for (const sec of OFFICIAL_STATIC_SECTIONS) {
+      const got = existing.get(sec.id)
+      if (got && got.content?.trim()) continue
+      try {
+        const defaultText = sec.defaultText() ?? ''
+        this.store.upsertPrompt({
+          id: sec.id,
+          name: sec.name,
+          content: defaultText,
+          isDefault: false,
+          createdAt: got?.createdAt ?? now,
+          updatedAt: now,
+        } as any)
+      } catch (err) {
+        console.warn(`[Engine] Failed to seed section "${sec.id}":`, err)
+      }
     }
   }
 
@@ -340,7 +380,13 @@ export class EngineHost {
               : ''
           session.messages.push({
             type: m.role,
-            message: { role: m.role, content: contentText },
+            message: {
+              role: m.role,
+              // 引擎 normalizeMessagesForAPI 对 user case 接受 string，对 assistant case 调 .map 必须 array
+              content: m.role === 'assistant'
+                ? [{ type: 'text', text: contentText }]
+                : contentText,
+            },
             uuid: randomUUID(),
             timestamp: new Date(m.ts || Date.now()).toISOString(),
           } as any)
@@ -405,13 +451,26 @@ export class EngineHost {
         ...this.mcpState.tools,
       ]
 
-      // Build system prompt
+      // Build system prompt:
+      //  - cli_prefix：特例，API 客户端层硬 prepend，通过 env 注入
+      //  - 官方 id 的 prompt 走 sectionOverrides（覆盖引擎对应段的默认文案）
+      //  - 非官方 id（用户添加的自定义段）走 customAppendSections（追加到 system prompt 末尾）
       const sectionOverrides: Record<string, string> = {}
+      const customAppendSections: Array<{ name: string; content: string }> = []
+      let cliPrefixOverride: string | null = null
       for (const prompt of this.store.listPrompts()) {
-        if (prompt.content?.trim()) {
+        if (!prompt.content?.trim()) continue
+        if (prompt.id === 'cli_prefix') {
+          cliPrefixOverride = prompt.content
+        } else if (ALL_OFFICIAL_IDS.has(prompt.id)) {
           sectionOverrides[prompt.id] = prompt.content
+        } else {
+          customAppendSections.push({ name: prompt.name, content: prompt.content })
         }
       }
+      // 注入 / 清除 CLI prefix env：engine/constants/system.ts:getCLISyspromptPrefix 会在开头读它
+      if (cliPrefixOverride) process.env.KLAUS_CLI_PREFIX = cliPrefixOverride
+      else delete process.env.KLAUS_CLI_PREFIX
       console.log('[Engine] building systemPrompt...')
       const systemPromptParts = await getSystemPrompt(
         tools as any,
@@ -419,6 +478,8 @@ export class EngineHost {
         undefined,
         this.mcpState.clients,
         sectionOverrides,
+        undefined, // disabledSkills
+        customAppendSections,
       )
       const systemPrompt = asSystemPrompt(systemPromptParts)
       console.log('[Engine] systemPrompt built, parts=', systemPromptParts?.length)

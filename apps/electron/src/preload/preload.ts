@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('klaus', {
       list: () => ipcRenderer.invoke('settings:prompts:list'),
       upsert: (prompt: any) => ipcRenderer.invoke('settings:prompts:upsert', prompt),
       delete: (id: string) => ipcRenderer.invoke('settings:prompts:delete', { id }),
+      sections: () => ipcRenderer.invoke('settings:prompts:sections'),
     },
     kv: {
       get: (key: string) => ipcRenderer.invoke('settings:kv:get', { key }),

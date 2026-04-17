@@ -56,6 +56,35 @@ export function registerIpcHandlers(
   ipcMain.handle('settings:prompts:list', async () => store.listPrompts())
   ipcMain.handle('settings:prompts:upsert', async (_e, prompt) => store.upsertPrompt(prompt))
   ipcMain.handle('settings:prompts:delete', async (_e, { id }) => store.deletePrompt(id))
+  // 返回 section meta + 当前数据库存的 content，前端按 type 分组展示
+  ipcMain.handle('settings:prompts:sections', async () => {
+    const { OFFICIAL_STATIC_SECTIONS, OFFICIAL_DYNAMIC_SECTIONS } = await import('./engine-host.js')
+    const byId = new Map(store.listPrompts().map(p => [p.id, p]))
+    const staticIds = new Set(OFFICIAL_STATIC_SECTIONS.map((s: any) => s.id))
+    const dynamicIds = new Set(OFFICIAL_DYNAMIC_SECTIONS.map((s: any) => s.id))
+
+    const staticList = OFFICIAL_STATIC_SECTIONS.map((sec: any) => {
+      const rec = byId.get(sec.id)
+      const defaultText = (() => { try { return sec.defaultText() ?? '' } catch { return '' } })()
+      return {
+        type: 'static',
+        id: sec.id,
+        name: sec.name,
+        content: rec?.content ?? '',
+        defaultText,
+      }
+    })
+    const dynamicList = OFFICIAL_DYNAMIC_SECTIONS.map((sec: any) => ({
+      type: 'dynamic',
+      id: sec.id,
+      name: sec.name,
+      desc: sec.desc,
+    }))
+    const customList = store.listPrompts()
+      .filter(p => !staticIds.has(p.id) && !dynamicIds.has(p.id))
+      .map(p => ({ type: 'custom', id: p.id, name: p.name, content: p.content }))
+    return { static: staticList, dynamic: dynamicList, custom: customList }
+  })
 
   // --- Settings: KV ---
   ipcMain.handle('settings:kv:get', async (_e, { key }) => store.get(key))

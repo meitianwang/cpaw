@@ -7,7 +7,7 @@ import { isEnvDefinedFalsy } from '../utils/envUtils.js'
 import { getAPIProvider } from '../utils/model/providers.js'
 import { getWorkload } from '../utils/workloadContext.js'
 
-const DEFAULT_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude.`
+export const DEFAULT_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude.`
 const AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX = `You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.`
 const AGENT_SDK_PREFIX = `You are a Claude agent, built on Anthropic's Claude Agent SDK.`
 
@@ -31,6 +31,11 @@ export function getCLISyspromptPrefix(options?: {
   isNonInteractive: boolean
   hasAppendSystemPrompt: boolean
 }): CLISyspromptPrefix {
+  // Klaus 桌面端：运行时可配置的 CLI prefix。engine-host 在 chat 前把用户在
+  // "提示词 → cli_prefix" 编辑的内容注入到 env；未配置时走下面 CC 原逻辑。
+  const klausOverride = process.env.KLAUS_CLI_PREFIX
+  if (klausOverride) return klausOverride as CLISyspromptPrefix
+
   const apiProvider = getAPIProvider()
   if (apiProvider === 'vertex') {
     return DEFAULT_PREFIX

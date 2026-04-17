@@ -408,6 +408,7 @@ export async function getSystemPrompt(
   mcpClients?: MCPServerConnection[],
   sectionOverrides?: Record<string, string>,
   disabledSkills?: Set<string>,
+  customAppendSections?: Array<{ name: string; content: string }>,
 ): Promise<string[]> {
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
     return [
@@ -548,6 +549,10 @@ ${CYBER_RISK_INSTRUCTION}`,
     ...(shouldUseGlobalCacheScope() ? [SYSTEM_PROMPT_DYNAMIC_BOUNDARY] : []),
     // --- Dynamic content (registry-managed) ---
     ...resolvedDynamicSections,
+    // --- Klaus 桌面端用户自定义追加段（末尾） ---
+    ...(customAppendSections ?? [])
+      .filter(s => s.content?.trim())
+      .map(s => s.name ? `# ${s.name}\n\n${s.content}` : s.content),
   ].filter(s => s !== null)
 }
 
@@ -799,7 +804,7 @@ function getFunctionResultClearingSection(model: string): string | null {
 Old tool results will be automatically cleared from context to free up space. The ${config.keepRecent} most recent results are always kept.`
 }
 
-const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later.`
+export const SUMMARIZE_TOOL_RESULTS_SECTION = `When working with tool results, write down any important information you might need later in your response, as the original tool result may be cleared later.`
 
 function getBriefSection(): string | null {
   if (!(feature('KAIROS') || feature('KAIROS_BRIEF'))) return null
