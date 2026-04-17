@@ -8,8 +8,54 @@ let sessions = []
 let busy = false
 let streamBuffer = ''
 let currentMsgGroup = null
-let currentThinkingEl = null
-let thinkingStartTime = 0
+// --- Thinking indicator 单例状态机 ---
+// 单一真相源，所有 show/append/finalize/reset 都走这里
+// 不管事件触发多少次，DOM 上只会有一个 indicator，不会产生孤儿节点
+const thinkingUI = {
+  el: null,
+  startTime: 0,
+  show() {
+    if (this.el) return // 幂等
+    this.startTime = Date.now()
+    const el = document.createElement('div')
+    el.className = 'thinking-indicator'
+    el.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div><span class="thinking-label">Thinking</span>`
+    const content = document.createElement('div')
+    content.className = 'thinking-content'
+    el.appendChild(content)
+    messagesEl.appendChild(el)
+    this.el = el
+    scrollToBottom()
+  },
+  append(text) {
+    if (!this.el) this.show()
+    const content = this.el.querySelector('.thinking-content')
+    if (content) content.textContent += text
+    scrollToBottom()
+  },
+  finalize() {
+    if (!this.el) return
+    const content = this.el.querySelector('.thinking-content')?.textContent || ''
+    if (!content.trim()) {
+      this.el.remove() // 没思考内容：直接移除，不留 "Thought for 0s" 残骸
+    } else {
+      const elapsed = Math.round((Date.now() - this.startTime) / 1000)
+      const done = document.createElement('div')
+      done.className = 'thinking-done'
+      done.innerHTML = `<div class="thinking-toggle"><span>${tt('thought_for') || 'Thought for '}${elapsed}s</span><svg class="thinking-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"/></svg></div><div class="thinking-detail">${escapeHtml(content)}</div>`
+      done.querySelector('.thinking-toggle').onclick = () => done.classList.toggle('open')
+      this.el.replaceWith(done)
+    }
+    this.el = null
+    this.startTime = 0
+  },
+  // 清理未完成的 indicator（session 切换等场景，直接丢弃而非折叠保留）
+  reset() {
+    this.el?.remove()
+    this.el = null
+    this.startTime = 0
+  },
+}
 let slashSkillsCache = null
 let slashActiveIdx = -1
 let agentPanel = { team: null, agents: new Map() }
@@ -193,7 +239,8 @@ async function deleteSession(id) {
 }
 
 function resetStreamState() {
-  streamBuffer = ''; currentMsgGroup = null; currentThinkingEl = null; thinkingStartTime = 0
+  streamBuffer = ''; currentMsgGroup = null
+  thinkingUI.reset() // 丢弃上一轮未完成的 indicator（含 DOM）
   agentPanel = { team: null, agents: new Map() }
   if (agentPanelEl) agentPanelEl.style.display = 'none'
 }
@@ -222,6 +269,7 @@ async function send() {
     : finalText
   appendUserMsg(displayText)
   resetStreamState()
+  thinkingUI.show() // 立即显示"三个点在转"，覆盖 requesting 到 thinking 开始之间的空白期
   await klausApi.chat.send(currentSessionId, finalText, media.length > 0 ? media : undefined)
 }
 
@@ -360,37 +408,7 @@ function postProcessMsg(container) {
   })
 }
 
-// --- Thinking ---
-function showThinkingIndicator() {
-  thinkingStartTime = Date.now()
-  currentThinkingEl = document.createElement('div')
-  currentThinkingEl.className = 'thinking-indicator'
-  currentThinkingEl.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div><span class="thinking-label">Thinking</span>`
-  const content = document.createElement('div')
-  content.className = 'thinking-content'
-  currentThinkingEl.appendChild(content)
-  messagesEl.appendChild(currentThinkingEl)
-  scrollToBottom()
-}
-
-function appendThinking(text) {
-  if (!currentThinkingEl) showThinkingIndicator()
-  const content = currentThinkingEl.querySelector('.thinking-content')
-  if (content) content.textContent += text
-  scrollToBottom()
-}
-
-function finalizeThinking() {
-  if (!currentThinkingEl) return
-  const content = currentThinkingEl.querySelector('.thinking-content')?.textContent || ''
-  const elapsed = Math.round((Date.now() - thinkingStartTime) / 1000)
-  const done = document.createElement('div')
-  done.className = 'thinking-done'
-  done.innerHTML = `<div class="thinking-toggle"><span>${tt('thought_for') || 'Thought for '}${elapsed}s</span><svg class="thinking-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"/></svg></div><div class="thinking-detail">${escapeHtml(content)}</div>`
-  done.querySelector('.thinking-toggle').onclick = () => done.classList.toggle('open')
-  currentThinkingEl.replaceWith(done)
-  currentThinkingEl = null
-}
+// --- Thinking 函数全部迁移到 thinkingUI 单例对象（定义在文件顶部） ---
 
 // --- Streaming text ---
 function appendStreamText(text) {
@@ -597,14 +615,14 @@ klausApi.on.chatEvent((event) => {
 
   switch (event.type) {
     case 'text_delta': appendStreamText(event.text); break
-    case 'thinking_delta': appendThinking(event.thinking); break
+    case 'thinking_delta': thinkingUI.append(event.thinking); break
     case 'tool_start': appendToolStart(event.toolName, event.toolCallId, event.args); break
     case 'tool_end': updateToolEnd(event.toolCallId, event.isError); break
     case 'tool_input_delta': break // tool input streaming (optional)
     case 'progress': appendToolProgress(event.toolCallId, event.content); break
     case 'stream_mode':
-      if (event.mode === 'requesting') resetStreamState()
-      else if (event.mode === 'responding') finalizeThinking()
+      if (event.mode === 'requesting') thinkingUI.show() // 幂等，已有就是 no-op
+      else if (event.mode === 'responding') thinkingUI.finalize()
       else if (event.mode === 'tool-use') finalizeStream()
       break
     case 'context_collapse_stats': {
@@ -625,7 +643,7 @@ klausApi.on.chatEvent((event) => {
     // MCP OAuth
     case 'mcp_auth_url': if (event.url) { window.open(event.url, '_blank'); appendSystemMsg('MCP authorization opened in browser for ' + (event.serverName || 'server')) }; break
     case 'done':
-      finalizeThinking(); finalizeStream()
+      thinkingUI.finalize(); finalizeStream()
       busy = false; btnSend.disabled = !inputEl.value.trim(); inputEl.focus()
       updateSessionInList(); break
   }
