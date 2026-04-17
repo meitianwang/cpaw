@@ -292,6 +292,7 @@ export class EngineHost {
     const now = Date.now()
     const entry: SessionEntry = {
       id,
+      // Sentinel: renderer maps the fixed string 'New Chat' to tt('new_chat').
       title: 'New Chat',
       messages: [],
       appState: getDefaultAppState(),

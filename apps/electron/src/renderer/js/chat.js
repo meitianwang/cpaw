@@ -19,7 +19,7 @@ const thinkingUI = {
     this.startTime = Date.now()
     const el = document.createElement('div')
     el.className = 'thinking-indicator'
-    el.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div><span class="thinking-label">Thinking</span>`
+    el.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div><span class="thinking-label">${tt('thinking_label')}</span>`
     const content = document.createElement('div')
     content.className = 'thinking-content'
     el.appendChild(content)
@@ -139,20 +139,20 @@ async function refreshAuthPill() {
       const status = await klausApi.auth?.status?.()
       if (status?.loggedIn) {
         pill.className = 'auth-mode-pill'
-        pill.innerHTML = `<span class="dot"></span><span class="mode-label">Claude 订阅</span><span class="mode-detail">· ${escapeHtml(status.account || '已登录')}</span>`
+        pill.innerHTML = `<span class="dot"></span><span class="mode-label">${tt('auth_subscription')}</span><span class="mode-detail">· ${escapeHtml(status.account || tt('auth_logged_in'))}</span>`
       } else {
         pill.className = 'auth-mode-pill warning'
-        pill.innerHTML = `<span class="dot"></span><span class="mode-label">Claude 订阅</span><span class="mode-detail">· 未登录</span>`
+        pill.innerHTML = `<span class="dot"></span><span class="mode-label">${tt('auth_subscription')}</span><span class="mode-detail">· ${tt('auth_not_logged_in')}</span>`
       }
     } else {
       const models = await klausApi.settings.models.list()
       const def = models.find(m => m.isDefault) || models[0]
       if (def) {
         pill.className = 'auth-mode-pill'
-        pill.innerHTML = `<span class="dot"></span><span class="mode-label">自定义</span><span class="mode-detail">· ${escapeHtml(def.name || def.model)}</span>`
+        pill.innerHTML = `<span class="dot"></span><span class="mode-label">${tt('auth_custom')}</span><span class="mode-detail">· ${escapeHtml(def.name || def.model)}</span>`
       } else {
         pill.className = 'auth-mode-pill warning'
-        pill.innerHTML = `<span class="dot"></span><span class="mode-label">自定义</span><span class="mode-detail">· 未配置</span>`
+        pill.innerHTML = `<span class="dot"></span><span class="mode-label">${tt('auth_custom')}</span><span class="mode-detail">· ${tt('auth_not_configured')}</span>`
       }
     }
     pill.style.display = 'inline-flex'
@@ -183,7 +183,8 @@ function renderSessionList() {
   for (const s of sessions) {
     const div = document.createElement('div')
     div.className = 'session-item' + (s.id === currentSessionId ? ' active' : '')
-    div.innerHTML = `<div class="s-title">${escapeHtml(s.title || 'New Chat')}</div><button class="s-del" title="Delete">&times;</button>`
+    const displayTitle = s.title && s.title !== 'New Chat' ? s.title : tt('new_chat')
+    div.innerHTML = `<div class="s-title">${escapeHtml(displayTitle)}</div><button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
     div.querySelector('.s-title').onclick = () => switchSession(s.id)
     div.querySelector('.s-del').onclick = (e) => { e.stopPropagation(); deleteSession(s.id) }
     sessionListEl.appendChild(div)
@@ -308,9 +309,9 @@ async function handleSlashMenu() {
   const query = text.slice(1).toLowerCase()
   const skills = await fetchSkills()
   const builtins = [
-    { name: 'new', description: 'Start a new chat' },
-    { name: 'clear', description: 'Clear current session' },
-    { name: 'help', description: 'Show available commands' },
+    { name: 'new', description: tt('slash_new_desc') },
+    { name: 'clear', description: tt('slash_clear_desc') },
+    { name: 'help', description: tt('slash_help_desc') },
   ]
   const all = [...builtins, ...skills]
   const filtered = query ? all.filter(s => s.name.toLowerCase().includes(query)) : all
@@ -533,7 +534,7 @@ function updateToolEnd(toolCallId, isError) {
   if (!el.querySelector('.tool-secondary')) {
     const sec = document.createElement('span')
     sec.className = 'tool-secondary'
-    sec.textContent = isError ? 'failed' : 'completed'
+    sec.textContent = isError ? tt('tool_failed') : tt('tool_completed')
     const header = el.querySelector('.agent-header') || el
     header.appendChild(sec)
   }
@@ -548,7 +549,7 @@ function appendFileCard(name, url) {
   const label = FILE_EXT_LABELS[ext] || ext.toUpperCase() || 'FILE'
   const group = document.createElement('div')
   group.className = 'msg-group assistant'
-  group.innerHTML = `<div class="msg-label">${tt('bot_name')}</div><div class="file-card"><div class="file-card-icon">${escapeHtml(label)}</div><div class="file-card-info"><div class="file-card-name">${escapeHtml(name)}</div><div class="file-card-hint">File ready</div></div><a class="file-card-dl" href="${escapeHtml(url)}" download="${escapeHtml(name)}">${tt('download')}</a></div>`
+  group.innerHTML = `<div class="msg-label">${tt('bot_name')}</div><div class="file-card"><div class="file-card-icon">${escapeHtml(label)}</div><div class="file-card-info"><div class="file-card-name">${escapeHtml(name)}</div><div class="file-card-hint">${tt('file_ready')}</div></div><a class="file-card-dl" href="${escapeHtml(url)}" download="${escapeHtml(name)}">${tt('download')}</a></div>`
   messagesEl.appendChild(group)
   scrollToBottom()
 }
@@ -564,15 +565,25 @@ function renderAgentPanel() {
   const title = agentPanelEl.querySelector('#agent-panel-title')
   const count = agentPanelEl.querySelector('#agent-panel-count')
   const body = agentPanelEl.querySelector('#agent-panel-body')
-  if (title) title.textContent = agentPanel.team ? agentPanel.team.name : (tt('agents') || 'Agents')
-  if (count) count.textContent = runningCount > 0 ? runningCount + ' running' : agentPanel.agents.size + ' agent(s)'
+  if (title) title.textContent = agentPanel.team ? agentPanel.team.name : tt('agents')
+  if (count) {
+    if (runningCount > 0) {
+      count.textContent = runningCount + ' ' + tt('agent_running')
+    } else {
+      const size = agentPanel.agents.size
+      count.textContent = size + (size === 1 ? tt('agent_count_one') : tt('agent_count_many'))
+    }
+  }
   if (!body) return
   body.innerHTML = ''
   agentPanel.agents.forEach((agent, id) => {
     const row = document.createElement('div')
     row.className = 'agent-row'
     const color = AGENT_COLOR_MAP[agent.color] || AGENT_COLOR_MAP.blue
-    row.innerHTML = `<span class="agent-dot${agent.status === 'running' ? ' running' : ''}" style="background:${color};border-color:${color}"></span><span class="agent-name">${escapeHtml(agent.name)}</span><span class="agent-status">${agent.status === 'running' ? 'running · ' + agent.toolUseCount + ' tool call' + (agent.toolUseCount === 1 ? '' : 's') : agent.status}</span>`
+    const statusText = agent.status === 'running'
+      ? tt('agent_running_with_tools') + agent.toolUseCount + (agent.toolUseCount === 1 ? tt('agent_tool_call_one') : tt('agent_tool_call_many'))
+      : agent.status
+    row.innerHTML = `<span class="agent-dot${agent.status === 'running' ? ' running' : ''}" style="background:${color};border-color:${color}"></span><span class="agent-name">${escapeHtml(agent.name)}</span><span class="agent-status">${escapeHtml(statusText)}</span>`
     body.appendChild(row)
   })
 }
@@ -587,12 +598,12 @@ function showPermissionRequest(req) {
   let suggestionsHtml = ''
   if (req.suggestions?.length) {
     suggestionsHtml = '<div class="permission-suggestions">' +
-      req.suggestions.map((s, i) => `<label class="permission-suggestion"><input type="checkbox" data-sug-idx="${i}"> ${escapeHtml(s.label || 'Always allow')}</label>`).join('') + '</div>'
+      req.suggestions.map((s, i) => `<label class="permission-suggestion"><input type="checkbox" data-sug-idx="${i}"> ${escapeHtml(s.label || tt('permission_always_allow'))}</label>`).join('') + '</div>'
   }
   card.innerHTML = `
     <div class="permission-header"><svg viewBox="0 0 16 16" width="16" height="16" fill="#eab308"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg><span class="permission-title">${escapeHtml(req.toolName)}</span></div>
-    <div class="permission-message">${escapeHtml(req.message || 'This tool requires your approval.')}</div>
-    ${inputPreview ? `<details class="permission-input-details"><summary>Show input</summary><pre class="permission-input-preview">${escapeHtml(inputPreview).slice(0, 500)}</pre></details>` : ''}
+    <div class="permission-message">${escapeHtml(req.message || tt('permission_default_msg'))}</div>
+    ${inputPreview ? `<details class="permission-input-details"><summary>${escapeHtml(tt('permission_show_input'))}</summary><pre class="permission-input-preview">${escapeHtml(inputPreview).slice(0, 500)}</pre></details>` : ''}
     ${suggestionsHtml}
     <div class="permission-actions"><button class="permission-btn permission-btn-allow" onclick="handlePermission('${req.requestId}','allow')">${tt('allow')}</button><button class="permission-btn permission-btn-deny" onclick="handlePermission('${req.requestId}','deny')">${tt('deny')}</button></div>
     <div class="permission-timer"><span class="permission-timer-text">120s</span></div>`
@@ -618,7 +629,7 @@ window.handlePermission = function(requestId, decision) {
   }
   klausApi.permission.respond(requestId, decision, indices.length > 0 ? indices : undefined)
   if (card) {
-    card.querySelector('.permission-actions').innerHTML = `<div class="permission-result ${decision === 'allow' ? 'permission-allowed' : 'permission-denied'}">${decision === 'allow' ? (tt('allowed')) : (tt('denied'))}${indices.length ? ' (rules saved)' : ''}</div>`
+    card.querySelector('.permission-actions').innerHTML = `<div class="permission-result ${decision === 'allow' ? 'permission-allowed' : 'permission-denied'}">${decision === 'allow' ? (tt('allowed')) : (tt('denied'))}${indices.length ? tt('permission_rules_saved') : ''}</div>`
     card.querySelector('.permission-timer').remove()
     card.classList.add('permission-resolved')
   }
@@ -643,11 +654,11 @@ klausApi.on.chatEvent((event) => {
       break
     case 'context_collapse_stats': {
       const el = document.getElementById('collapse-stats')
-      if (el) { el.style.display = ''; el.textContent = `${event.collapsedSpans} collapsed · ${event.stagedSpans} staged` }
+      if (el) { el.style.display = ''; el.textContent = `${event.collapsedSpans}${tt('context_collapsed')}${event.stagedSpans}${tt('context_staged')}` }
       break
     }
     case 'api_error': appendError(event.error); break
-    case 'api_retry': appendError(`Retrying (${event.attempt}/${event.maxRetries})...`); break
+    case 'api_retry': appendError(`${tt('retrying_prefix')}${event.attempt}/${event.maxRetries})...`); break
     case 'auth_required': appendAuthRequired(event.reason, event.mode); break
     // Agent events
     case 'team_created': agentPanel.team = { name: event.teamName }; renderAgentPanel(); break
@@ -657,7 +668,7 @@ klausApi.on.chatEvent((event) => {
     // File
     case 'file': if (event.name && event.url) appendFileCard(event.name, event.url); break
     // MCP OAuth
-    case 'mcp_auth_url': if (event.url) { window.open(event.url, '_blank'); appendSystemMsg('MCP authorization opened in browser for ' + (event.serverName || 'server')) }; break
+    case 'mcp_auth_url': if (event.url) { window.open(event.url, '_blank'); appendSystemMsg(tt('mcp_auth_opened_prefix') + (event.serverName || tt('mcp_auth_opened_fallback'))) }; break
     case 'done':
       thinkingUI.finalize(); finalizeStream()
       busy = false
@@ -702,12 +713,10 @@ function appendAuthRequired(reason, mode) {
   const icon = isSubscription
     ? `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
     : `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`
-  const title = isSubscription ? '请先登录 Claude 订阅' : '请先配置自定义模型'
-  const hint = isSubscription
-    ? '使用你的 Claude Pro / Max 订阅聊天，点击下方登录按钮会打开浏览器完成授权。'
-    : '自定义模式需要先在设置中添加一个含 API Key 的模型。'
-  const primaryLabel = isSubscription ? '登录 Claude 账号' : '去配置模型'
-  const secondaryLabel = isSubscription ? '或切换到自定义模型' : '或切换到 Claude 订阅'
+  const title = isSubscription ? tt('auth_card_sub_title') : tt('auth_card_custom_title')
+  const hint = isSubscription ? tt('auth_card_sub_hint') : tt('auth_card_custom_hint')
+  const primaryLabel = isSubscription ? tt('auth_primary_sub') : tt('auth_primary_custom')
+  const secondaryLabel = isSubscription ? tt('auth_secondary_sub') : tt('auth_secondary_custom')
 
   group.innerHTML = `
     <div class="msg assistant auth-card" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:16px;max-width:520px">
@@ -734,22 +743,22 @@ function appendAuthRequired(reason, mode) {
     if (isSubscription) {
       // 直接触发 OAuth 登录流程
       primaryBtn.disabled = true
-      primaryBtn.textContent = '正在打开浏览器…'
-      if (statusEl) statusEl.textContent = '请在浏览器中完成授权，完成后这里会自动继续'
+      primaryBtn.textContent = tt('auth_opening_browser')
+      if (statusEl) statusEl.textContent = tt('auth_wait_browser')
       try {
         const res = await window.klaus.auth.login()
         if (res?.ok) {
-          primaryBtn.textContent = '✓ 登录成功'
-          if (statusEl) statusEl.textContent = '已登录，请重新发送你的消息'
+          primaryBtn.textContent = tt('auth_success')
+          if (statusEl) statusEl.textContent = tt('auth_please_resend')
         } else {
           primaryBtn.disabled = false
-          primaryBtn.textContent = '重试登录'
-          if (statusEl) statusEl.textContent = '登录失败：' + (res?.error || '未知错误')
+          primaryBtn.textContent = tt('auth_retry_login')
+          if (statusEl) statusEl.textContent = tt('auth_login_failed_prefix') + (res?.error || tt('auth_unknown_error'))
         }
       } catch (err) {
         primaryBtn.disabled = false
-        primaryBtn.textContent = '重试登录'
-        if (statusEl) statusEl.textContent = '登录失败：' + (err?.message || String(err))
+        primaryBtn.textContent = tt('auth_retry_login')
+        if (statusEl) statusEl.textContent = tt('auth_login_failed_prefix') + (err?.message || String(err))
       }
     } else {
       // 跳转到模型设置页配置自定义模型
@@ -764,10 +773,10 @@ function appendAuthRequired(reason, mode) {
     try {
       await window.klaus.settings.kv.set('auth_mode', newMode)
       window.dispatchEvent(new Event('klaus:auth-mode-changed'))
-      if (statusEl) statusEl.textContent = `已切换到${newMode === 'subscription' ? 'Claude 订阅' : '自定义模型'}模式，请重新发送你的消息`
+      if (statusEl) statusEl.textContent = newMode === 'subscription' ? tt('auth_mode_switched_sub') : tt('auth_mode_switched_custom')
       primaryBtn.disabled = true
     } catch (err) {
-      if (statusEl) statusEl.textContent = '切换失败：' + (err?.message || String(err))
+      if (statusEl) statusEl.textContent = tt('auth_switch_failed_prefix') + (err?.message || String(err))
     }
   })
 
@@ -928,7 +937,7 @@ fileInput.addEventListener('change', () => {
 
 function addFiles(files) {
   for (const f of files) {
-    if (f.size > 10 * 1024 * 1024) { appendError('File too large (max 10MB): ' + f.name); continue }
+    if (f.size > 10 * 1024 * 1024) { appendError(tt('file_too_large') + f.name); continue }
     const entry = { file: f, objectUrl: null, uploadPath: null, uploading: true }
     if (f.type.startsWith('image/')) entry.objectUrl = URL.createObjectURL(f)
     pendingFiles.push(entry)
@@ -946,7 +955,7 @@ async function uploadFileEntry(entry) {
     const result = await klausApi.chat.uploadFile(entry.file.name, entry.file.type, buffer)
     entry.uploadPath = result.path
   } catch (err) {
-    appendError('Upload failed: ' + entry.file.name)
+    appendError(tt('upload_failed_short') + entry.file.name)
     pendingFiles = pendingFiles.filter(e => e !== entry)
   }
   entry.uploading = false
@@ -965,7 +974,7 @@ function renderPreviews() {
     if (entry.objectUrl) {
       item.innerHTML = `<img src="${entry.objectUrl}"><button class="remove">&times;</button>`
     } else {
-      item.innerHTML = `<div class="file-info">${entry.uploading ? 'uploading... ' : ''}${escapeHtml(entry.file.name)}</div><button class="remove">&times;</button>`
+      item.innerHTML = `<div class="file-info">${entry.uploading ? escapeHtml(tt('uploading_label')) : ''}${escapeHtml(entry.file.name)}</div><button class="remove">&times;</button>`
     }
     item.querySelector('.remove').onclick = () => {
       pendingFiles = pendingFiles.filter(e => e !== entry)

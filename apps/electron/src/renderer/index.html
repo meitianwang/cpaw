@@ -19,7 +19,7 @@
           <img src="logo.png" alt="K" style="width:22px;height:22px;border-radius:6px">
           <span>Klaus</span>
         </div>
-        <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+        <button class="sidebar-toggle" id="sidebar-toggle" data-i18n-title="toggle_sidebar" title="Toggle sidebar">
           <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="14" height="14" rx="2"/><line x1="6" y1="1" x2="6" y2="15"/></svg>
         </button>
       </div>
@@ -37,7 +37,7 @@
 
       <div class="sidebar-footer">
         <div id="user-menu" class="user-menu">
-          <div class="user-menu-email" id="user-menu-email">user@local</div>
+          <div class="user-menu-email" id="user-menu-email" data-i18n="user_default_email">user@local</div>
           <button class="user-menu-item" id="menu-settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
             <span data-i18n="menu_settings">Settings</span>
@@ -61,7 +61,7 @@
         <div class="sidebar-user" id="sidebar-user">
           <div class="sidebar-avatar">U</div>
           <div class="sidebar-user-info">
-            <div class="sidebar-username">User</div>
+            <div class="sidebar-username" data-i18n="user_default_name">User</div>
           </div>
         </div>
       </div>
@@ -72,7 +72,7 @@
       <div id="header">
         <div class="header-right">
           <span id="collapse-stats" class="collapse-stats" style="display:none"></span>
-          <button id="auth-mode-pill" class="auth-mode-pill" title="点击切换认证模式" style="display:none"></button>
+          <button id="auth-mode-pill" class="auth-mode-pill" data-i18n-title="auth_pill_tooltip" title="Click to switch auth mode" style="display:none"></button>
           <span id="status"></span>
         </div>
       </div>
@@ -98,7 +98,7 @@
           <span id="agent-panel-toggle">&#9660;</span>
           <span id="agent-panel-title"></span>
           <span id="agent-panel-count"></span>
-          <button id="agent-panel-close" title="Close">&times;</button>
+          <button id="agent-panel-close" data-i18n-title="close_btn" title="Close">&times;</button>
         </div>
         <div id="agent-panel-body"></div>
       </div>
@@ -109,12 +109,12 @@
         <div id="input-area">
           <div id="previews"></div>
           <div class="input-row">
-            <button id="attach" title="Attach file">
+            <button id="attach" data-i18n-title="attach_file" title="Attach file">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 8.5l-5.5 5.5a3.5 3.5 0 01-5-5L9 3.5a2 2 0 013 3L6.5 12a.5.5 0 01-1-1L11 5.5"/></svg>
             </button>
             <input type="file" id="file-input" multiple hidden>
             <textarea id="input" rows="1" data-i18n-placeholder="placeholder" placeholder="Send a message..." autocomplete="off"></textarea>
-            <button id="send" disabled title="Send / Stop">
+            <button id="send" disabled data-i18n-title="send_stop" title="Send / Stop">
               <svg class="icon-send" viewBox="0 0 16 16" fill="currentColor"><path d="M1.724 1.053a.5.5 0 0 1 .547-.033l12 7a.5.5 0 0 1 0 .86l-12 7A.5.5 0 0 1 1.5 15.5V9.236l6.735-1.236L1.5 6.764V.5a.5.5 0 0 1 .224-.447z"/></svg>
               <svg class="icon-stop" viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>
             </button>
@@ -149,7 +149,7 @@
     <!-- Drop overlay -->
     <div class="drop-overlay" id="drop-overlay">
       <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-      Drop files to upload
+      <span data-i18n="drop_files">Drop files to upload</span>
     </div>
   </div>
 

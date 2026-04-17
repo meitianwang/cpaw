@@ -146,6 +146,96 @@ const I18N = {
     no_mcp: 'No MCP servers configured', no_skills: 'No skills found', no_cron: 'No scheduled tasks',
     // User menu
     menu_settings: 'Settings', menu_language: 'Language', menu_help: 'Help', menu_logout: 'Logout',
+    user_default_name: 'User', user_default_email: 'user@local',
+    // UI chrome
+    toggle_sidebar: 'Toggle sidebar', close_btn: 'Close', attach_file: 'Attach file',
+    send_stop: 'Send / Stop', drop_files: 'Drop files to upload',
+    upload_avatar_tooltip: 'Click to upload avatar',
+    auth_pill_tooltip: 'Click to switch auth mode',
+    // Auth pill (header)
+    auth_subscription: 'Claude Subscription', auth_custom: 'Custom',
+    auth_logged_in: 'Logged in', auth_not_logged_in: 'Not signed in',
+    auth_not_configured: 'Not configured',
+    // Auth required card
+    auth_card_sub_title: 'Sign in to Claude',
+    auth_card_custom_title: 'Configure a custom model',
+    auth_card_sub_hint: 'Use your Claude Pro / Max subscription. Click Sign In below to open the browser and finish authorization.',
+    auth_card_custom_hint: 'Custom mode needs a model with API key configured in Settings first.',
+    auth_primary_sub: 'Sign in to Claude',
+    auth_primary_custom: 'Configure model',
+    auth_secondary_sub: 'or switch to custom model',
+    auth_secondary_custom: 'or switch to Claude subscription',
+    auth_opening_browser: 'Opening browser…',
+    auth_wait_browser: 'Please finish authorization in the browser — this will resume automatically.',
+    auth_success: '✓ Signed in',
+    auth_please_resend: 'Signed in. Please resend your message.',
+    auth_login_failed_prefix: 'Sign in failed: ',
+    auth_retry_login: 'Retry sign in',
+    auth_unknown_error: 'unknown error',
+    auth_mode_switched_sub: 'Switched to Claude subscription — please resend your message',
+    auth_mode_switched_custom: 'Switched to custom model — please resend your message',
+    auth_switch_failed_prefix: 'Switch failed: ',
+    // Thinking / stream
+    thinking_label: 'Thinking',
+    // Tool status
+    tool_completed: 'completed', tool_failed: 'failed',
+    // Permission card
+    permission_default_msg: 'This tool requires your approval.',
+    permission_show_input: 'Show input',
+    permission_always_allow: 'Always allow',
+    permission_rules_saved: ' (rules saved)',
+    // Agent panel
+    agents: 'Agents', agent_running: 'running',
+    agent_count_one: ' agent', agent_count_many: ' agents',
+    agent_tool_call_one: ' tool call', agent_tool_call_many: ' tool calls',
+    agent_running_with_tools: 'running · ',
+    // Context collapse / retry / MCP
+    context_collapsed: ' collapsed · ', context_staged: ' staged',
+    retrying_prefix: 'Retrying (',
+    mcp_auth_opened_prefix: 'MCP authorization opened in browser for ',
+    mcp_auth_opened_fallback: 'server',
+    // Upload
+    file_too_large: 'File too large (max 10MB): ',
+    upload_failed_short: 'Upload failed: ',
+    uploading_label: 'uploading... ',
+    // Subscription section (settings)
+    sub_account_fallback: 'Claude account',
+    sub_mode_desc: 'In subscription mode, Claude automatically manages models (Opus / Sonnet / Haiku) — no manual configuration needed.',
+    sub_logout: 'Sign out',
+    sub_card_not_logged_in: 'Not signed in',
+    sub_hint_not_logged_in: 'Use your Claude subscription (Pro / Max) to chat — model and usage are managed by your subscription.',
+    sub_login_btn: 'Sign in to Claude',
+    sub_auth_opening: 'Opening browser… please finish authorization there',
+    sub_confirm_logout: 'Sign out of your Claude account?',
+    sub_custom_mode_btn: 'Custom model',
+    // Profile toasts
+    avatar_updated: 'Avatar updated',
+    avatar_upload_failed_prefix: 'Avatar upload failed: ',
+    perm_mode_saved: 'Permission mode saved',
+    language_saved: 'Language saved',
+    // Tray menu
+    tray_new_chat: 'New Chat', tray_show_app: 'Show Klaus',
+    tray_settings: 'Settings', tray_quit: 'Quit',
+    // Slash menu descriptions
+    slash_new_desc: 'Start a new chat',
+    slash_clear_desc: 'Clear current session',
+    slash_help_desc: 'Show available commands',
+    // Add Model form
+    add_model_title: 'Add Model',
+    model_field_name: 'Name', model_placeholder_name: 'My Claude Model',
+    model_field_model_id: 'Model ID',
+    model_field_api_key: 'API Key',
+    model_field_provider: 'Provider',
+    model_field_base_url: 'Base URL (optional)',
+    model_field_max_tokens: 'Max Context Tokens',
+    model_field_thinking: 'Thinking',
+    thinking_off: 'Off', thinking_low: 'Low', thinking_medium: 'Medium', thinking_high: 'High',
+    model_badge_default: 'Default',
+    // Cron / Skills / MCP misc
+    cron_enable: 'Enable', cron_disable: 'Disable',
+    toast_deleted: 'Deleted', toast_reconnected: 'Reconnected',
+    toast_error_prefix: 'Error: ', toast_unknown: 'unknown',
+    skills_install_btn: 'Install',
   },
   zh: {
     // Chat
@@ -292,6 +382,96 @@ const I18N = {
     no_mcp: '暂无 MCP 服务器', no_skills: '暂无技能', no_cron: '暂无定时任务',
     // User menu
     menu_settings: '设置', menu_language: '语言', menu_help: '帮助', menu_logout: '退出',
+    user_default_name: '用户', user_default_email: 'user@local',
+    // UI chrome
+    toggle_sidebar: '切换侧栏', close_btn: '关闭', attach_file: '附加文件',
+    send_stop: '发送 / 停止', drop_files: '拖放文件以上传',
+    upload_avatar_tooltip: '点击上传头像',
+    auth_pill_tooltip: '点击切换认证模式',
+    // Auth pill (header)
+    auth_subscription: 'Claude 订阅', auth_custom: '自定义',
+    auth_logged_in: '已登录', auth_not_logged_in: '未登录',
+    auth_not_configured: '未配置',
+    // Auth required card
+    auth_card_sub_title: '请先登录 Claude 订阅',
+    auth_card_custom_title: '请先配置自定义模型',
+    auth_card_sub_hint: '使用你的 Claude Pro / Max 订阅聊天，点击下方登录按钮会打开浏览器完成授权。',
+    auth_card_custom_hint: '自定义模式需要先在设置中添加一个含 API Key 的模型。',
+    auth_primary_sub: '登录 Claude 账号',
+    auth_primary_custom: '去配置模型',
+    auth_secondary_sub: '或切换到自定义模型',
+    auth_secondary_custom: '或切换到 Claude 订阅',
+    auth_opening_browser: '正在打开浏览器…',
+    auth_wait_browser: '请在浏览器中完成授权，完成后这里会自动继续',
+    auth_success: '✓ 登录成功',
+    auth_please_resend: '已登录，请重新发送你的消息',
+    auth_login_failed_prefix: '登录失败：',
+    auth_retry_login: '重试登录',
+    auth_unknown_error: '未知错误',
+    auth_mode_switched_sub: '已切换到 Claude 订阅模式，请重新发送你的消息',
+    auth_mode_switched_custom: '已切换到自定义模型模式，请重新发送你的消息',
+    auth_switch_failed_prefix: '切换失败：',
+    // Thinking / stream
+    thinking_label: '思考中',
+    // Tool status
+    tool_completed: '已完成', tool_failed: '失败',
+    // Permission card
+    permission_default_msg: '此工具需要你的批准。',
+    permission_show_input: '展开输入',
+    permission_always_allow: '始终允许',
+    permission_rules_saved: '（规则已保存）',
+    // Agent panel
+    agents: '智能体', agent_running: '运行中',
+    agent_count_one: ' 个智能体', agent_count_many: ' 个智能体',
+    agent_tool_call_one: ' 次工具调用', agent_tool_call_many: ' 次工具调用',
+    agent_running_with_tools: '运行中 · ',
+    // Context collapse / retry / MCP
+    context_collapsed: ' 已折叠 · ', context_staged: ' 暂存',
+    retrying_prefix: '重试中 (',
+    mcp_auth_opened_prefix: '已在浏览器打开 MCP 授权：',
+    mcp_auth_opened_fallback: '服务器',
+    // Upload
+    file_too_large: '文件过大（最大 10MB）：',
+    upload_failed_short: '上传失败：',
+    uploading_label: '上传中... ',
+    // Subscription section (settings)
+    sub_account_fallback: 'Claude 账号',
+    sub_mode_desc: '订阅模式下由 Claude 引擎自动管理模型（Opus / Sonnet / Haiku），无需手动配置。',
+    sub_logout: '登出',
+    sub_card_not_logged_in: '未登录',
+    sub_hint_not_logged_in: '使用你的 Claude 订阅（Pro / Max）聊天，模型和用量由订阅管理。',
+    sub_login_btn: '登录 Claude 账号',
+    sub_auth_opening: '正在打开浏览器…请在浏览器中完成授权',
+    sub_confirm_logout: '确定登出 Claude 账号吗？',
+    sub_custom_mode_btn: '自定义模型',
+    // Profile toasts
+    avatar_updated: '头像已更新',
+    avatar_upload_failed_prefix: '头像上传失败：',
+    perm_mode_saved: '权限模式已保存',
+    language_saved: '语言已保存',
+    // Tray menu
+    tray_new_chat: '新对话', tray_show_app: '显示 Klaus',
+    tray_settings: '设置', tray_quit: '退出',
+    // Slash menu descriptions
+    slash_new_desc: '开始新对话',
+    slash_clear_desc: '清空当前会话',
+    slash_help_desc: '查看可用命令',
+    // Add Model form
+    add_model_title: '添加模型',
+    model_field_name: '名称', model_placeholder_name: '我的 Claude 模型',
+    model_field_model_id: '模型 ID',
+    model_field_api_key: 'API Key',
+    model_field_provider: '服务商',
+    model_field_base_url: 'Base URL（可选）',
+    model_field_max_tokens: '最大上下文 Tokens',
+    model_field_thinking: '思考',
+    thinking_off: '关', thinking_low: '低', thinking_medium: '中', thinking_high: '高',
+    model_badge_default: '默认',
+    // Cron / Skills / MCP misc
+    cron_enable: '启用', cron_disable: '停用',
+    toast_deleted: '已删除', toast_reconnected: '已重连',
+    toast_error_prefix: '错误：', toast_unknown: '未知',
+    skills_install_btn: '安装',
   },
 }
 

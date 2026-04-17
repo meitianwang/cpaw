@@ -88,7 +88,14 @@ export function registerIpcHandlers(
 
   // --- Settings: KV ---
   ipcMain.handle('settings:kv:get', async (_e, { key }) => store.get(key))
-  ipcMain.handle('settings:kv:set', async (_e, { key, value }) => store.set(key, value))
+  ipcMain.handle('settings:kv:set', async (_e, { key, value }) => {
+    store.set(key, value)
+    if (key === 'language') {
+      // Keep tray labels in sync with the user's language choice.
+      const { rebuildTrayMenu } = await import('./tray.js')
+      rebuildTrayMenu()
+    }
+  })
 
   // --- Settings: Cron ---
   ipcMain.handle('settings:cron:list', async () => store.listTasks())

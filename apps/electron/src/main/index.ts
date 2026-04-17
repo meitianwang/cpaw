@@ -96,7 +96,7 @@ app.whenReady().then(async () => {
     engineHost.setMainWindow(mainWindow)
 
     // 7. Tray
-    createTray()
+    createTray(settingsStore)
 
     // 8. Engine 初始化 + 依赖它的服务（AutoDream）— 全部后台进行，chat() 会自动 await init
     engineHost.init()

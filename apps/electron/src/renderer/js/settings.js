@@ -54,7 +54,7 @@ function applyAvatar(dataUrl, displayName) {
 // 启动时把保存过的 display_name 和 avatar 应用到侧栏
 async function bootstrapProfile() {
   try {
-    const name = await settingsApi.kv.get('display_name') || 'User'
+    const name = await settingsApi.kv.get('display_name') || tt('user_default_name')
     const dataUrl = await settingsApi.kv.get('avatar_data_url')
     // 侧栏名字
     const sidebarName = document.querySelector('.sidebar-username')
@@ -69,8 +69,8 @@ window.bootstrapAvatar = bootstrapProfile
 
 // ==================== Profile（含偏好设置：主题 / 权限 / 语言） ====================
 async function loadProfileTab(container) {
-  const displayName = await settingsApi.kv.get('display_name') || tt('profile') || 'User'
-  const email = await settingsApi.kv.get('email') || 'user@local'
+  const displayName = await settingsApi.kv.get('display_name') || tt('user_default_name')
+  const email = await settingsApi.kv.get('email') || tt('user_default_email')
   const avatarDataUrl = await settingsApi.kv.get('avatar_data_url')
   const lang = await settingsApi.kv.get('language') || 'en'
   const theme = await settingsApi.kv.get('theme') || 'light'
@@ -78,7 +78,7 @@ async function loadProfileTab(container) {
 
   container.innerHTML = `<div class="settings-section">
     <div class="settings-profile-header" style="display:flex;gap:16px;margin-bottom:20px;align-items:center">
-      <div class="sidebar-avatar" style="width:56px;height:56px;font-size:22px;cursor:pointer;position:relative;${avatarDataUrl ? `background-image:url('${avatarDataUrl}');background-size:cover;background-position:center;color:transparent` : ''}" id="profile-avatar-wrap" title="点击上传头像">
+      <div class="sidebar-avatar" style="width:56px;height:56px;font-size:22px;cursor:pointer;position:relative;${avatarDataUrl ? `background-image:url('${avatarDataUrl}');background-size:cover;background-position:center;color:transparent` : ''}" id="profile-avatar-wrap" title="${esc(tt('upload_avatar_tooltip'))}">
         ${avatarDataUrl ? '' : esc(displayName.charAt(0).toUpperCase())}
         <input type="file" id="profile-avatar-input" accept="image/*" hidden>
       </div>
@@ -116,9 +116,9 @@ async function loadProfileTab(container) {
     <div class="settings-field">
       <label class="settings-field-label">${tt("permission_mode")}</label>
       <div id="perm-options">
-        <div class="settings-perm-card ${permMode === 'default' ? 'active' : ''}" data-perm="default"><div class="settings-perm-icon">🛡</div><div><div class="settings-perm-label">Default</div><div class="settings-perm-desc">Ask permission for potentially risky operations</div></div></div>
-        <div class="settings-perm-card ${permMode === 'auto' ? 'active' : ''}" data-perm="auto"><div class="settings-perm-icon">⚡</div><div><div class="settings-perm-label">Auto</div><div class="settings-perm-desc">Automatically approve safe operations</div></div></div>
-        <div class="settings-perm-card ${permMode === 'bypassPermissions' ? 'active' : ''}" data-perm="bypassPermissions"><div class="settings-perm-icon">🔓</div><div><div class="settings-perm-label">Bypass All</div><div class="settings-perm-desc">Skip all permission prompts (use with caution)</div></div></div>
+        <div class="settings-perm-card ${permMode === 'default' ? 'active' : ''}" data-perm="default"><div class="settings-perm-icon">🛡</div><div><div class="settings-perm-label">${tt('perm_default')}</div><div class="settings-perm-desc">${tt('perm_default_desc')}</div></div></div>
+        <div class="settings-perm-card ${permMode === 'auto' ? 'active' : ''}" data-perm="auto"><div class="settings-perm-icon">⚡</div><div><div class="settings-perm-label">${tt('perm_auto')}</div><div class="settings-perm-desc">${tt('perm_auto_desc')}</div></div></div>
+        <div class="settings-perm-card ${permMode === 'bypassPermissions' ? 'active' : ''}" data-perm="bypassPermissions"><div class="settings-perm-icon">🔓</div><div><div class="settings-perm-label">${tt('perm_bypass')}</div><div class="settings-perm-desc">${tt('perm_bypass_desc')}</div></div></div>
       </div>
     </div>
     <div class="settings-field">
@@ -162,7 +162,7 @@ async function loadProfileTab(container) {
         img.src = dataUrl
       })
       await settingsApi.kv.set('avatar_data_url', resized)
-      const name = document.getElementById('profile-name-input')?.value?.trim() || 'User'
+      const name = document.getElementById('profile-name-input')?.value?.trim() || tt('user_default_name')
       applyAvatar(resized, name)
       // 设置页内的 avatar-wrap 也刷新（applyAvatar 会处理，但它的 initial 逻辑针对侧栏，这里直接设背景）
       const wrap = document.getElementById('profile-avatar-wrap')
@@ -173,9 +173,9 @@ async function loadProfileTab(container) {
         wrap.style.color = 'transparent'
         Array.from(wrap.childNodes).forEach(n => { if (n.nodeType === 3) n.remove() })
       }
-      showToast('头像已更新')
+      showToast(tt('avatar_updated'))
     } catch (err) {
-      showToast('头像上传失败: ' + (err?.message || String(err)))
+      showToast(tt('avatar_upload_failed_prefix') + (err?.message || String(err)))
     }
   })
   document.getElementById('profile-save-btn')?.addEventListener('click', async () => {
@@ -183,7 +183,7 @@ async function loadProfileTab(container) {
     if (name) {
       await settingsApi.kv.set('display_name', name)
       document.getElementById('profile-name-display').textContent = name
-      document.getElementById('profile-save-status').textContent = 'Saved!'
+      document.getElementById('profile-save-status').textContent = tt('saved')
       setTimeout(() => document.getElementById('profile-save-status').textContent = '', 2000)
       // 统一走 bootstrapProfile —— 会正确处理头像（有图时不被首字母覆盖）和侧栏名
       if (typeof window.bootstrapProfile === 'function') window.bootstrapProfile()
@@ -199,14 +199,14 @@ async function loadProfileTab(container) {
   container.querySelector('#perm-options')?.addEventListener('click', async (e) => {
     const card = e.target.closest('.settings-perm-card'); if (!card) return
     container.querySelectorAll('.settings-perm-card').forEach(c => c.classList.toggle('active', c.dataset.perm === card.dataset.perm))
-    await settingsApi.kv.set('permission_mode', card.dataset.perm); showToast('Permission mode saved')
+    await settingsApi.kv.set('permission_mode', card.dataset.perm); showToast(tt('perm_mode_saved'))
   })
   container.querySelectorAll('[data-lang]').forEach(card => {
     card.addEventListener('click', async () => {
       container.querySelectorAll('[data-lang]').forEach(c => c.classList.toggle('active', c.dataset.lang === card.dataset.lang))
       await settingsApi.kv.set('language', card.dataset.lang)
       if (typeof setLanguage === 'function') setLanguage(card.dataset.lang)
-      showToast('Language saved')
+      showToast(tt('language_saved'))
     })
   })
 }
@@ -217,8 +217,8 @@ async function loadModelsTab(container) {
 
   const segment = `
     <div class="auth-mode-segment" style="display:inline-flex;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:3px;margin-bottom:16px">
-      <button class="auth-mode-btn" data-mode="subscription" style="padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;background:${authMode==='subscription'?'var(--bg)':'transparent'};color:${authMode==='subscription'?'var(--fg)':'var(--fg-tertiary)'};font-weight:${authMode==='subscription'?'600':'400'}">Claude 订阅</button>
-      <button class="auth-mode-btn" data-mode="custom" style="padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;background:${authMode==='custom'?'var(--bg)':'transparent'};color:${authMode==='custom'?'var(--fg)':'var(--fg-tertiary)'};font-weight:${authMode==='custom'?'600':'400'}">自定义模型</button>
+      <button class="auth-mode-btn" data-mode="subscription" style="padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;background:${authMode==='subscription'?'var(--bg)':'transparent'};color:${authMode==='subscription'?'var(--fg)':'var(--fg-tertiary)'};font-weight:${authMode==='subscription'?'600':'400'}">${tt('auth_subscription')}</button>
+      <button class="auth-mode-btn" data-mode="custom" style="padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:13px;background:${authMode==='custom'?'var(--bg)':'transparent'};color:${authMode==='custom'?'var(--fg)':'var(--fg-tertiary)'};font-weight:${authMode==='custom'?'600':'400'}">${tt('sub_custom_mode_btn')}</button>
     </div>
   `
 
@@ -230,7 +230,7 @@ async function loadModelsTab(container) {
     body = `<div class="settings-section-header"><h3>${tt("models")}</h3><button class="btn-sm" onclick="showAddModelForm()">${tt("add_model")}</button></div>
       <div id="models-list">${models.length === 0 ? `<p class="empty-text">${tt('no_models')}</p>` : models.map(m => `
         <div class="settings-card ${m.isDefault ? 'card-default' : ''}">
-          <div class="card-header"><strong>${esc(m.name)}</strong>${m.isDefault ? '<span class="badge">Default</span>' : ''}${m.role ? `<span class="s-badge s-badge-blue">${esc(m.role)}</span>` : ''}</div>
+          <div class="card-header"><strong>${esc(m.name)}</strong>${m.isDefault ? `<span class="badge">${tt('model_badge_default')}</span>` : ''}${m.role ? `<span class="s-badge s-badge-blue">${esc(m.role)}</span>` : ''}</div>
           <div class="card-meta">${esc(m.provider || 'anthropic')} / ${esc(m.model)} &middot; ${m.maxContextTokens.toLocaleString()} tokens &middot; thinking: ${esc(m.thinking)}</div>
           <div class="card-actions">${!m.isDefault ? `<button class="btn-xs" onclick="setDefaultModel('${esc(m.id)}')">${tt('set_default')}</button>` : ''}<button class="btn-xs btn-danger" onclick="deleteModel('${esc(m.id)}')">${tt('delete_title')}</button></div>
         </div>`).join('')}</div>
@@ -260,17 +260,17 @@ async function renderSubscriptionSection() {
   if (status.loggedIn) {
     return `
       <div class="settings-card">
-        <div class="card-header"><strong>${esc(status.account || 'Claude 账号')}</strong><span class="badge">已登录</span></div>
-        <div class="card-meta" style="color:var(--fg-tertiary);font-size:13px;margin:8px 0">订阅模式下由 Claude 引擎自动管理模型（Opus / Sonnet / Haiku），无需手动配置。</div>
-        <div class="card-actions"><button class="btn-xs btn-danger" id="auth-logout-btn">登出</button></div>
+        <div class="card-header"><strong>${esc(status.account || tt('sub_account_fallback'))}</strong><span class="badge">${tt('auth_logged_in')}</span></div>
+        <div class="card-meta" style="color:var(--fg-tertiary);font-size:13px;margin:8px 0">${tt('sub_mode_desc')}</div>
+        <div class="card-actions"><button class="btn-xs btn-danger" id="auth-logout-btn">${tt('sub_logout')}</button></div>
       </div>
     `
   }
   return `
     <div class="settings-card">
-      <div class="card-header"><strong>未登录</strong></div>
-      <div class="card-meta" style="color:var(--fg-tertiary);font-size:13px;margin:8px 0">使用你的 Claude 订阅（Pro / Max）聊天，模型和用量由订阅管理。</div>
-      <div class="card-actions"><button class="btn-sm btn-primary" id="auth-login-btn">登录 Claude 账号</button></div>
+      <div class="card-header"><strong>${tt('sub_card_not_logged_in')}</strong></div>
+      <div class="card-meta" style="color:var(--fg-tertiary);font-size:13px;margin:8px 0">${tt('sub_hint_not_logged_in')}</div>
+      <div class="card-actions"><button class="btn-sm btn-primary" id="auth-login-btn">${tt('sub_login_btn')}</button></div>
       <div id="auth-login-status" style="margin-top:10px;font-size:12px;color:var(--fg-tertiary)"></div>
     </div>
   `
@@ -279,21 +279,21 @@ async function renderSubscriptionSection() {
 function bindSubscriptionHandlers(container) {
   container.querySelector('#auth-login-btn')?.addEventListener('click', async () => {
     const statusEl = container.querySelector('#auth-login-status')
-    if (statusEl) statusEl.textContent = '正在打开浏览器…请在浏览器中完成授权'
+    if (statusEl) statusEl.textContent = tt('sub_auth_opening')
     try {
       const res = await window.klaus.auth.login()
       if (res?.ok) {
         window.dispatchEvent(new Event('klaus:auth-mode-changed'))
         loadSettingsTab('models')
       } else {
-        if (statusEl) statusEl.textContent = '登录失败：' + (res?.error || '未知错误')
+        if (statusEl) statusEl.textContent = tt('auth_login_failed_prefix') + (res?.error || tt('auth_unknown_error'))
       }
     } catch (err) {
-      if (statusEl) statusEl.textContent = '登录失败：' + (err?.message || String(err))
+      if (statusEl) statusEl.textContent = tt('auth_login_failed_prefix') + (err?.message || String(err))
     }
   })
   container.querySelector('#auth-logout-btn')?.addEventListener('click', async () => {
-    if (!confirm('确定登出 Claude 账号吗？')) return
+    if (!confirm(tt('sub_confirm_logout'))) return
     try {
       await window.klaus.auth.logout()
     } catch {}
@@ -303,14 +303,14 @@ function bindSubscriptionHandlers(container) {
 }
 window.showAddModelForm = function() {
   const form = document.getElementById('model-form'); form.style.display = 'block'
-  form.innerHTML = `<div class="settings-card"><h4 style="margin-bottom:12px">Add Model</h4>
-    <div class="form-row"><label>Name</label><input id="mf-name" placeholder="My Claude Model"></div>
-    <div class="form-row"><label>Model ID</label><input id="mf-model" placeholder="claude-sonnet-4-20250514"></div>
-    <div class="form-row"><label>API Key</label><input id="mf-apikey" type="password" placeholder="sk-ant-..."></div>
-    <div class="form-row"><label>Provider</label><select id="mf-provider"><option value="anthropic">Anthropic</option><option value="bedrock">AWS Bedrock</option><option value="vertex">Google Vertex</option></select></div>
-    <div class="form-row"><label>Base URL (optional)</label><input id="mf-baseurl"></div>
-    <div class="form-row"><label>Max Context Tokens</label><input id="mf-tokens" type="number" value="200000"></div>
-    <div class="form-row"><label>Thinking</label><select id="mf-thinking"><option value="off">Off</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+  form.innerHTML = `<div class="settings-card"><h4 style="margin-bottom:12px">${tt('add_model_title')}</h4>
+    <div class="form-row"><label>${tt('model_field_name')}</label><input id="mf-name" placeholder="${esc(tt('model_placeholder_name'))}"></div>
+    <div class="form-row"><label>${tt('model_field_model_id')}</label><input id="mf-model" placeholder="claude-sonnet-4-20250514"></div>
+    <div class="form-row"><label>${tt('model_field_api_key')}</label><input id="mf-apikey" type="password" placeholder="sk-ant-..."></div>
+    <div class="form-row"><label>${tt('model_field_provider')}</label><select id="mf-provider"><option value="anthropic">Anthropic</option><option value="bedrock">AWS Bedrock</option><option value="vertex">Google Vertex</option></select></div>
+    <div class="form-row"><label>${tt('model_field_base_url')}</label><input id="mf-baseurl"></div>
+    <div class="form-row"><label>${tt('model_field_max_tokens')}</label><input id="mf-tokens" type="number" value="200000"></div>
+    <div class="form-row"><label>${tt('model_field_thinking')}</label><select id="mf-thinking"><option value="off">${tt('thinking_off')}</option><option value="low">${tt('thinking_low')}</option><option value="medium">${tt('thinking_medium')}</option><option value="high">${tt('thinking_high')}</option></select></div>
     <div class="form-actions"><button class="btn-sm btn-primary" onclick="saveModel()">${tt('save')}</button><button class="btn-sm" onclick="document.getElementById('model-form').style.display='none'">${tt('cancel')}</button></div></div>`
 }
 window.saveModel = async function() {
@@ -885,10 +885,10 @@ function bindSkillEvents() {
   })
   document.querySelectorAll('[data-install]').forEach(el => {
     el.addEventListener('click', async () => {
-      el.disabled = true; el.textContent = 'Installing...'
+      el.disabled = true; el.textContent = tt('settings_skills_uploading')
       const result = await window.klaus.skills.install(el.dataset.install)
       if (result.ok) { showToast(tt('settings_skills_installed_toast') + ': ' + result.name); loadSettingsTab('skills') }
-      else { showToast('Error: ' + (result.error || 'unknown')); el.disabled = false; el.textContent = 'Install' }
+      else { showToast(tt('toast_error_prefix') + (result.error || tt('toast_unknown'))); el.disabled = false; el.textContent = tt('skills_install_btn') }
     })
   })
   document.querySelectorAll('[data-uninstall]').forEach(el => {
@@ -932,7 +932,7 @@ async function loadMcpTab(container) {
   const statusMap = new Map(status.map(s => [s.name, s]))
 
   container.innerHTML = `<div class="settings-section"><div class="settings-section-header"><h3>${tt("mcp")}</h3>
-      <div style="display:flex;gap:6px"><button class="btn-sm" id="mcp-add-manual">${tt("mcp")} +</button><button class="btn-sm" id="mcp-add-json">${tt('settings_mcp_import_json') || 'Import JSON'}</button><button class="btn-sm" onclick="window.klaus.mcp.reconnect().then(()=>{showToast('Reconnected');loadSettingsTab('mcp')})">${tt('settings_mcp_reconnect') || 'Reconnect'}</button></div></div>
+      <div style="display:flex;gap:6px"><button class="btn-sm" id="mcp-add-manual">${tt("mcp")} +</button><button class="btn-sm" id="mcp-add-json">${tt('settings_mcp_import_json')}</button><button class="btn-sm" onclick="window.klaus.mcp.reconnect().then(()=>{showToast(tt('toast_reconnected'));loadSettingsTab('mcp')})">${tt('settings_mcp_reconnect')}</button></div></div>
 
     <!-- Manual form (hidden) -->
     <div id="mcp-manual-form" style="display:none"><div class="settings-card">
@@ -1075,12 +1075,12 @@ async function loadCronTab(container) {
     <div id="cron-list">${tasks.length === 0 ? `<p class="empty-text">${tt('no_cron') || 'No scheduled tasks'}</p>` : `<table class="s-table"><thead><tr><th>ID</th><th>Name</th><th>Schedule</th><th>Status</th><th></th></tr></thead><tbody>${tasks.map(t => `
     <tr><td><span class="s-code">${esc(t.id)}</span></td><td>${esc(t.name || '-')}</td><td class="s-muted">${esc(t.schedule)}</td>
     <td>${t.enabled ? `<span class="s-badge s-badge-green">${tt('settings_on')}</span>` : `<span class="s-badge s-badge-gray">${tt('settings_off')}</span>`}</td>
-    <td><div class="s-actions"><button class="s-btn s-btn-ghost" onclick="toggleCron('${esc(t.id)}',${!t.enabled})">${t.enabled ? 'Disable' : 'Enable'}</button><button class="s-btn s-btn-danger" onclick="deleteCron('${esc(t.id)}')">${tt('delete_title')}</button></div></td></tr>`).join('')}</tbody></table>`}</div></div>`
+    <td><div class="s-actions"><button class="s-btn s-btn-ghost" onclick="toggleCron('${esc(t.id)}',${!t.enabled})">${t.enabled ? tt('cron_disable') : tt('cron_enable')}</button><button class="s-btn s-btn-danger" onclick="deleteCron('${esc(t.id)}')">${tt('delete_title')}</button></div></td></tr>`).join('')}</tbody></table>`}</div></div>`
   document.getElementById('cron-add-btn')?.addEventListener('click', () => document.getElementById('cron-form').style.display = 'block')
   document.getElementById('cf-cancel')?.addEventListener('click', () => document.getElementById('cron-form').style.display = 'none')
   document.getElementById('cf-save')?.addEventListener('click', async () => {
     const id = gv('cf-id'), schedule = gv('cf-schedule'), prompt = gv('cf-prompt')
-    if (!id || !schedule || !prompt) { showToast('All fields required'); return }
+    if (!id || !schedule || !prompt) { showToast(tt('ch_fields_required')); return }
     await settingsApi.cron.upsert({ id, name: gv('cf-name') || undefined, schedule, prompt, enabled: true, createdAt: Date.now(), updatedAt: Date.now() })
     showToast(tt('settings_saved')); loadSettingsTab('cron')
   })
@@ -1090,7 +1090,7 @@ window.toggleCron = async function(id, enabled) {
   const t = tasks.find(x => x.id === id)
   if (t) { await settingsApi.cron.upsert({ ...t, enabled, updatedAt: Date.now() }); loadSettingsTab('cron') }
 }
-window.deleteCron = async function(id) { if (confirm(tt('settings_cron_delete_confirm'))) { await settingsApi.cron.delete(id); showToast('Deleted'); loadSettingsTab('cron') } }
+window.deleteCron = async function(id) { if (confirm(tt('settings_cron_delete_confirm'))) { await settingsApi.cron.delete(id); showToast(tt('toast_deleted')); loadSettingsTab('cron') } }
 
 // ==================== Preferences ====================
 // loadPreferencesTab 已合并到 loadProfileTab
