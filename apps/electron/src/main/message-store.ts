@@ -86,13 +86,28 @@ export class MessageStore {
       const fp = join(this.dir, file)
       try {
         const stat = statSync(fp)
-        const firstLine = readFileSync(fp, 'utf-8').split('\n')[0]
-        if (!firstLine) continue
-        const header = JSON.parse(firstLine)
+        const lines = readFileSync(fp, 'utf-8').split('\n').filter(Boolean)
+        if (lines.length === 0) continue
+        const header = JSON.parse(lines[0]!)
         const sessionKey = header.sessionKey ?? file.replace('.jsonl', '').replace(/__/g, ':')
+        // 从第一条 user 消息生成 title（前 50 字），和发消息时 auto-title 的规则一致
+        let title = 'Chat'
+        for (const line of lines.slice(1)) {
+          try {
+            const entry = JSON.parse(line) as TranscriptEntry
+            if (entry.type === 'message' && entry.role === 'user') {
+              const text = typeof entry.content === 'string'
+                ? entry.content
+                : Array.isArray(entry.content)
+                  ? entry.content.map((b: any) => b.text ?? '').join(' ')
+                  : ''
+              if (text.trim()) { title = text.slice(0, 50); break }
+            }
+          } catch {}
+        }
         summaries.push({
           sessionKey,
-          title: sessionKey.split(':').pop() ?? 'Chat',
+          title,
           createdAt: header.createdAt ?? stat.birthtimeMs,
           updatedAt: stat.mtimeMs,
         })

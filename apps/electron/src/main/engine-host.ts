@@ -105,6 +105,28 @@ export class EngineHost {
 
   setMessageStore(ms: MessageStore): void {
     this.messageStore = ms
+    // 启动时扫磁盘重建 in-memory session 元数据（messages 先不加载，chat/getHistory 按需读）
+    // 对齐 CC 启动时从 ~/.claude/projects/<cwd>/*.jsonl 发现 session 的做法
+    ms.listSessions().then(summaries => {
+      for (const s of summaries) {
+        if (this.sessions.has(s.sessionKey)) continue
+        this.sessions.set(s.sessionKey, {
+          id: s.sessionKey,
+          title: s.title,
+          messages: [], // 懒加载：chat() 或 getHistory() 时才从磁盘读回
+          appState: getDefaultAppState(),
+          toolPermissionContext: null,
+          loopDetector: new ToolLoopDetector(),
+          isRunning: false,
+          contentReplacementState: createContentReplacementState(),
+          toolCallCount: 0,
+          abortController: null,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+        })
+      }
+      console.log(`[Engine] Restored ${summaries.length} session(s) from disk`)
+    }).catch(err => console.warn('[Engine] Failed to restore sessions:', err))
   }
 
   setMainWindow(win: BrowserWindow): void {
@@ -254,6 +276,7 @@ export class EngineHost {
 
   deleteSession(sessionId: string): void {
     this.sessions.delete(sessionId)
+    this.messageStore?.deleteSession(sessionId) // 同步删磁盘 JSONL，下次启动不会再出现
     clearSystemPromptSections()
   }
 
@@ -297,10 +320,35 @@ export class EngineHost {
         isRunning: false,
         contentReplacementState: createContentReplacementState(),
         toolCallCount: 0,
+        abortController: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
       this.sessions.set(sessionId, session)
+    }
+
+    // 懒加载历史：启动后第一次对这个 session 发消息时，把磁盘里的 JSONL 读回内存，
+    // 让模型能看到历史上下文续上下文。对齐 CC --resume 的加载时机。
+    if (session.messages.length === 0 && this.messageStore) {
+      try {
+        const history = await this.messageStore.readHistory(sessionId)
+        for (const m of history) {
+          const contentText = typeof m.content === 'string'
+            ? m.content
+            : Array.isArray(m.content)
+              ? m.content.map((b: any) => b.text ?? '').join('')
+              : ''
+          session.messages.push({
+            type: m.role,
+            message: { role: m.role, content: contentText },
+            uuid: randomUUID(),
+            timestamp: new Date(m.ts || Date.now()).toISOString(),
+          } as any)
+        }
+        if (history.length > 0) console.log(`[Engine] Loaded ${history.length} historical message(s) for session ${sessionId}`)
+      } catch (err) {
+        console.warn('[Engine] Failed to load session history:', err)
+      }
     }
 
     if (session.isRunning) {
