@@ -488,12 +488,6 @@ function buildChannelDefs() {
       ],
     },
     {
-      id: 'imessage', name: 'iMessage', icon: 'imessage-icon.png',
-      desc: tt('ch_imessage_desc'),
-      inputs: [],
-      flow: 'imessage-install',
-    },
-    {
       id: 'whatsapp', name: 'WhatsApp', icon: 'whatsapp-icon.png',
       desc: tt('ch_whatsapp_desc'),
       inputs: [],
@@ -587,8 +581,6 @@ async function openChannelModal(id) {
     renderWechatFlow(body, connected, state)
   } else if (ch.flow === 'whatsapp-qr') {
     renderWhatsappFlow(body, connected)
-  } else if (ch.flow === 'imessage-install') {
-    renderImessageFlow(body, connected)
   } else if (connected) {
     const details = ch.inputs.filter(i => i[3] !== 'password')
       .map(i => `<div class="ch-connected-field"><div class="ch-connected-label">${esc(i[2])}</div><div class="ch-connected-value">${esc(state?.credentials?.[i[1]] || '-')}</div></div>`).join('')
@@ -764,56 +756,6 @@ function renderWhatsappFlow(body, connected) {
       const p = await window.klaus.channels.whatsappPoll()
       if (p.ok) updateQr(p)
     }, 3000)
-  })
-}
-
-// --- iMessage install flow ---
-function renderImessageFlow(body, connected) {
-  if (connected) {
-    body.innerHTML = `<div class="ch-connected">
-      <div class="ch-connected-field">
-        <div class="ch-connected-label">${tt('ch_connected')}</div>
-        <button class="s-btn s-btn-danger" id="ch-im-disconnect">${tt('ch_disconnect')}</button>
-      </div>
-      <div class="ch-imessage-usage">${tt('ch_imessage_usage')}</div>
-    </div>`
-    document.getElementById('ch-im-disconnect').addEventListener('click', async () => {
-      if (!confirm(tt('settings_confirm_delete'))) return
-      await window.klaus.channels.disconnect('imessage')
-      showToast(tt('settings_ch_disconnected'))
-      closeChannelModal()
-      loadSettingsTab('channels')
-    })
-    return
-  }
-  body.innerHTML = `<div class="ch-imessage">
-    <div class="ch-imessage-info">${tt('ch_imessage_info')}</div>
-    <div id="ch-im-perm-hint" class="ch-imessage-perm" style="display:none">
-      <div class="ch-imessage-perm-title">${tt('ch_imessage_perm_title')}</div>
-      <div>${tt('ch_imessage_perm_desc')}</div>
-    </div>
-    <div class="ch-form-actions">
-      <button class="s-btn s-btn-primary" id="ch-im-connect">${tt('ch_connect')}</button>
-    </div>
-  </div>`
-  document.getElementById('ch-im-connect').addEventListener('click', async () => {
-    const btn = document.getElementById('ch-im-connect')
-    btn.disabled = true; btn.textContent = tt('settings_ch_connecting')
-    const r = await window.klaus.channels.imessageInstall()
-    if (!r.ok) {
-      showToast(r.error || tt('settings_ch_connect_fail'))
-      btn.disabled = false; btn.textContent = tt('ch_connect')
-      return
-    }
-    if (r.needsFullDiskAccess) {
-      document.getElementById('ch-im-perm-hint').style.display = 'block'
-      showToast(r.message || tt('ch_imessage_need_fda'))
-      btn.disabled = false; btn.textContent = tt('ch_connect')
-    } else {
-      showToast(tt('settings_ch_connect_ok'))
-      closeChannelModal()
-      loadSettingsTab('channels')
-    }
   })
 }
 

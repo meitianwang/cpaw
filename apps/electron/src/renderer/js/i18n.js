@@ -92,12 +92,6 @@ const I18N = {
     ch_telegram_step2: 'Send /newbot, set a name and username for your bot',
     ch_telegram_step3: 'BotFather will reply with a Bot Token (format: 123456:ABC-DEF...)',
     ch_telegram_step4: 'Copy the Bot Token and paste it below',
-    ch_imessage_desc: 'macOS iMessage bridge via imsg CLI',
-    ch_imessage_info: 'Click Connect to auto-install imsg and set up iMessage bridge. You may need to grant Full Disk Access permission when prompted.',
-    ch_imessage_usage: 'iMessage bridge is running. Anyone who sends you an iMessage will get a reply from Klaus.',
-    ch_imessage_perm_title: 'Grant Full Disk Access',
-    ch_imessage_perm_desc: 'Open System Settings → Privacy & Security → Full Disk Access, and enable your terminal app (Terminal / iTerm / Warp). Then click Connect again.',
-    ch_imessage_need_fda: 'imsg installed. Please grant Full Disk Access, then click Connect again.',
     ch_whatsapp_desc: 'WhatsApp via Baileys (QR code login)',
     ch_wechat_scan_hint: 'Open WeChat and scan the QR code below',
     ch_wechat_loading: 'Loading QR...',
@@ -241,7 +235,7 @@ const I18N = {
     settings_ch_feishu: 'Feishu', settings_ch_dingtalk: 'DingTalk',
     settings_ch_wechat: 'WeChat', settings_ch_wecom: 'WeCom',
     settings_ch_qq: 'QQ', settings_ch_telegram: 'Telegram',
-    settings_ch_imessage: 'iMessage', settings_ch_whatsapp: 'WhatsApp',
+    settings_ch_whatsapp: 'WhatsApp',
   },
   zh: {
     // Chat
@@ -334,12 +328,6 @@ const I18N = {
     ch_telegram_step2: '发送 /newbot，设置机器人名称和用户名',
     ch_telegram_step3: 'BotFather 会返回一个 Bot Token（格式：123456:ABC-DEF...）',
     ch_telegram_step4: '复制 Bot Token 并粘贴到下方',
-    ch_imessage_desc: '通过 imsg CLI 桥接 macOS iMessage',
-    ch_imessage_info: '点击"连接"自动安装 imsg 并建立 iMessage 桥接。系统可能会提示授权完全磁盘访问权限。',
-    ch_imessage_usage: 'iMessage 桥接运行中。任何给你发 iMessage 的人都会收到 Klaus 的回复。',
-    ch_imessage_perm_title: '授予完全磁盘访问权限',
-    ch_imessage_perm_desc: '打开"系统设置 → 隐私与安全性 → 完全磁盘访问权限"，启用你的终端应用（Terminal / iTerm / Warp），然后再次点击连接。',
-    ch_imessage_need_fda: 'imsg 已安装。请先授予完全磁盘访问权限，然后再次点击连接。',
     ch_whatsapp_desc: '通过 Baileys 连接 WhatsApp（扫码登录）',
     ch_wechat_scan_hint: '打开微信扫描下方二维码',
     ch_wechat_loading: '加载二维码中...',
@@ -482,7 +470,7 @@ const I18N = {
     settings_ch_feishu: '飞书', settings_ch_dingtalk: '钉钉',
     settings_ch_wechat: '微信', settings_ch_wecom: '企微',
     settings_ch_qq: 'QQ', settings_ch_telegram: 'Telegram',
-    settings_ch_imessage: 'iMessage', settings_ch_whatsapp: 'WhatsApp',
+    settings_ch_whatsapp: 'WhatsApp',
   },
 }
 

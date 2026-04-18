@@ -27,7 +27,6 @@ import { wechatPlugin } from "./channels/wechat.js";
 import { qqPlugin } from "./channels/qq.js";
 import { wecomPlugin } from "./channels/wecom.js";
 import { telegramPlugin } from "./channels/telegram.js";
-import { imessagePlugin } from "./channels/imessage.js";
 import { whatsappPlugin } from "./channels/whatsapp.js";
 import { ChannelManager } from "./channels/manager.js";
 import {
@@ -216,7 +215,6 @@ async function start(): Promise<void> {
   manager.register(qqPlugin);
   manager.register(wecomPlugin);
   manager.register(telegramPlugin);
-  manager.register(imessagePlugin);
   manager.register(whatsappPlugin);
 
   // Cron executor

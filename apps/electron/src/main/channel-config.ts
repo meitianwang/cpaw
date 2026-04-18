@@ -28,7 +28,6 @@ const CHANNEL_DEFS = [
   { id: 'wecom', name: 'WeCom', fields: ['bot_id', 'secret'] },
   { id: 'qq', name: 'QQ', fields: ['app_id', 'client_secret'] },
   { id: 'telegram', name: 'Telegram', fields: ['bot_token'] },
-  { id: 'imessage', name: 'iMessage', fields: [] },
   { id: 'whatsapp', name: 'WhatsApp', fields: [] },
 ]
 

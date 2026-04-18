@@ -270,18 +270,6 @@ export function getChatBodyHtml(): string {
                   <div class="ch-card-desc" data-i18n="settings_ch_telegram_desc">Connect Telegram Bot via Bot API</div>
                 </div>
 
-                <!-- iMessage -->
-                <div class="ch-card" id="s-ch-imessage-card">
-                  <div class="ch-card-head">
-                    <div style="display:flex;align-items:center;gap:12px">
-                      <img src="/imessage-icon.png" alt="iMessage" width="42" height="42" style="border-radius:10px">
-                      <div style="font-weight:600;font-size:16px" data-i18n="settings_ch_imessage">iMessage</div>
-                    </div>
-                    <button class="ch-card-btn" id="s-ch-imessage-cfg-btn" data-i18n="settings_ch_setup">Configure</button>
-                  </div>
-                  <div class="ch-card-desc" data-i18n="settings_ch_imessage_desc">macOS iMessage bridge via imsg CLI</div>
-                </div>
-
                 <!-- WhatsApp -->
                 <div class="ch-card" id="s-ch-whatsapp-card">
                   <div class="ch-card-head">
@@ -481,31 +469,6 @@ export function getChatBodyHtml(): string {
                       </div>
                       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
                         <button class="s-btn s-btn-primary" id="s-ch-telegram-connect-btn" data-i18n="settings_ch_connect">Connect</button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- iMessage content -->
-                  <div id="s-ch-imessage-modal-content" style="display:none">
-                    <div id="s-ch-imessage-connected" style="display:none">
-                      <div style="border:1px solid var(--border);border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
-                        <div>
-                          <div style="font-size:12px;color:var(--fg-tertiary)" data-i18n="settings_ch_connected">Connected</div>
-                        </div>
-                        <button class="s-btn s-btn-danger" id="s-ch-imessage-disconnect-btn" data-i18n="settings_ch_disconnect">Disconnect</button>
-                      </div>
-                      <div style="margin-top:12px;font-size:13px;color:var(--fg-tertiary);line-height:1.7" data-i18n="settings_ch_imessage_usage">iMessage bridge is running. Anyone who sends you an iMessage will get a reply from Klaus. You can view these conversations in the session list on the left.</div>
-                    </div>
-                    <div id="s-ch-imessage-form">
-                      <div style="font-size:13px;color:var(--fg-tertiary);line-height:1.7;margin-bottom:20px">
-                        <div data-i18n="settings_ch_imessage_info">Click Connect to auto-install imsg and set up iMessage bridge. You may need to grant Full Disk Access permission when prompted.</div>
-                      </div>
-                      <div id="s-ch-imessage-permission-hint" style="display:none;background:var(--bg-warning,#fef3cd);border:1px solid var(--border-warning,#ffc107);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--fg)">
-                        <div style="font-weight:600;margin-bottom:4px" data-i18n="settings_ch_imessage_perm_title">Grant Full Disk Access</div>
-                        <div data-i18n="settings_ch_imessage_perm_desc">Open System Settings &rarr; Privacy &amp; Security &rarr; Full Disk Access, and enable your terminal app (Terminal / iTerm / Warp). Then click Connect again.</div>
-                      </div>
-                      <div style="display:flex;gap:8px;justify-content:flex-end">
-                        <button class="s-btn s-btn-primary" id="s-ch-imessage-connect-btn" data-i18n="settings_ch_connect">Connect</button>
                       </div>
                     </div>
                   </div>

@@ -161,7 +161,6 @@ app.whenReady().then(async () => {
         import('../channels/wecom.js').then(m => m.wecomPlugin || m.default),
         import('../channels/qq.js').then(m => m.qqPlugin || m.default),
         import('../channels/telegram.js').then(m => m.telegramPlugin || m.default),
-        import('../channels/imessage.js').then(m => m.imessagePlugin || m.default),
         import('../channels/whatsapp.js').then(m => m.whatsappPlugin || m.default),
       ])
 

@@ -181,7 +181,7 @@ function updateWelcomeGreeting() {
 // Channel prefix → short label key (mirrors Web 端 web-ui-chat-js.ts:176-181).
 // When a session id carries one of these prefixes it was created by an external
 // channel plugin; show the channel badge in the sidebar so users can tell.
-const CHANNEL_PREFIXES = ['feishu', 'dingtalk', 'wechat', 'wecom', 'qq', 'telegram', 'imessage', 'whatsapp']
+const CHANNEL_PREFIXES = ['feishu', 'dingtalk', 'wechat', 'wecom', 'qq', 'telegram', 'whatsapp']
 function detectChannelPrefix(sessionId) {
   for (const p of CHANNEL_PREFIXES) if (sessionId.startsWith(p + ':')) return p
   return null

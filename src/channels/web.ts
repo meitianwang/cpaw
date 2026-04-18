@@ -514,7 +514,7 @@ function serveAdmin(req: IncomingMessage, res: ServerResponse): void {
 // ---------------------------------------------------------------------------
 
 // Per-session message queue — prevents concurrent chat() calls for the same session.
-// Ported from Klaus's Telegram/iMessage channels (promise chain pattern).
+// Ported from Klaus's Telegram channel (promise chain pattern).
 // When a user sends a message while the agent is busy, the new message waits
 // in the queue and is processed after the current turn finishes.
 const sessionQueues = new Map<string, Promise<void>>();
@@ -2197,10 +2197,6 @@ async function handleAdminChannels(
         bot_username: settingsStoreRef.get("channel.telegram.bot_username") ?? "",
         bot_name: settingsStoreRef.get("channel.telegram.bot_name") ?? "",
       },
-      imessage: {
-        enabled: settingsStoreRef.getBool("channel.imessage.enabled", false),
-        cli_path: settingsStoreRef.get("channel.imessage.cli_path") ?? "imsg",
-      },
       whatsapp: {
         enabled: settingsStoreRef.getBool("channel.whatsapp.enabled", false),
       },
@@ -2752,91 +2748,6 @@ async function handleAdminChannelTelegram(
   jsonResponse(res, 405, { error: "method not allowed" });
 }
 
-async function handleAdminChannelImessage(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  const authUser = adminAuth(req, res);
-  if (!authUser) return;
-  if (!settingsStoreRef) { jsonResponse(res, 503, { error: "settings store unavailable" }); return; }
-
-  if (req.method === "POST") {
-    try {
-      const { execFile, exec } = await import("node:child_process");
-      const { promisify } = await import("node:util");
-      const execFileAsync = promisify(execFile);
-      const execAsync = promisify(exec);
-
-      // Step 1: Check if imsg is already installed
-      const cliPath = "imsg";
-      let installed = false;
-      try {
-        await execFileAsync(cliPath, ["--version"], { timeout: 5000 });
-        installed = true;
-      } catch { /* not found */ }
-
-      // Step 2: Auto-install via Homebrew if not found
-      if (!installed) {
-        try {
-          await execFileAsync("brew", ["--version"], { timeout: 5000 });
-        } catch {
-          jsonResponse(res, 400, { ok: false, error: "Homebrew not installed. Install from https://brew.sh first." });
-          return;
-        }
-
-        try {
-          await execAsync("brew install steipete/tap/imsg", { timeout: 300_000 });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message.slice(0, 200) : "unknown error";
-          jsonResponse(res, 400, { ok: false, error: `imsg installation failed: ${msg}` });
-          return;
-        }
-
-        try {
-          await execFileAsync(cliPath, ["--version"], { timeout: 5000 });
-        } catch {
-          jsonResponse(res, 400, { ok: false, error: "imsg installed but not found on PATH" });
-          return;
-        }
-      }
-
-      // Step 3: Test Messages DB access
-      let needsFullDiskAccess = false;
-      try {
-        await execFileAsync(cliPath, ["chats", "--limit", "1"], { timeout: 10_000 });
-      } catch {
-        needsFullDiskAccess = true;
-      }
-
-      settingsStoreRef.set("channel.imessage.cli_path", cliPath);
-      settingsStoreRef.set("channel.imessage.enabled", "true");
-      settingsStoreRef.set("channel.imessage.owner_id", authUser.id);
-
-      hotStartChannel("imessage");
-      jsonResponse(res, 200, {
-        ok: true,
-        cli_path: cliPath,
-        enabled: true,
-        needsFullDiskAccess,
-        message: needsFullDiskAccess
-          ? "imsg installed. Grant Full Disk Access to your terminal in System Settings → Privacy & Security."
-          : "imsg connected.",
-      });
-    } catch (err) { gatewayErrorResponse(res, err); }
-    return;
-  }
-
-  if (req.method === "DELETE") {
-    settingsStoreRef.set("channel.imessage.enabled", "false");
-    settingsStoreRef.set("channel.imessage.cli_path", "");
-    settingsStoreRef.set("channel.imessage.owner_id", "");
-    jsonResponse(res, 200, { ok: true });
-    return;
-  }
-
-  jsonResponse(res, 405, { error: "method not allowed" });
-}
-
 async function handleAdminChannelWhatsapp(
   req: IncomingMessage,
   res: ServerResponse,
@@ -3048,8 +2959,6 @@ async function handleRequest(
       return servePublicFile(res, "wecom-icon.png", "image/jpeg");
     case "/telegram-icon.png":
       return servePublicFile(res, "telegram-icon.png", "image/jpeg");
-    case "/imessage-icon.png":
-      return servePublicFile(res, "imessage-icon.png", "image/jpeg");
     case "/whatsapp-icon.png":
       return servePublicFile(res, "whatsapp-icon.png", "image/jpeg");
 
@@ -3170,8 +3079,6 @@ case "/api/cron/tasks":
       return handleAdminChannelWecom(req, res);
     case "/api/admin/channels/telegram":
       return handleAdminChannelTelegram(req, res);
-    case "/api/admin/channels/imessage":
-      return handleAdminChannelImessage(req, res);
     case "/api/admin/channels/whatsapp":
     case "/api/admin/channels/whatsapp/qr-poll":
       return handleAdminChannelWhatsapp(req, res);
@@ -3219,7 +3126,6 @@ case "/api/cron/tasks":
         "qq:": "channel.qq.owner_id",
         "wecom:": "channel.wecom.owner_id",
         "telegram:": "channel.telegram.owner_id",
-        "imessage:": "channel.imessage.owner_id",
         "whatsapp:": "channel.whatsapp.owner_id",
       };
       for (const [prefix, ownerKey] of Object.entries(channelOwnerChecks)) {
@@ -3275,8 +3181,6 @@ case "/api/cron/tasks":
           if (!wecomOwnerId || wecomOwnerId === sessAuth.user.id) channels.push("wecom:");
           const tgOwnerId = settingsStoreRef?.get("channel.telegram.owner_id");
           if (!tgOwnerId || tgOwnerId === sessAuth.user.id) channels.push("telegram:");
-          const imsgOwnerId = settingsStoreRef?.get("channel.imessage.owner_id");
-          if (!imsgOwnerId || imsgOwnerId === sessAuth.user.id) channels.push("imessage:");
           const waOwnerId = settingsStoreRef?.get("channel.whatsapp.owner_id");
           if (!waOwnerId || waOwnerId === sessAuth.user.id) channels.push("whatsapp:");
           const result = await gateway.listSessions({

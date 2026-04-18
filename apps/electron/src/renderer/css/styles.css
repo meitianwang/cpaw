@@ -1425,13 +1425,6 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .ch-qr-img { max-width: 280px; border-radius: 8px; display: block; margin: 0 auto; }
 .ch-qr-status { margin-top: 10px; font-size: 12px; color: var(--fg-tertiary); }
 
-/* iMessage flow */
-.ch-imessage { display: flex; flex-direction: column; gap: 14px; }
-.ch-imessage-info { font-size: 13px; color: var(--fg-tertiary); line-height: 1.6; }
-.ch-imessage-usage { font-size: 13px; color: var(--fg-tertiary); line-height: 1.6; margin-top: 8px; }
-.ch-imessage-perm { background: rgba(250,204,21,0.1); border: 1px solid rgba(250,204,21,0.3); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--fg); }
-.ch-imessage-perm-title { font-weight: 600; margin-bottom: 4px; }
-
 /* Primary button for modal (reuse s-btn) */
 .s-btn-primary { background: var(--accent, #2563eb); color: #fff; border-color: var(--accent, #2563eb); padding: 6px 14px; font-size: 13px; }
 .s-btn-primary:hover { background: var(--accent-hover, #1d4ed8); }
