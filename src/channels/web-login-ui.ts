@@ -161,12 +161,14 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
   const urlError = params.get('error');
   const urlMode = params.get('mode');
 
-  // Desktop OAuth-style params (PKCE). When present, login/register POST
-  // carries desktop + state + codeChallenge and the server returns a redirect
-  // URL to klaus:// callback instead of setting a session cookie.
+  // Desktop OAuth-style params (PKCE + loopback). When present, login/register
+  // POST carries desktop + state + codeChallenge + redirectPort and the
+  // server returns a redirect to http://localhost:<port>/auth/callback
+  // instead of setting a session cookie.
   const isDesktop = params.get('desktop') === '1';
   const desktopState = params.get('state') || '';
   const desktopChallenge = params.get('code_challenge') || '';
+  const desktopPort = params.get('redirect_port') || '';
 
   if (urlError) {
     errorEl.textContent = errorMessages[urlError] || urlError;
@@ -174,7 +176,8 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
     // Preserve desktop params if present — otherwise user loses them on retry
     const keep = isDesktop
       ? '?desktop=1&state=' + encodeURIComponent(desktopState) +
-        '&code_challenge=' + encodeURIComponent(desktopChallenge)
+        '&code_challenge=' + encodeURIComponent(desktopChallenge) +
+        '&redirect_port=' + encodeURIComponent(desktopPort)
       : '';
     history.replaceState(null, '', '/login' + keep);
   }
@@ -220,6 +223,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       desktop: true,
       state: desktopState,
       codeChallenge: desktopChallenge,
+      redirectPort: Number(desktopPort) || 0,
     });
   }
 
@@ -230,6 +234,7 @@ html, body { height: 100%; font-family: var(--font-main); background: var(--bg);
       qs.set('desktop', '1');
       qs.set('state', desktopState);
       qs.set('code_challenge', desktopChallenge);
+      qs.set('redirect_port', desktopPort);
     }
     var q = qs.toString();
     return q ? '/api/auth/google?' + q : '/api/auth/google';

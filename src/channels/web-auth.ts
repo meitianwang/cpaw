@@ -131,33 +131,39 @@ function getOrigin(req: IncomingMessage): string {
 }
 
 // Desktop OAuth-style parameters: `desktop=1` switches login/register/google
-// flows from "set session cookie + redirect /" to "issue auth code + redirect
-// klaus://auth/callback". PKCE challenge binds the code to the desktop client
-// that initiated the login, so even if the redirect URL leaks the code cannot
-// be redeemed by anyone else.
+// flows from "set session cookie + redirect /" to "issue auth code + 302 to
+// http://localhost:<redirectPort>/auth/callback". This uses the RFC 8252
+// loopback redirect pattern (same as GitHub CLI, VSCode MS Login). PKCE
+// challenge binds the code to the desktop client that initiated the login,
+// so even if the redirect URL leaks the code cannot be redeemed by anyone
+// else without the verifier held only in the desktop process.
 interface DesktopAuthParams {
   readonly desktop: boolean;
   readonly state: string;
   readonly codeChallenge: string;
+  readonly redirectPort: number;
 }
 
 function parseDesktopParams(body: Record<string, unknown>): DesktopAuthParams {
   const desktop = body.desktop === true || body.desktop === "1" || body.desktop === 1;
+  const portRaw = body.redirectPort ?? body.redirect_port;
+  const port = Number(portRaw);
   return {
     desktop,
     state: String(body.state ?? "").trim(),
     codeChallenge: String(body.codeChallenge ?? body.code_challenge ?? "").trim(),
+    redirectPort: Number.isInteger(port) && port > 0 && port < 65536 ? port : 0,
   };
 }
 
 /**
- * Success page URL. Landing here shows "Login successful — opening Klaus..."
- * and triggers `klaus://auth/callback?…` from JS, which gives the user a
- * clean prompt and a manual fallback if the scheme isn't registered.
+ * Build the loopback callback URL the desktop app is listening on. Only
+ * 127.0.0.1 / localhost are accepted — any other host is a misconfigured
+ * or malicious request.
  */
-function buildDesktopSuccessUrl(code: string, state: string): string {
+function buildDesktopCallbackUrl(code: string, state: string, port: number): string {
   const params = new URLSearchParams({ code, state });
-  return `/desktop/auth-success?${params.toString()}`;
+  return `http://127.0.0.1:${port}/auth/callback?${params.toString()}`;
 }
 
 function userResponse(user: {
@@ -242,7 +248,10 @@ export async function handleAuthRegister(
   }
 
   const desktopParams = parseDesktopParams(body);
-  if (desktopParams.desktop && (!desktopParams.state || !desktopParams.codeChallenge)) {
+  if (
+    desktopParams.desktop &&
+    (!desktopParams.state || !desktopParams.codeChallenge || !desktopParams.redirectPort)
+  ) {
     json(res, 400, { error: "desktop_params_required" });
     return;
   }
@@ -270,7 +279,7 @@ export async function handleAuthRegister(
       );
       json(res, 201, {
         user: userResponse(user),
-        redirect: buildDesktopSuccessUrl(code, desktopParams.state),
+        redirect: buildDesktopCallbackUrl(code, desktopParams.state, desktopParams.redirectPort),
       });
       return;
     }
@@ -322,7 +331,10 @@ export async function handleAuthLogin(
   }
 
   const desktopParams = parseDesktopParams(body);
-  if (desktopParams.desktop && (!desktopParams.state || !desktopParams.codeChallenge)) {
+  if (
+    desktopParams.desktop &&
+    (!desktopParams.state || !desktopParams.codeChallenge || !desktopParams.redirectPort)
+  ) {
     json(res, 400, { error: "desktop_params_required" });
     return;
   }
@@ -343,7 +355,7 @@ export async function handleAuthLogin(
     );
     json(res, 200, {
       user: userResponse(user),
-      redirect: buildDesktopSuccessUrl(code, desktopParams.state),
+      redirect: buildDesktopCallbackUrl(code, desktopParams.state, desktopParams.redirectPort),
     });
     return;
   }
@@ -587,10 +599,11 @@ export function handleGoogleRedirect(
   const desktop = url.searchParams.get("desktop") === "1";
   const desktopState = url.searchParams.get("state") ?? "";
   const desktopChallenge = url.searchParams.get("code_challenge") ?? "";
+  const desktopPort = url.searchParams.get("redirect_port") ?? "";
 
   // CSRF protection: random nonce stored in HttpOnly cookie, verified on callback.
   // State format (pipe-separated so colons in tokens don't collide):
-  //   nonce|inviteCode|desktop(0/1)|desktopState|desktopChallenge
+  //   nonce|inviteCode|desktop(0/1)|desktopState|desktopChallenge|desktopPort
   const nonce = randomBytes(16).toString("hex");
   const stateFields = [
     nonce,
@@ -598,6 +611,7 @@ export function handleGoogleRedirect(
     desktop ? "1" : "0",
     desktopState,
     desktopChallenge,
+    desktopPort,
   ];
   const state = stateFields.join("|");
   const secure = isSecureRequest(req);
@@ -655,6 +669,7 @@ export async function handleGoogleCallback(
   let desktopMode = false;
   let desktopState = "";
   let desktopChallenge = "";
+  let desktopPort = 0;
   if (rawState.includes("|")) {
     const parts = rawState.split("|");
     stateNonce = parts[0] ?? "";
@@ -662,6 +677,8 @@ export async function handleGoogleCallback(
     desktopMode = parts[2] === "1";
     desktopState = parts[3] ?? "";
     desktopChallenge = parts[4] ?? "";
+    const p = Number(parts[5] ?? "");
+    desktopPort = Number.isInteger(p) && p > 0 && p < 65536 ? p : 0;
   } else {
     const colonIdx = rawState.indexOf(":");
     stateNonce = colonIdx >= 0 ? rawState.slice(0, colonIdx) : rawState;
@@ -784,10 +801,10 @@ export async function handleGoogleCallback(
       `[Web] Google login: ${result.user.id.slice(0, 8)} (${result.isNew ? "new" : "existing"})`,
     );
 
-    // Desktop flow: issue one-time auth code + 302 to klaus:// callback.
+    // Desktop flow: issue one-time auth code + 302 to loopback callback.
     // Don't set a session cookie — browser isn't the authenticated client here.
     if (desktopMode) {
-      if (!desktopState || !desktopChallenge) {
+      if (!desktopState || !desktopChallenge || !desktopPort) {
         res.writeHead(302, {
           Location: "/login?error=desktop_params_required",
           "Set-Cookie": clearStateCookie,
@@ -801,8 +818,7 @@ export async function handleGoogleCallback(
         desktopChallenge,
       );
       res.writeHead(302, {
-        Location: "/desktop/auth-success?code=" +
-          encodeURIComponent(authCode) + "&state=" + encodeURIComponent(desktopState),
+        Location: buildDesktopCallbackUrl(authCode, desktopState, desktopPort),
         "Set-Cookie": clearStateCookie,
       });
       res.end();
@@ -843,94 +859,8 @@ export async function handleGoogleCallback(
 }
 
 // ---------------------------------------------------------------------------
-// Desktop auth: success landing page + token exchange + me + logout
+// Desktop auth: token exchange + me + logout
 // ---------------------------------------------------------------------------
-
-/**
- * HTML page shown after a successful desktop login. Immediately attempts to
- * launch the klaus:// scheme and falls back to a manual "Open Klaus" button.
- * The code + state are echoed in the URL so refresh/back still works until
- * the code is redeemed or expires (5 min).
- */
-export function handleDesktopAuthSuccess(
-  req: IncomingMessage,
-  res: ServerResponse,
-): void {
-  const url = new URL(req.url ?? "/", getOrigin(req));
-  const code = url.searchParams.get("code") ?? "";
-  const state = url.searchParams.get("state") ?? "";
-  if (!code || !state) {
-    res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("missing code or state");
-    return;
-  }
-
-  const callbackUrl =
-    `klaus://auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
-  const safeCallbackJson = JSON.stringify(callbackUrl);
-
-  const html = `<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Klaus — 登录成功</title>
-<link rel="icon" type="image/png" href="/logo.png">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-:root {
-  --bg: #ffffff; --fg: #0f172a; --border: #e2e8f0;
-  --card-bg: #f8fafc; --accent: #020617; --accent-text: #ffffff;
-  --accent-hover: #334155; --muted: #64748b;
-  --font-main: 'Inter', -apple-system, sans-serif;
-}
-@media(prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f172a; --fg: #f8fafc; --border: #334155;
-    --card-bg: #1e293b; --accent: #f8fafc; --accent-text: #0f172a;
-    --accent-hover: #e2e8f0; --muted: #94a3b8;
-  }
-}
-html, body { height: 100%; font-family: var(--font-main); background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
-.container { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.card { width: 100%; max-width: 400px; text-align: center; }
-.brand-icon { width: 48px; height: 48px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 20px; }
-.brand-icon img { width: 100%; height: 100%; object-fit: contain; border-radius: 12px; }
-h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 8px; }
-p.sub { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
-.btn { display: inline-block; width: auto; padding: 10px 24px; background: var(--accent); color: var(--accent-text); border: none; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; font-family: var(--font-main); transition: background 0.15s; }
-.btn:hover { background: var(--accent-hover); }
-.hint { font-size: 12px; color: var(--muted); margin-top: 16px; opacity: 0.8; }
-</style>
-</head>
-<body>
-<div class="container">
-  <div class="card">
-    <div class="brand-icon"><img src="/logo.png" alt="Klaus" /></div>
-    <h1>登录成功</h1>
-    <p class="sub">正在打开 Klaus 桌面应用… 如果没有自动跳转，请点击下方按钮。</p>
-    <a class="btn" id="open-btn" href="#">打开 Klaus</a>
-    <p class="hint">关闭此页面前请先确认 Klaus 桌面应用已接管登录</p>
-  </div>
-</div>
-<script>
-  (function () {
-    var url = ${safeCallbackJson};
-    document.getElementById('open-btn').href = url;
-    setTimeout(function () { window.location.href = url; }, 200);
-  })();
-</script>
-</body>
-</html>`;
-
-  res.writeHead(200, {
-    "Content-Type": "text/html; charset=utf-8",
-    // Don't cache — code is one-time and user state changes
-    "Cache-Control": "no-store",
-  });
-  res.end(html);
-}
 
 /**
  * POST /api/auth/desktop/token

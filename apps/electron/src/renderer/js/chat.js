@@ -1148,13 +1148,12 @@ function hideLoginScreen() {
   document.getElementById('app').style.visibility = ''
 }
 
-function setLoginMessage(msg, kind) {
+function setLoginMessage(msg) {
   if (!loginErrorEl) return
-  loginErrorEl.classList.remove('show', 'info')
+  loginErrorEl.classList.remove('show')
   if (!msg) { loginErrorEl.textContent = ''; return }
   loginErrorEl.textContent = msg
   loginErrorEl.classList.add('show')
-  if (kind === 'info') loginErrorEl.classList.add('info')
 }
 
 function syncLoginLangLabel() {
@@ -1166,7 +1165,7 @@ function syncLoginLangLabel() {
 loginBtn?.addEventListener('click', async () => {
   loginBtn.disabled = true
   if (loginBtnLabel) loginBtnLabel.textContent = tt('login_opening')
-  setLoginMessage(tt('login_waiting'), 'info')
+  setLoginMessage('')
   try {
     const res = await klausApi.klausAuth.login()
     if (res?.ok) {

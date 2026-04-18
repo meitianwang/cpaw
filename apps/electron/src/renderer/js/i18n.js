@@ -146,7 +146,6 @@ const I18N = {
     login_welcome_subtitle: 'Your AI desktop assistant for everyone',
     login_btn: 'Sign in / Sign up',
     login_opening: 'Opening browser…',
-    login_waiting: 'Finish sign-in in the browser — this screen will continue automatically.',
     login_failed_prefix: 'Sign in failed: ',
     login_retry: 'Retry',
     // UI chrome
@@ -390,7 +389,6 @@ const I18N = {
     login_welcome_subtitle: '面向所有人的 AI 桌面助手',
     login_btn: '登录/注册',
     login_opening: '正在打开浏览器…',
-    login_waiting: '请在浏览器中完成登录，这里会自动继续',
     login_failed_prefix: '登录失败：',
     login_retry: '重试',
     // UI chrome

@@ -77,7 +77,6 @@ import {
   handleAvatarServe,
   handleGoogleRedirect,
   handleGoogleCallback,
-  handleDesktopAuthSuccess,
   handleDesktopTokenExchange,
   handleDesktopMe,
   handleDesktopLogout,
@@ -3024,9 +3023,7 @@ async function handleRequest(
       }
       return handleGoogleCallback(req, res, cfg, userStoreRef, inviteStoreRef);
 
-    // Desktop app OAuth-style flow (PKCE + klaus:// callback)
-    case "/desktop/auth-success":
-      return handleDesktopAuthSuccess(req, res);
+    // Desktop app OAuth-style flow (PKCE + localhost loopback callback)
     case "/api/auth/desktop/token":
       if (!userStoreRef) {
         jsonResponse(res, 503, { error: "not ready" });

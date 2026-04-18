@@ -1520,10 +1520,6 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   text-align: left;
 }
 .login-error.show { display: block; }
-.login-error.info {
-  background: var(--bg-surface);
-  color: var(--fg-tertiary);
-}
 
 .login-btn-primary {
   -webkit-app-region: no-drag;
