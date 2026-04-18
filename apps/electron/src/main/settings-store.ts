@@ -50,15 +50,6 @@ export class SettingsStore {
         created_at  INTEGER NOT NULL,
         updated_at  INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS rules (
-        id          TEXT PRIMARY KEY,
-        name        TEXT NOT NULL,
-        content     TEXT NOT NULL,
-        enabled     INTEGER NOT NULL DEFAULT 1,
-        sort_order  INTEGER NOT NULL DEFAULT 0,
-        created_at  INTEGER NOT NULL,
-        updated_at  INTEGER NOT NULL
-      );
       CREATE TABLE IF NOT EXISTS settings (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -273,6 +264,32 @@ export class SettingsStore {
 
   deletePrompt(id: string): boolean {
     return this.db.prepare('DELETE FROM prompts WHERE id = ?').run(id).changes > 0
+  }
+
+  /**
+   * Replace the entire prompts cache with the given records in one transaction.
+   * Used by engine-host to mirror the cloud's prompts into the local offline
+   * cache after each successful fetch.
+   */
+  replaceAllPrompts(records: Array<{ id: string; name: string; content: string; isDefault?: boolean; createdAt?: number; updatedAt?: number }>): void {
+    const now = Date.now()
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM prompts').run()
+      const insert = this.db.prepare(`
+        INSERT INTO prompts (id, name, content, is_default, created_at, updated_at)
+        VALUES (@id, @name, @content, @isDefault, @createdAt, @updatedAt)
+      `)
+      for (const r of records) {
+        insert.run({
+          id: r.id,
+          name: r.name,
+          content: r.content,
+          isDefault: r.isDefault ? 1 : 0,
+          createdAt: r.createdAt ?? now,
+          updatedAt: r.updatedAt ?? now,
+        })
+      }
+    })()
   }
 
   setDefaultPrompt(id: string): void {

@@ -1,5 +1,6 @@
-// Klaus Desktop — Settings Panel (fully aligned with Web端)
-// Tabs: Models, Prompts, Channels, Skills, MCP, Tasks, Preferences
+// Klaus Desktop — Settings Panel
+// Tabs: Profile, Models, Channels, Skills, MCP, Tasks
+// Prompts are managed in the Klaus web admin panel (cloud), not here.
 
 const settingsApi = window.klaus.settings
 let settingsVisible = false
@@ -20,7 +21,6 @@ function loadSettingsTab(tab) {
   switch (tab) {
     case 'profile': loadProfileTab(content); break
     case 'models': loadModelsTab(content); break
-    case 'prompts': loadPromptsTab(content); break
     case 'channels': loadChannelsTab(content); break
     case 'skills': loadSkillsTab(content); break
     case 'mcp': loadMcpTab(content); break
@@ -324,104 +324,6 @@ window.setDefaultModel = async (id) => {
   loadSettingsTab('models')
 }
 window.deleteModel = async (id) => { if (confirm(tt('delete_model'))) { await settingsApi.models.delete(id); loadSettingsTab('models') } }
-
-// ==================== Prompts ====================
-// 显示 name：官方 id 查翻译 fallback 英文原 name；自定义段直接用 name
-const displaySectionName = (p) => tt('section_' + p.id) !== ('section_' + p.id) ? tt('section_' + p.id) : p.name
-const displaySectionDesc = (p) => tt('section_desc_' + p.id) !== ('section_desc_' + p.id) ? tt('section_desc_' + p.id) : (p.desc || '')
-
-async function loadPromptsTab(container) {
-  const { static: staticList, dynamic: dynamicList, custom: customList } = await settingsApi.prompts.sections()
-
-  // data-prompt-name 存**英文 name**，保存时用（避免保存后数据库 name 变成翻译后的文字）
-  const renderEditableCard = (p, isCustom) => `
-    <div class="settings-card" data-prompt-id="${esc(p.id)}" data-prompt-name="${esc(p.name)}">
-      <div class="card-header">
-        <strong>${esc(displaySectionName(p))}</strong>
-        <span style="font-size:11px;color:var(--fg-quaternary);margin-left:8px">${esc(p.id)}</span>
-      </div>
-      <textarea class="prompt-editor" rows="6" placeholder="${isCustom ? esc(tt('section_custom_placeholder')) : ''}">${esc(p.content)}</textarea>
-      <div class="card-actions" style="display:flex;gap:6px;margin-top:6px">
-        <button class="btn-xs btn-primary" data-action="save">${tt('save')}</button>
-        ${isCustom
-          ? `<button class="btn-xs btn-danger" data-action="delete">${tt('delete_title')}</button>`
-          : `<button class="btn-xs" data-action="reset">${tt('section_reset_default')}</button>`}
-      </div>
-    </div>`
-
-  const renderDynamicCard = (p) => `
-    <div class="settings-card" style="opacity:0.7" data-prompt-id="${esc(p.id)}">
-      <div class="card-header">
-        <strong>${esc(displaySectionName(p))}</strong>
-        <span style="font-size:11px;color:var(--fg-quaternary);margin-left:8px">${esc(p.id)}</span>
-        <span class="s-badge" style="margin-left:auto;background:var(--bg-surface);color:var(--fg-tertiary);font-size:11px;padding:2px 8px;border-radius:4px">${tt('section_dynamic_badge')}</span>
-      </div>
-      <div class="card-meta" style="font-size:13px;color:var(--fg-tertiary);margin-top:6px">${esc(displaySectionDesc(p))}</div>
-    </div>`
-
-  container.innerHTML = `<div class="settings-section">
-    <h3>${tt('prompts')}</h3>
-    <p class="hint-text">${tt('prompt_hint')}</p>
-
-    <h4 style="margin-top:20px;margin-bottom:8px;font-size:13px;color:var(--fg-secondary)">${tt('section_group_static')}（${staticList.length}）</h4>
-    ${staticList.map(p => renderEditableCard(p, false)).join('')}
-
-    <h4 style="margin-top:24px;margin-bottom:8px;font-size:13px;color:var(--fg-secondary)">${tt('section_group_dynamic')}（${dynamicList.length}）</h4>
-    ${dynamicList.map(renderDynamicCard).join('')}
-
-    <h4 style="margin-top:24px;margin-bottom:8px;font-size:13px;color:var(--fg-secondary)">${tt('section_group_custom')}（${customList.length}）</h4>
-    <div id="custom-prompts-list">${customList.map(p => renderEditableCard(p, true)).join('')}</div>
-    <button class="btn-sm" id="add-custom-prompt-btn" style="margin-top:8px">${tt('section_add')}</button>
-  </div>`
-
-  container.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-action]')
-    if (!btn) return
-    const card = btn.closest('.settings-card')
-    const id = card?.dataset.promptId
-    const name = card?.dataset.promptName || id
-    if (!id) return
-    const action = btn.dataset.action
-
-    if (action === 'save') {
-      const textarea = card.querySelector('.prompt-editor')
-      await settingsApi.prompts.upsert({
-        id, name, content: textarea.value,
-        isDefault: false, createdAt: Date.now(), updatedAt: Date.now(),
-      })
-      btn.textContent = tt('saved')
-      setTimeout(() => { btn.textContent = tt('save') }, 1500)
-    } else if (action === 'reset') {
-      const fresh = await settingsApi.prompts.sections()
-      const def = fresh.static.find(s => s.id === id)
-      if (def) {
-        const textarea = card.querySelector('.prompt-editor')
-        textarea.value = def.defaultText || ''
-        await settingsApi.prompts.upsert({
-          id, name, content: def.defaultText || '',
-          isDefault: false, createdAt: Date.now(), updatedAt: Date.now(),
-        })
-        showToast(tt('section_reset_done'))
-      }
-    } else if (action === 'delete') {
-      if (!confirm(tt('section_delete_confirm'))) return
-      await settingsApi.prompts.delete(id)
-      loadPromptsTab(container)
-    }
-  })
-
-  document.getElementById('add-custom-prompt-btn')?.addEventListener('click', async () => {
-    const name = window.prompt(tt('section_name_prompt'))
-    if (!name?.trim()) return
-    const id = window.prompt(tt('section_id_prompt'), 'custom_' + Date.now().toString(36))
-    if (!id?.trim()) return
-    await settingsApi.prompts.upsert({
-      id: id.trim(), name: name.trim(), content: '',
-      isDefault: false, createdAt: Date.now(), updatedAt: Date.now(),
-    })
-    loadPromptsTab(container)
-  })
-}
 
 // ==================== Channels ====================
 const FEISHU_PERMISSIONS_JSON = '{"scopes":{"tenant":["contact:contact.base:readonly","docx:document:readonly","im:chat:read","im:chat:update","im:message.group_at_msg:readonly","im:message.p2p_msg:readonly","im:message.pins:read","im:message.pins:write_only","im:message.reactions:read","im:message.reactions:write_only","im:message:readonly","im:message:recall","im:message:send_as_bot","im:message:send_multi_users","im:message:send_sys_msg","im:message:update","im:resource","application:application:self_manage","cardkit:card:write","cardkit:card:read"],"user":["contact:user.employee_id:readonly","offline_access"]}}'

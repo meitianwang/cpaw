@@ -964,3 +964,40 @@ export function handleDesktopLogout(
   userStore.revokeDesktopToken(match[1] ?? "");
   json(res, 200, { ok: true });
 }
+
+/**
+ * GET /api/prompts
+ * Header: Authorization: Bearer <desktop-token>
+ *
+ * Returns the full prompt records the admin has configured via /admin on
+ * this Klaus instance. The desktop app uses these to build its system
+ * prompt, replacing whatever it has in its local settings.db. Admin writes
+ * go through /api/admin/prompts (cookie auth) — this read-only endpoint is
+ * how non-admin users (and the desktop app) pull the same configuration.
+ */
+export function handleDesktopPromptsList(
+  req: IncomingMessage,
+  res: ServerResponse,
+  userStore: UserStore,
+  settingsStore: import("../settings-store.js").SettingsStore,
+): void {
+  if (req.method !== "GET") {
+    json(res, 405, { error: "method not allowed" });
+    return;
+  }
+
+  const authHeader = req.headers.authorization ?? "";
+  const match = authHeader.match(/^Bearer\s+(\S+)$/);
+  if (!match) {
+    json(res, 401, { error: "missing_bearer_token" });
+    return;
+  }
+
+  const user = userStore.validateDesktopToken(match[1] ?? "");
+  if (!user) {
+    json(res, 401, { error: "invalid_token" });
+    return;
+  }
+
+  json(res, 200, { prompts: settingsStore.listPrompts() });
+}

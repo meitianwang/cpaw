@@ -80,6 +80,7 @@ import {
   handleDesktopTokenExchange,
   handleDesktopMe,
   handleDesktopLogout,
+  handleDesktopPromptsList,
 } from "./web-auth.js";
 import { validateLocalToken } from "../local-token.js";
 import {
@@ -3042,6 +3043,14 @@ async function handleRequest(
         return;
       }
       return handleDesktopLogout(req, res, userStoreRef);
+
+    // Prompts config shared with the desktop app (bearer auth, read-only)
+    case "/api/prompts":
+      if (!userStoreRef || !settingsStoreRef) {
+        jsonResponse(res, 503, { error: "not ready" });
+        return;
+      }
+      return handleDesktopPromptsList(req, res, userStoreRef, settingsStoreRef);
 
     // User settings (language, output_style)
     case "/api/user/settings":

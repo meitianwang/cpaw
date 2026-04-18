@@ -643,10 +643,15 @@ export class EngineHost {
       //  - cli_prefix：特例，API 客户端层硬 prepend，通过 env 注入
       //  - 官方 id 的 prompt 走 sectionOverrides（覆盖引擎对应段的默认文案）
       //  - 非官方 id（用户添加的自定义段）走 customAppendSections（追加到 system prompt 末尾）
+      //
+      // Prompts source of truth is the Klaus cloud admin panel; local SQLite
+      // is just an offline cache. Every turn we try cloud first and fall
+      // back to local on any failure (network / 401 / bad payload).
+      const promptRecords = await this.loadPromptRecords()
       const sectionOverrides: Record<string, string> = {}
       const customAppendSections: Array<{ name: string; content: string }> = []
       let cliPrefixOverride: string | null = null
-      for (const prompt of this.store.listPrompts()) {
+      for (const prompt of promptRecords) {
         if (!prompt.content?.trim()) continue
         if (prompt.id === 'cli_prefix') {
           cliPrefixOverride = prompt.content
@@ -987,6 +992,33 @@ export class EngineHost {
   private getModel(): string {
     const m = this.store.getDefaultModel()
     return m?.model ?? 'claude-sonnet-4-20250514'
+  }
+
+  /**
+   * Pull prompt records from the Klaus cloud (source of truth) and refresh
+   * the local SQLite cache on success. On any failure (not logged in,
+   * network, 401, malformed payload) fall back to whatever the cache has.
+   *
+   * The cache is what keeps chat working offline / while the backend is
+   * down. It gets seeded the first time a fetch succeeds after login.
+   */
+  private async loadPromptRecords(): Promise<Array<{ id: string; name: string; content: string }>> {
+    try {
+      const { apiGet } = await import('./klaus-auth.js')
+      const resp = await apiGet<{ prompts: Array<{ id: string; name: string; content: string; isDefault?: boolean; createdAt?: number; updatedAt?: number }> }>('/api/prompts')
+      if (resp?.prompts && Array.isArray(resp.prompts)) {
+        // Refresh local cache: wipe then re-insert (a simple mirror, not merge)
+        try {
+          this.store.replaceAllPrompts(resp.prompts)
+        } catch (err) {
+          console.warn('[Engine] failed to refresh prompts cache:', err)
+        }
+        return resp.prompts
+      }
+    } catch (err) {
+      console.warn('[Engine] cloud prompts fetch failed, using cache:', err)
+    }
+    return this.store.listPrompts()
   }
 
   private processStreamEvent(sessionId: string, event: any, session: SessionEntry): void {

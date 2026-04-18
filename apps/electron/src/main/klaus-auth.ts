@@ -357,6 +357,33 @@ export async function logout(): Promise<void> {
 }
 
 /**
+ * GET JSON from a Klaus server path with Bearer auth. Returns null on any
+ * failure (no token, network, non-2xx, parse error). A 401 response drops
+ * local auth state so boot() will surface the login screen on next check.
+ *
+ * Used by engine-host to pull prompts from /api/prompts; every cloud-synced
+ * read should go through this one helper so auth + error handling is uniform.
+ */
+export async function apiGet<T>(path: string): Promise<T | null> {
+  if (!currentAuth) return null
+  try {
+    const resp = await fetch(`${SERVER_URL}${path}`, {
+      headers: { Authorization: `Bearer ${currentAuth.token}` },
+    })
+    if (resp.status === 401) {
+      currentAuth = null
+      deleteStoredAuth()
+      return null
+    }
+    if (!resp.ok) return null
+    return (await resp.json()) as T
+  } catch (err) {
+    console.warn(`[KlausAuth] apiGet(${path}) failed:`, err)
+    return null
+  }
+}
+
+/**
  * Refresh user info from the server. Returns null if the token was rejected
  * (401) and local state is cleared. Network errors leave state untouched
  * and return the cached user.
