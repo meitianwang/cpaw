@@ -26,6 +26,7 @@ export type OnAskCallback = (params: {
   message: string
   suggestions?: PermissionUpdate[]
   toolUseContext: ToolUseContext
+  toolUseID: string
 }) => Promise<{
   decision: 'allow' | 'deny'
   updatedInput?: Record<string, unknown>
@@ -64,6 +65,7 @@ export function createCanUseTool(onAsk?: OnAskCallback): CanUseToolFn {
         message: result.message,
         suggestions: result.suggestions,
         toolUseContext,
+        toolUseID,
       })
 
       if (response.decision === 'allow') {

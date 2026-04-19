@@ -799,7 +799,7 @@ export class EngineHost {
       }
 
       // Permission callback — routes to renderer via IPC
-      const onAsk: OnAskCallback = async ({ tool: askTool, input: askInput, message, suggestions }) => {
+      const onAsk: OnAskCallback = async ({ tool: askTool, input: askInput, message, suggestions, toolUseID }) => {
         // Klaus connector short-circuit: checkbox IS the permission.
         //   true  → tool checked by user → auto-allow
         //   false → tool unchecked → auto-deny
@@ -822,6 +822,7 @@ export class EngineHost {
           toolInput: askInput,
           message,
           suggestions: suggestions?.map(s => ({ ...s } as any)),
+          toolCallId: toolUseID,
         })
 
         // Wait for renderer response

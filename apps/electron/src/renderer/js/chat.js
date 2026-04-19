@@ -569,7 +569,11 @@ function appendToolStart(toolName, toolCallId, args) {
 
   let valueText = ''
   if (args && typeof args === 'object') {
-    if (args.command) valueText = '$ ' + args.command
+    if (toolName === 'AskUserQuestion') {
+      // Interactive card rendered below by showAskUserQuestionRequest already
+      // shows the questions in a readable form — don't duplicate the raw JSON.
+      valueText = ''
+    } else if (args.command) valueText = '$ ' + args.command
     else if (args.file_path) valueText = args.file_path
     else if (args.pattern) valueText = args.pattern
     else { const v = JSON.stringify(args); valueText = v.length > 80 ? v.slice(0, 80) + '...' : v }
@@ -773,7 +777,13 @@ function showAskUserQuestionRequest(req) {
     </div>`
 
   card.innerHTML = header + blocks + footer
-  messagesEl.appendChild(card)
+  // Attach to the tool-container of this specific tool_use so the card sits
+  // right under the "AskUserQuestion" tool-item instead of at the bottom of
+  // messagesEl (where subsequent thinking/text blocks would push it out of
+  // chronological order).
+  const toolItem = req.toolCallId ? document.getElementById('tool-' + req.toolCallId) : null
+  const host = toolItem?.closest('.tool-container') || messagesEl
+  host.appendChild(card)
   scrollToBottom()
 
   wireQuestionCard(card, req, questions)

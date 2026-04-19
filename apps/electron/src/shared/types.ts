@@ -135,6 +135,10 @@ export interface PermissionRequest {
   toolInput: unknown
   message: string
   suggestions?: PermissionSuggestion[]
+  /** Matches the tool_use block id so the renderer can attach UI (e.g. the
+   *  AskUserQuestion card) adjacent to the tool-item instead of appending it
+   *  to the end of the message list. */
+  toolCallId?: string
 }
 
 export interface PermissionSuggestion {
