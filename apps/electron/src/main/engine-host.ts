@@ -648,14 +648,14 @@ export class EngineHost {
       authMod.clearOAuthTokenCache() // 让 getClaudeAIOAuthTokens 重新从 keychain 读
       const token = authMod.getClaudeAIOAuthTokens()
       if (!token) {
-        this.pushEvent({ type: 'auth_required' as any, sessionId, reason: 'not_logged_in', mode: 'subscription' })
+        this.pushEvent({ type: 'auth_required', sessionId, reason: 'not_logged_in', mode: 'subscription' })
         this.pushEvent({ type: 'done', sessionId })
         return ''
       }
     } else {
       const m = this.store.getDefaultModel() as any
       if (!m || !m.apiKey) {
-        this.pushEvent({ type: 'auth_required' as any, sessionId, reason: 'no_model', mode: 'custom' })
+        this.pushEvent({ type: 'auth_required', sessionId, reason: 'no_model', mode: 'custom' })
         this.pushEvent({ type: 'done', sessionId })
         return ''
       }
@@ -837,7 +837,7 @@ export class EngineHost {
       // Notify UI about inbound user turns (channel scenarios). Desktop UI
       // chats already rendered the user bubble locally before calling chat().
       if (options?.emitUserMessage) {
-        this.pushEvent({ type: 'user_message' as any, sessionId, message: userMsg })
+        this.pushEvent({ type: 'user_message', sessionId, message: userMsg })
       }
 
       // Build thinking config
@@ -918,16 +918,16 @@ export class EngineHost {
             for (const id of Object.keys(next.tasks ?? {})) {
               if (!(id in (prev.tasks ?? {}))) {
                 const task = (next.tasks as any)[id]
-                this.pushEvent({ type: 'teammate_spawned' as any, sessionId, agentId: id, name: task?.name ?? id, color: task?.color })
+                this.pushEvent({ type: 'teammate_spawned', sessionId, agentId: id, name: task?.name ?? id, color: task?.color })
               }
               const prevTask = (prev.tasks as any)?.[id]
               const nextTask = (next.tasks as any)[id]
               if (prevTask && nextTask) {
                 if (prevTask.toolUseCount !== nextTask.toolUseCount) {
-                  this.pushEvent({ type: 'agent_progress' as any, sessionId, agentId: id, toolUseCount: nextTask.toolUseCount ?? 0 })
+                  this.pushEvent({ type: 'agent_progress', sessionId, agentId: id, toolUseCount: nextTask.toolUseCount ?? 0 })
                 }
                 if (prevTask.status !== nextTask.status && (nextTask.status === 'completed' || nextTask.status === 'failed')) {
-                  this.pushEvent({ type: 'agent_done' as any, sessionId, agentId: id, status: nextTask.status })
+                  this.pushEvent({ type: 'agent_done', sessionId, agentId: id, status: nextTask.status })
                 }
               }
             }
@@ -981,10 +981,10 @@ export class EngineHost {
         || /aborted|user-cancel/i.test(msg)
       if (isAbort) {
         // 用户主动中断，不当 API 错误；推一个 interrupted 事件供前端展示（当前前端忽略）
-        this.pushEvent({ type: 'interrupted' as any, sessionId })
+        this.pushEvent({ type: 'interrupted', sessionId })
       } else if (/Please run \/login|Not logged in|OAuth token revoked/i.test(msg)) {
         // 运行时识别 OAuth token 过期 / 被吊销，转成前端能渲染按钮的 auth_required 事件
-        this.pushEvent({ type: 'auth_required' as any, sessionId, reason: 'token_invalid', mode: authMode })
+        this.pushEvent({ type: 'auth_required', sessionId, reason: 'token_invalid', mode: authMode })
       } else {
         this.pushEvent({ type: 'api_error', sessionId, error: msg })
       }
@@ -1083,7 +1083,7 @@ export class EngineHost {
       // 引擎发起 API 请求
       case 'stream_request_start': {
         this.pushEvent({ type: 'stream_mode', sessionId, mode: 'requesting' })
-        this.pushEvent({ type: 'requesting' as any, sessionId })
+        this.pushEvent({ type: 'requesting', sessionId })
         break
       }
 
@@ -1096,10 +1096,10 @@ export class EngineHost {
           for (const block of content) {
             if (block.type === 'text' && block.text) {
               this.pushEvent({ type: 'stream_mode', sessionId, mode: 'responding' })
-              this.pushEvent({ type: 'text_delta', sessionId, text: block.text } as any)
+              this.pushEvent({ type: 'text_delta', sessionId, text: block.text })
             } else if ((block.type === 'thinking' || block.type === 'redacted_thinking') && (block.thinking || block.data)) {
               this.pushEvent({ type: 'stream_mode', sessionId, mode: 'thinking' })
-              this.pushEvent({ type: 'thinking_delta', sessionId, thinking: block.thinking ?? block.data ?? '' } as any)
+              this.pushEvent({ type: 'thinking_delta', sessionId, thinking: block.thinking ?? block.data ?? '' })
             } else if (block.type === 'tool_use') {
               this.pushEvent({ type: 'stream_mode', sessionId, mode: 'tool-use' })
               this.pushEvent({
@@ -1109,7 +1109,7 @@ export class EngineHost {
               // 一次性把完整 input 作为 JSON 推给前端（前端靠累积 tool_input_delta 显示工具参数）
               if (block.input) {
                 this.pushEvent({
-                  type: 'tool_input_delta' as any, sessionId,
+                  type: 'tool_input_delta', sessionId,
                   toolCallId: block.id ?? '',
                   delta: JSON.stringify(block.input),
                 })
@@ -1117,7 +1117,7 @@ export class EngineHost {
             }
           }
         }
-        this.pushEvent({ type: 'message_complete' as any, sessionId, message: event })
+        this.pushEvent({ type: 'message_complete', sessionId, message: event })
         break
       }
 
@@ -1151,15 +1151,15 @@ export class EngineHost {
       // 系统消息：压缩边界 / API 错误 / 重试
       case 'system': {
         if (event.subtype === 'compact_boundary') {
-          this.pushEvent({ type: 'compaction_end' as any, sessionId })
-          this.pushEvent({ type: 'compact_boundary' as any, sessionId })
+          this.pushEvent({ type: 'compaction_end', sessionId })
+          this.pushEvent({ type: 'compact_boundary', sessionId })
         } else if (event.subtype === 'api_error') {
           this.pushEvent({
             type: 'api_error', sessionId,
             error: event.error?.message ?? 'API error',
           })
           this.pushEvent({
-            type: 'api_retry' as any, sessionId,
+            type: 'api_retry', sessionId,
             attempt: event.retryAttempt ?? 0,
             maxRetries: event.maxRetries ?? 0,
             error: event.error?.message ?? 'API error',
@@ -1171,7 +1171,7 @@ export class EngineHost {
 
       // 消息被压缩掉
       case 'tombstone': {
-        this.pushEvent({ type: 'tombstone' as any, sessionId, messageUuid: event.messageUuid ?? event.uuid ?? '' })
+        this.pushEvent({ type: 'tombstone', sessionId, messageUuid: event.messageUuid ?? event.uuid ?? '' })
         break
       }
 
@@ -1199,7 +1199,7 @@ export class EngineHost {
 
       // 文件产物
       case 'file': {
-        this.pushEvent({ type: 'file' as any, sessionId, name: event.name, url: event.url })
+        this.pushEvent({ type: 'file', sessionId, name: event.name, url: event.url })
         break
       }
     }

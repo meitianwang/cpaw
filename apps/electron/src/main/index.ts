@@ -183,13 +183,13 @@ app.whenReady().then(async () => {
 
       // Import and register channel plugins
       const plugins = await Promise.allSettled([
-        import('../channels/feishu.js').then(m => m.feishuPlugin || m.default),
-        import('../channels/dingtalk.js').then(m => m.dingtalkPlugin || m.default),
-        import('../channels/wechat.js').then(m => m.wechatPlugin || m.default),
-        import('../channels/wecom.js').then(m => m.wecomPlugin || m.default),
-        import('../channels/qq.js').then(m => m.qqPlugin || m.default),
-        import('../channels/telegram.js').then(m => m.telegramPlugin || m.default),
-        import('../channels/whatsapp.js').then(m => m.whatsappPlugin || m.default),
+        import('../channels/feishu.js').then(m => m.feishuPlugin),
+        import('../channels/dingtalk.js').then(m => m.dingtalkPlugin),
+        import('../channels/wechat.js').then(m => m.wechatPlugin),
+        import('../channels/wecom.js').then(m => m.wecomPlugin),
+        import('../channels/qq.js').then(m => m.qqPlugin),
+        import('../channels/telegram.js').then(m => m.telegramPlugin),
+        import('../channels/whatsapp.js').then(m => m.whatsappPlugin),
       ])
 
       for (const result of plugins) {

@@ -110,10 +110,23 @@ export type EngineEvent =
   | { type: 'tool_input_delta'; sessionId: string; toolCallId: string; delta: string }
   | { type: 'progress'; sessionId: string; toolName: string; toolCallId: string; content: string }
   | { type: 'stream_mode'; sessionId: string; mode: string }
-  | { type: 'message_complete'; sessionId: string }
+  | { type: 'message_complete'; sessionId: string; message?: unknown }
   | { type: 'context_collapse_stats'; sessionId: string; collapsedSpans: number; stagedSpans: number }
   | { type: 'api_error'; sessionId: string; error: string }
-  | { type: 'api_retry'; sessionId: string; attempt: number; maxRetries: number; delayMs: number }
+  | { type: 'api_retry'; sessionId: string; attempt: number; maxRetries: number; delayMs: number; error?: string }
+  | { type: 'auth_required'; sessionId: string; reason: string; mode: string }
+  | { type: 'user_message'; sessionId: string; message: unknown }
+  | { type: 'teammate_spawned'; sessionId: string; agentId: string; name?: string; color?: string }
+  | { type: 'agent_progress'; sessionId: string; agentId: string; toolUseCount: number }
+  | { type: 'agent_done'; sessionId: string; agentId: string; status: string }
+  | { type: 'interrupted'; sessionId: string }
+  | { type: 'requesting'; sessionId: string }
+  | { type: 'compaction_end'; sessionId: string }
+  | { type: 'compact_boundary'; sessionId: string }
+  | { type: 'tombstone'; sessionId: string; messageUuid: string }
+  | { type: 'file'; sessionId: string; name?: string; url?: string }
+  | { type: 'team_created'; sessionId: string; teamName: string }
+  | { type: 'mcp_auth_url'; sessionId: string; url?: string; serverName?: string }
   | { type: 'done'; sessionId: string }
 
 export interface PermissionRequest {
