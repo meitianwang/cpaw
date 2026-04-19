@@ -63,6 +63,7 @@ let agentPanel = { team: null, agents: new Map() }
 const AGENT_COLOR_MAP = { blue: '#3b82f6', green: '#16a34a', purple: '#9333ea', orange: '#ea580c', red: '#dc2626', yellow: '#eab308' }
 let pendingFiles = []  // { file, objectUrl, uploadId, uploading }
 let sessionDom = new Map()  // sessionId → DocumentFragment cache
+let switchSeq = 0  // monotonic; each switchSession run captures this and bails out if a newer click superseded it mid-await
 let sidebarCollapsed = localStorage.getItem('klaus_sidebar_collapsed') === '1'
 let userMenuOpen = false
 
@@ -196,13 +197,14 @@ function renderSessionList() {
     const ch = detectChannelPrefix(s.id)
     const badgeHtml = ch ? `<span class="s-channel-badge">${escapeHtml(tt('settings_ch_' + ch))}</span>` : ''
     div.innerHTML = `${badgeHtml}<div class="s-title">${escapeHtml(displayTitle)}</div><button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
-    div.querySelector('.s-title').onclick = () => switchSession(s.id)
+    div.onclick = () => switchSession(s.id)
     div.querySelector('.s-del').onclick = (e) => { e.stopPropagation(); deleteSession(s.id) }
     sessionListEl.appendChild(div)
   }
 }
 
 async function switchSession(id) {
+  const mySeq = ++switchSeq
   // Leaving any full-screen overlay — clicking a session in the sidebar
   // means the user wants to return to the chat surface.
   if (typeof window.hideCronView === 'function') window.hideCronView()
@@ -227,6 +229,10 @@ async function switchSession(id) {
     sessionDom.delete(id)
   } else {
     const history = await klausApi.session.history(id)
+    // If the user clicked another session while we were awaiting history,
+    // bail out: otherwise this old response would append into the new
+    // session's message area and mangle both views.
+    if (mySeq !== switchSeq) return
     for (const msg of history) {
       if (msg.role === 'user') appendUserMsg(msg.text)
       else if (Array.isArray(msg.contentBlocks)) appendAssistantFromBlocks(msg.contentBlocks)

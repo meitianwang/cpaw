@@ -6,6 +6,8 @@ import { join } from 'path'
 const CONFIG_DIR = join(homedir(), '.klaus')
 const REGISTRY_PATH = join(CONFIG_DIR, 'session-registry.json')
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
  * Maps **channel-key** (business id — e.g. `app:local`, `wechat:<senderId>`)
  * to the **engine session uuid** that CC's sessionStorage persists transcripts
@@ -35,10 +37,17 @@ export class SessionKeyRegistry {
     if (!existsSync(REGISTRY_PATH)) return
     try {
       const raw = JSON.parse(readFileSync(REGISTRY_PATH, 'utf-8')) as Record<string, string>
+      let dirty = false
       for (const [key, uuid] of Object.entries(raw)) {
+        // A prior bug (getOrCreateUuid called with an orphan uuid as channelKey)
+        // wrote entries of shape `uuid → random-uuid` into the registry. Those
+        // aren't real channel mappings — drop them on load so lookupUuid doesn't
+        // follow them into nonexistent JSONL paths.
+        if (UUID_RE.test(key)) { dirty = true; continue }
         this.map.set(key, uuid)
         this.reverse.set(uuid, key)
       }
+      if (dirty) this.persist()
     } catch (err) {
       console.warn('[SessionRegistry] Failed to load; starting empty:', err)
     }
@@ -66,6 +75,18 @@ export class SessionKeyRegistry {
   }
 
   /**
+   * Like `getOrCreateUuid` but treats uuid-shaped ids as orphan sessions
+   * (their JSONL already lives at <projectDir>/<id>.jsonl from a previous
+   * run that got detached by `rotate`). Returns the id itself WITHOUT
+   * writing anything to the registry, so continuing a conversation in an
+   * orphan doesn't leave behind bogus `uuid → random-uuid` rows.
+   */
+  resolveOrCreateUuid(sessionId: string): string {
+    if (UUID_RE.test(sessionId)) return sessionId
+    return this.getOrCreateUuid(sessionId)
+  }
+
+  /**
    * Reverse lookup — given a uuid, what channel-key owns it (for sidebar
    * badges: "this uuid came from wechat:senderId"). Returns null for uuids
    * that were rotated away (historical) — they're still on disk but no
@@ -73,6 +94,25 @@ export class SessionKeyRegistry {
    */
   sessionKeyOf(uuid: string): string | null {
     return this.reverse.get(uuid) ?? null
+  }
+
+  /**
+   * Pure-read resolution of sessionId → uuid. Unlike `getOrCreateUuid`, this
+   * NEVER mutates the registry: if sessionId is a known channelKey it returns
+   * the mapped uuid, otherwise it returns sessionId as-is (orphan fallback for
+   * sessions whose JSONL is on disk but isn't tied to any channelKey — e.g.
+   * rotated-away historical transcripts that listSessions still surfaces).
+   * Use this from read-only/delete paths so clicking an orphan session doesn't
+   * pollute the registry with a random new uuid mapping and silently return
+   * empty history.
+   */
+  lookupUuid(sessionId: string): string {
+    // If the id is already a uuid it's an orphan session (JSONL on disk, no
+    // channel binding) — use it directly. Skipping the map lookup also makes
+    // this robust against stale `uuid → uuid` entries a prior bug may have
+    // written; load() strips them, but belt-and-suspenders.
+    if (UUID_RE.test(sessionId)) return sessionId
+    return this.map.get(sessionId) ?? sessionId
   }
 
   /**

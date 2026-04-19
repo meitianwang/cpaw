@@ -64,10 +64,10 @@ export function registerIpcHandlers(
   })
 
   // --- Sessions ---
-  // Desktop-UI "new chat" always rotates the same channelKey `app:local`, so
-  // the sidebar shows exactly one live UI session (plus archived uuids the
-  // user rotated away from) rather than accumulating app:<random> entries.
-  ipcMain.handle('session:new', async () => engine.newSession('app:local'))
+  // Desktop-UI "new chat" — each invocation produces an independent uuid.
+  // The sidebar reflects whatever JSONLs actually exist on disk; deletion
+  // is the user's call. Mirrors CC CLI's /clear (fresh uuid, no rotation).
+  ipcMain.handle('session:new', async () => engine.newSession())
   ipcMain.handle('session:list', async () => engine.listSessions())
   ipcMain.handle('session:delete', async (_e, { sessionId }) => engine.deleteSession(sessionId))
   ipcMain.handle('session:rename', async (_e, { sessionId, title }) => engine.renameSession(sessionId, title))

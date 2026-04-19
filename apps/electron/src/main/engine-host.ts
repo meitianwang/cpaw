@@ -125,6 +125,23 @@ interface SessionEntry {
   createdAt: number
   updatedAt: number
   abortController: AbortController | null // 当前正在运行的 query 的 AbortController；interrupt 时取出来调 abort()
+  /**
+   * Set by deleteSession when the user removes the session while a chat() is
+   * still running. recordTranscript / processStreamEvent check this flag and
+   * skip, so a late stream event can't re-create the JSONL we just unlinked
+   * or mutate an entry that's already been evicted from the map.
+   */
+  deleted?: boolean
+  /**
+   * Tail of the persisted parent-chain. `recordTranscript` stamps each new
+   * message's `parentUuid` from this cursor; we update it after every write.
+   * Kept on the entry (not on a chat()-local variable) so consecutive chat
+   * turns in the same session keep threading into a single linear transcript
+   * instead of starting fresh roots (which would break `buildConversationChain`
+   * readers). Undefined only at first write after a cold start; lazy-load
+   * seeds it from the tail of on-disk history.
+   */
+  lastRecordedUuid?: string
 }
 
 class ToolLoopDetector {
@@ -186,11 +203,13 @@ export class EngineHost {
 
   constructor(store: SettingsStore) {
     this.store = store
-    // Rebuild in-memory session list from CC's own on-disk transcripts.
-    // The registry already carries channelKey→uuid for live sessions; the
-    // JSONLs in the canonical project dir are the source of truth for what
-    // actually exists on disk.
+    // Rehydrate only channel sessions (wechat/qq/feishu/…) from the registry.
+    // UI sessions don't live in the registry anymore — they're plain uuids
+    // discovered by listSessions scanning the project dir. Skipping app:*
+    // remnants here avoids resurrecting empty "New Chat" ghosts left behind
+    // by the pre-alignment rotate mechanism.
     for (const { channelKey } of this.registry.entries()) {
+      if (channelKey.startsWith('app:')) continue
       this.ensureSession(channelKey)
     }
   }
@@ -198,7 +217,11 @@ export class EngineHost {
   private ensureSession(channelKey: string): SessionEntry {
     let entry = this.sessions.get(channelKey)
     if (entry) return entry
-    const uuid = this.registry.getOrCreateUuid(channelKey)
+    // Orphan sessions (channelKey is already a uuid from the sidebar) must
+    // reuse that uuid as-is. Writing a fresh mapping would point the entry
+    // at a brand-new empty JSONL, and the user's messages would vanish from
+    // the file they actually picked in the sidebar.
+    const uuid = this.registry.resolveOrCreateUuid(channelKey)
     entry = {
       id: channelKey,
       // `New Chat` is a sentinel the renderer maps to tt('new_chat'). Shown only
@@ -381,19 +404,18 @@ export class EngineHost {
   // --- Sessions ---
 
   /**
-   * Create a brand-new conversation.
-   * Desktop-UI callers pass `channelKey="app:<localInstanceId>"` (or omit for
-   * a random one-off id). The registry rotates this key to a fresh uuid so the
-   * old conversation stays on disk as history while the new one starts empty.
+   * Create a brand-new conversation. Each UI-originated session is a
+   * standalone uuid — no channelKey wrapper, no rotation — matching CC's
+   * own `/clear` behavior where every new conversation is an independent
+   * uuid with its own JSONL. Old conversations appear in the sidebar iff
+   * their JSONL exists on disk; the user decides when to delete them.
+   * Channel-originated sessions (wechat/qq/feishu/…) still go through
+   * `ensureSession(channelKey)` via chat(), which keeps the channelKey →
+   * uuid mapping so a given sender's history stays stitched together.
    */
-  newSession(channelKey?: string): SessionInfo {
-    const key = channelKey ?? `app:${randomUUID()}`
-    // Rotate (or first-create) uuid binding in the registry.
-    this.registry.rotate(key)
-    // Drop any stale in-memory entry so ensureSession creates a fresh one.
-    this.sessions.delete(key)
-    const entry = this.ensureSession(key)
-    // Sentinel: renderer maps the fixed string 'New Chat' to tt('new_chat').
+  newSession(): SessionInfo {
+    const uuid = randomUUID()
+    const entry = this.ensureSession(uuid)
     entry.title = 'New Chat'
     return { id: entry.id, title: entry.title, createdAt: entry.createdAt, updatedAt: entry.updatedAt }
   }
@@ -448,12 +470,22 @@ export class EngineHost {
 
   deleteSession(sessionId: string): void {
     const entry = this.sessions.get(sessionId)
-    const uuid = entry?.uuid ?? this.registry.getOrCreateUuid(sessionId)
+    const uuid = entry?.uuid ?? this.registry.lookupUuid(sessionId)
+    // Stop the in-flight query first: set the tombstone so any event that
+    // arrives in the window between here and the query's finally-block is
+    // dropped by the writer, then fire the abort. Without this a late
+    // recordTranscript would resurrect the JSONL we're about to unlink.
+    if (entry) {
+      entry.deleted = true
+      entry.abortController?.abort()
+    }
     const filePath = join(getProjectDir(CANONICAL_CWD), `${uuid}.jsonl`)
     if (existsSync(filePath)) {
       try { unlinkSync(filePath) } catch (err) { console.warn('[Engine] deleteSession unlink failed:', err) }
     }
     this.sessions.delete(sessionId)
+    this.sessionEmitters.delete(sessionId)
+    this.sessionPermissionEmitters.delete(sessionId)
     this.registry.forgetUuid(uuid)
     clearSystemPromptSections()
   }
@@ -486,34 +518,49 @@ export class EngineHost {
    * exactly as the live stream showed them.
    */
   async getHistory(sessionId: string): Promise<ChatMessage[]> {
-    const uuid = this.registry.getOrCreateUuid(sessionId)
+    const uuid = this.registry.lookupUuid(sessionId)
     const projectDir = getProjectDir(CANONICAL_CWD)
     const filePath = join(projectDir, `${uuid}.jsonl`)
     if (!existsSync(filePath)) return []
     try {
-      const { messages, leafUuids } = await loadTranscriptFile(filePath, { keepAllLeaves: false })
-      const leafUuid = leafUuids.values().next().value as string | undefined
-      const leaf = leafUuid ? messages.get(leafUuid as any) : undefined
-      if (!leaf) return []
-      const chain = buildConversationChain(messages, leaf)
+      // Walk ALL messages in file order (= append order = chronological). The
+      // older chain-walk only followed one leaf's parentUuid path, but real
+      // transcripts can have multiple disjoint roots (each new turn after a
+      // client restart re-starts with parentUuid=null). Chain-walking returned
+      // just one turn and silently dropped the rest.
+      const { messages } = await loadTranscriptFile(filePath, { keepAllLeaves: true })
       const out: ChatMessage[] = []
       let i = 0
-      for (const m of chain) {
+      for (const m of messages.values()) {
         if (m.type !== 'user' && m.type !== 'assistant') continue
+        // Subagent (Task tool) internals — don't render in the main transcript.
+        if ((m as any).isSidechain) continue
         const content = (m as any).message?.content
+        const blocks = Array.isArray(content) ? content : undefined
+        // Skip user rows that are pure tool_result replies (the renderer's
+        // tool cards on the assistant side already show the outcome).
+        if (m.type === 'user' && blocks && blocks.length > 0
+            && blocks.every((b: any) => b?.type === 'tool_result')) {
+          continue
+        }
         const text = typeof content === 'string'
           ? content
-          : Array.isArray(content)
-            ? content.filter((b: any) => b && b.type === 'text').map((b: any) => b.text || '').join('')
+          : blocks
+            ? blocks.filter((b: any) => b && b.type === 'text').map((b: any) => b.text || '').join('')
             : ''
+        // Drop fully-empty user bubbles (rare, but e.g. attachment-only rows
+        // that didn't survive serialization would render as a blank box).
+        if (m.type === 'user' && !text.trim() && !blocks?.length) continue
         out.push({
           id: `${sessionId}-${i++}`,
           role: (m as any).message?.role ?? m.type,
           text,
-          contentBlocks: Array.isArray(content) ? content : undefined,
+          contentBlocks: blocks,
           timestamp: Date.parse((m as any).timestamp || '') || 0,
         })
       }
+      // Stable sort by timestamp; ties keep file-insertion order.
+      out.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
       return out
     } catch (err) {
       console.warn('[Engine] getHistory failed:', err)
@@ -570,13 +617,6 @@ export class EngineHost {
     await this.init()
     console.log('[Engine] chat() init done, entering query')
 
-    // Tracks the uuid of the last message written to JSONL — passed to
-    // recordTranscript as startingParentUuidHint to build the parentUuid
-    // chain correctly. Without it every message's parentUuid is null, so
-    // buildConversationChain can only walk back to a single message (the
-    // leaf itself) — Cmd+R reload shows only the last turn.
-    let lastRecordedUuid: string | undefined = undefined
-
     const session = this.ensureSession(sessionId)
     const uuid = session.uuid
     const projectDir = getProjectDir(CANONICAL_CWD)
@@ -618,8 +658,8 @@ export class EngineHost {
           }
           // Seed the parent-chain cursor with the tail of restored history so
           // this turn's new messages link up to it rather than starting fresh.
-          if (chain.length > 0) {
-            lastRecordedUuid = (chain[chain.length - 1] as any).uuid
+          if (chain.length > 0 && !session.lastRecordedUuid) {
+            session.lastRecordedUuid = (chain[chain.length - 1] as any).uuid
           }
           console.log(`[Engine] buildConversationChain → ${session.messages.length} message(s) for ${sessionId}`)
         }
@@ -828,11 +868,13 @@ export class EngineHost {
       // turn's parentUuid chains to any restored history (or stays null if
       // this is the very first message), matching CC's recordTranscript
       // contract.
-      try {
-        const recorded = await recordTranscript([userMsg], undefined, lastRecordedUuid as any)
-        lastRecordedUuid = (recorded as any) ?? userMsg.uuid
-      } catch (err) {
-        console.warn('[Engine] recordTranscript(user) failed:', err)
+      if (!session.deleted) {
+        try {
+          const recorded = await recordTranscript([userMsg], undefined, session.lastRecordedUuid as any)
+          session.lastRecordedUuid = (recorded as any) ?? userMsg.uuid
+        } catch (err) {
+          console.warn('[Engine] recordTranscript(user) failed:', err)
+        }
       }
       // Notify UI about inbound user turns (channel scenarios). Desktop UI
       // chats already rendered the user bubble locally before calling chat().
@@ -956,6 +998,11 @@ export class EngineHost {
         for await (const event of gen) {
           n++
           console.log(`[Engine] event #${n}:`, (event as any)?.type)
+          // Session was deleted mid-stream — stop processing so we don't
+          // resurrect state or re-write the unlinked JSONL. The abort
+          // signal should unwind the generator shortly; this guard is the
+          // belt for the racing events already in flight.
+          if (session.deleted) break
           this.processStreamEvent(sessionId, event as any, session)
           // Flush each new assistant/user message to CC's JSONL as it arrives
           // — mirrors LocalMainSessionTask's per-event recordSidechainTranscript.
@@ -965,8 +1012,8 @@ export class EngineHost {
           const t = (event as any)?.type
           if (t === 'assistant' || t === 'user') {
             try {
-              const recorded = await recordTranscript([event as any], undefined, lastRecordedUuid as any)
-              lastRecordedUuid = (recorded as any) ?? (event as any).uuid ?? lastRecordedUuid
+              const recorded = await recordTranscript([event as any], undefined, session.lastRecordedUuid as any)
+              session.lastRecordedUuid = (recorded as any) ?? (event as any).uuid ?? session.lastRecordedUuid
             } catch (err) {
               console.warn('[Engine] recordTranscript(' + t + ') failed:', err)
             }
