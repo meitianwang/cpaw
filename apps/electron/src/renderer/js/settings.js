@@ -165,9 +165,14 @@ async function loadProfileTab(container) {
       }
       // 后台把 PNG 原始字节上传到云端；成功后 main 会广播 klausAuth:updated，
       // chat.js 的监听会把 avatar_data_url 覆盖成服务端绝对 URL
+      // ⚠️ 不能用 fetch(dataURL)——CSP connect-src 会拦，直接 base64→ArrayBuffer
       try {
-        const pngBuf = await (await fetch(resized)).arrayBuffer()
-        await window.klaus?.klausAuth?.uploadAvatar?.('image/png', pngBuf)
+        const base64 = resized.slice(resized.indexOf(',') + 1)
+        const bin = atob(base64)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const res = await window.klaus?.klausAuth?.uploadAvatar?.('image/png', bytes.buffer)
+        if (res && !res.ok) console.warn('[Settings] avatar cloud upload rejected:', res.error)
       } catch (err) {
         console.warn('[Settings] avatar cloud upload failed:', err)
       }
