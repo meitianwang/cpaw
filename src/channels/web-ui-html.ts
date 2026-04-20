@@ -665,7 +665,30 @@ export function getChatBodyHtml(): string {
                 <div class="s-form-grid">
                   <div><label data-i18n="settings_cron_task_id">Task ID</label><input id="s-cf-id" class="s-form-input" placeholder="e.g. daily-summary"></div>
                   <div><label data-i18n="settings_cron_task_name">Name</label><input id="s-cf-name" class="s-form-input" placeholder="Optional display name"></div>
-                  <div><label data-i18n="settings_cron_schedule">Schedule</label><input id="s-cf-schedule" class="s-form-input" placeholder="e.g. 0 9 * * *"></div>
+                  <div>
+                    <label data-i18n="settings_cron_schedule_time">Schedule</label>
+                    <div class="s-cron-picker" style="display:flex;gap:8px">
+                      <select id="s-cf-freq" class="s-form-input" style="flex:1;min-width:0">
+                        <option value="daily" data-i18n="cron_every_day">Daily</option>
+                        <option value="weekdays" data-i18n="cron_weekdays">Weekdays</option>
+                        <option value="weekends" data-i18n="cron_weekends">Weekends</option>
+                        <option value="1" data-i18n="cron_monday">Monday</option>
+                        <option value="2" data-i18n="cron_tuesday">Tuesday</option>
+                        <option value="3" data-i18n="cron_wednesday">Wednesday</option>
+                        <option value="4" data-i18n="cron_thursday">Thursday</option>
+                        <option value="5" data-i18n="cron_friday">Friday</option>
+                        <option value="6" data-i18n="cron_saturday">Saturday</option>
+                        <option value="0" data-i18n="cron_sunday">Sunday</option>
+                        <option value="custom" data-i18n="cron_freq_custom">Custom</option>
+                      </select>
+                      <input id="s-cf-time" type="time" class="s-form-input" value="09:00" style="flex:0 0 120px">
+                    </div>
+                  </div>
+                  <div class="s-form-full" id="s-cf-custom-wrap" style="display:none">
+                    <label data-i18n="settings_cron_schedule">Schedule (cron)</label>
+                    <input id="s-cf-schedule" class="s-form-input" placeholder="e.g. 0 9 * * *">
+                    <div class="s-form-hint" data-i18n="cron_form_schedule_hint" style="font-size:11px;color:var(--muted);margin-top:4px">Examples: 0 9 * * * (every day at 9:00), 0 12 * * 1-5 (weekdays at noon)</div>
+                  </div>
                   <div class="s-form-full"><label data-i18n="settings_cron_prompt">Prompt</label><textarea id="s-cf-prompt" class="s-form-textarea" rows="3" placeholder="Prompt text"></textarea></div>
                 </div>
                 <div style="display:flex;gap:8px;justify-content:flex-end">

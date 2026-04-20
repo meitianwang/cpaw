@@ -440,10 +440,30 @@ export function getSettingsJs(): string {
   var sCronAddBtn = document.getElementById("s-cron-add-btn");
   var sCfId = document.getElementById("s-cf-id");
   var sCfName = document.getElementById("s-cf-name");
+  var sCfFreq = document.getElementById("s-cf-freq");
+  var sCfTime = document.getElementById("s-cf-time");
+  var sCfCustomWrap = document.getElementById("s-cf-custom-wrap");
   var sCfSchedule = document.getElementById("s-cf-schedule");
   var sCfPrompt = document.getElementById("s-cf-prompt");
   var sCfSave = document.getElementById("s-cf-save");
   var sCfCancel = document.getElementById("s-cf-cancel");
+
+  // Build a cron expression from dropdown + time picker. Returns null for 'custom'.
+  function sCronCompile(freq, time) {
+    if (freq === "custom") return null;
+    var parts = (time || "09:00").split(":");
+    var hh = parseInt(parts[0], 10) || 0;
+    var mm = parseInt(parts[1], 10) || 0;
+    var head = mm + " " + hh + " * * ";
+    if (freq === "daily") return head + "*";
+    if (freq === "weekdays") return head + "1-5";
+    if (freq === "weekends") return head + "0,6";
+    return head + freq;
+  }
+  function sCronSetCustomMode(on) {
+    sCfCustomWrap.style.display = on ? "block" : "none";
+    sCfTime.style.display = on ? "none" : "";
+  }
 
   function loadCronTasks() {
     userApi("cron/tasks", "GET").then(function(d) {
@@ -491,18 +511,28 @@ export function getSettingsJs(): string {
   }
 
   sCronAddBtn.onclick = function() {
-    sCfId.value = ""; sCfName.value = ""; sCfSchedule.value = ""; sCfPrompt.value = "";
+    sCfId.value = ""; sCfName.value = ""; sCfPrompt.value = "";
+    sCfFreq.value = "daily";
+    sCfTime.value = "09:00";
+    sCfSchedule.value = "";
+    sCronSetCustomMode(false);
     sCfId.disabled = false;
     sCronForm.style.display = "block";
     sCfId.focus();
   };
   sCfCancel.onclick = function() { sCronForm.style.display = "none"; };
+  sCfFreq.onchange = function() { sCronSetCustomMode(sCfFreq.value === "custom"); };
 
   sCfSave.onclick = function() {
     var id = sCfId.value.trim();
-    var schedule = sCfSchedule.value.trim();
     var prompt = sCfPrompt.value.trim();
+    var isCustom = sCfFreq.value === "custom";
+    var schedule = isCustom ? sCfSchedule.value.trim() : sCronCompile(sCfFreq.value, sCfTime.value);
     if (!id || !schedule || !prompt) return;
+    if (isCustom && schedule.split(/\s+/).length !== 5) {
+      showSettingsToast(tt("cron_form_schedule_invalid"));
+      return;
+    }
     sCfSave.disabled = true;
     var payload = { id: id, schedule: schedule, prompt: prompt, name: sCfName.value.trim() || undefined, enabled: true };
     userApi("cron/tasks", "POST", payload)

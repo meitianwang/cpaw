@@ -240,18 +240,40 @@
             <button class="cron-modal-close" id="cron-modal-close">&times;</button>
           </div>
           <div class="cron-modal-body">
+            <p class="cron-modal-subtitle" data-i18n="cron_subtitle">Run tasks automatically on a schedule — or kick them off by hand any time. Describe what you want done recurrently and it's created in seconds.</p>
+
             <div class="cron-form-row">
-              <label data-i18n="cron_form_name">Name</label>
-              <input id="cron-form-name" type="text" placeholder="Daily news digest">
+              <label data-i18n="cron_form_name">Task name</label>
+              <input id="cron-form-name" type="text" data-i18n-placeholder="cron_form_name_placeholder" placeholder="Describe your task">
             </div>
+
             <div class="cron-form-row">
-              <label data-i18n="cron_form_schedule">Schedule (cron)</label>
-              <input id="cron-form-schedule" type="text" placeholder="0 9 * * *">
-              <p class="cron-form-hint" data-i18n="cron_form_schedule_hint">Examples: 0 9 * * * (every day at 9:00), 0 12 * * 1-5 (weekdays at noon)</p>
+              <label data-i18n="cron_form_schedule_time">Schedule</label>
+              <div class="cron-schedule-picker">
+                <select id="cron-form-freq" class="cron-picker-select">
+                  <option value="daily" data-i18n="cron_every_day">Daily</option>
+                  <option value="weekdays" data-i18n="cron_weekdays">Weekdays</option>
+                  <option value="weekends" data-i18n="cron_weekends">Weekends</option>
+                  <option value="1" data-i18n="cron_monday">Monday</option>
+                  <option value="2" data-i18n="cron_tuesday">Tuesday</option>
+                  <option value="3" data-i18n="cron_wednesday">Wednesday</option>
+                  <option value="4" data-i18n="cron_thursday">Thursday</option>
+                  <option value="5" data-i18n="cron_friday">Friday</option>
+                  <option value="6" data-i18n="cron_saturday">Saturday</option>
+                  <option value="0" data-i18n="cron_sunday">Sunday</option>
+                  <option value="custom" data-i18n="cron_freq_custom">Custom</option>
+                </select>
+                <input id="cron-form-time" type="time" class="cron-picker-time" value="09:00">
+              </div>
+              <div class="cron-form-custom" id="cron-form-custom" style="display:none">
+                <input id="cron-form-schedule" type="text" placeholder="0 9 * * *">
+                <p class="cron-form-hint" data-i18n="cron_form_schedule_hint">Examples: 0 9 * * * (every day at 9:00), 0 12 * * 1-5 (weekdays at noon)</p>
+              </div>
             </div>
+
             <div class="cron-form-row">
-              <label data-i18n="cron_form_prompt">Prompt</label>
-              <textarea id="cron-form-prompt" rows="5" placeholder="What should Klaus do?"></textarea>
+              <label data-i18n="cron_form_prompt_label">What should Klaus do for you…</label>
+              <textarea id="cron-form-prompt" rows="5" data-i18n-placeholder="cron_form_prompt_placeholder" placeholder="Describe what to run on this schedule"></textarea>
             </div>
           </div>
           <div class="cron-modal-footer">

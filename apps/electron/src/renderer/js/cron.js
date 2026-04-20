@@ -29,6 +29,9 @@
   const modalTitle = document.getElementById('cron-modal-title')
   const modalClose = document.getElementById('cron-modal-close')
   const fName = document.getElementById('cron-form-name')
+  const fFreq = document.getElementById('cron-form-freq')
+  const fTime = document.getElementById('cron-form-time')
+  const fCustomWrap = document.getElementById('cron-form-custom')
   const fSchedule = document.getElementById('cron-form-schedule')
   const fPrompt = document.getElementById('cron-form-prompt')
   const saveBtn = document.getElementById('cron-form-save')
@@ -292,12 +295,65 @@
   }
 
   // ---- Form ----
+  // Build a cron expression from the frequency dropdown + time picker.
+  // Returns null when freq is 'custom' — caller falls back to the raw cron input.
+  function compileSchedule(freq, time) {
+    if (freq === 'custom') return null
+    const [hh, mm] = (time || '09:00').split(':').map(Number)
+    const head = `${mm} ${hh} * * `
+    if (freq === 'daily') return head + '*'
+    if (freq === 'weekdays') return head + '1-5'
+    if (freq === 'weekends') return head + '0,6'
+    return head + freq // '0'..'6'
+  }
+
+  // Try to decompose an existing cron expression into { freq, time } for the
+  // dropdown. Returns null if the schedule doesn't fit one of the presets —
+  // caller falls back to 'custom' mode.
+  function parseSchedule(cron) {
+    if (!cron || typeof cron !== 'string') return null
+    const parts = cron.trim().split(/\s+/)
+    if (parts.length !== 5) return null
+    const [min, hour, dom, mon, dow] = parts
+    if (!/^\d+$/.test(min) || !/^\d+$/.test(hour)) return null
+    if (dom !== '*' || mon !== '*') return null
+    const time = `${pad(hour)}:${pad(min)}`
+    if (dow === '*') return { freq: 'daily', time }
+    if (dow === '1-5') return { freq: 'weekdays', time }
+    if (dow === '0,6' || dow === '6,0') return { freq: 'weekends', time }
+    if (/^[0-6]$/.test(dow)) return { freq: dow, time }
+    return null
+  }
+
+  function setCustomMode(on) {
+    fCustomWrap.style.display = on ? '' : 'none'
+    fTime.style.display = on ? 'none' : ''
+  }
+
   function openForm(task) {
     editingId = task?.id ?? null
     modalTitle.textContent = editingId ? t('cron_edit', 'Edit task') : t('cron_new', 'New task')
     fName.value = task?.name ?? ''
-    fSchedule.value = task?.schedule ?? ''
     fPrompt.value = task?.prompt ?? ''
+
+    const parsed = parseSchedule(task?.schedule)
+    if (parsed) {
+      fFreq.value = parsed.freq
+      fTime.value = parsed.time
+      fSchedule.value = ''
+      setCustomMode(false)
+    } else if (task?.schedule) {
+      fFreq.value = 'custom'
+      fTime.value = '09:00'
+      fSchedule.value = task.schedule
+      setCustomMode(true)
+    } else {
+      fFreq.value = 'daily'
+      fTime.value = '09:00'
+      fSchedule.value = ''
+      setCustomMode(false)
+    }
+
     modal.classList.add('active')
     setTimeout(() => fName.focus(), 50)
   }
@@ -307,12 +363,21 @@
   }
   async function saveForm() {
     const name = fName.value.trim()
-    const schedule = fSchedule.value.trim()
     const prompt = fPrompt.value.trim()
+    const isCustom = fFreq.value === 'custom'
+    const schedule = isCustom
+      ? fSchedule.value.trim()
+      : compileSchedule(fFreq.value, fTime.value)
+
     if (!schedule || !prompt) {
       await window.klausDialog.alert(t('cron_fields_required', 'Schedule and prompt are required.'))
       return
     }
+    if (isCustom && schedule.split(/\s+/).length !== 5) {
+      await window.klausDialog.alert(t('cron_form_schedule_invalid', 'Please enter a valid cron expression (5 fields).'))
+      return
+    }
+
     const now = Date.now()
     const id = editingId ?? ('task-' + now.toString(36))
     await api.upsert({
@@ -396,6 +461,7 @@
   modalBackdrop?.addEventListener('click', closeForm)
   cancelBtn?.addEventListener('click', closeForm)
   saveBtn?.addEventListener('click', saveForm)
+  fFreq?.addEventListener('change', () => setCustomMode(fFreq.value === 'custom'))
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('active')) closeForm()
   })
