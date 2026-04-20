@@ -2077,7 +2077,7 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .sys-auth-modal {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2148,7 +2148,7 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   opacity: 0;
   transition: opacity .3s;
   pointer-events: none;
-  z-index: 200;
+  z-index: 2100;
 }
 .s-toast.show { opacity: 1; }
 
@@ -2399,7 +2399,7 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .ch-required { color: #dc2626; }
 
 /* Channel modal */
-.ch-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 300; align-items: center; justify-content: center; padding: 20px; }
+.ch-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1100; align-items: center; justify-content: center; padding: 20px; }
 .ch-modal-overlay.show { display: flex; }
 .ch-modal { background: var(--bg); border-radius: var(--radius-md, 12px); max-width: 520px; width: 100%; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
 .ch-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }

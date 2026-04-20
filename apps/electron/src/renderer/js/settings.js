@@ -791,7 +791,7 @@ async function loadSkillsTab(container) {
 
   container.innerHTML = `<div class="settings-section"><div class="settings-section-header"><h3>${tt('skills')}</h3><button class="btn-sm" id="sk-upload-btn">${tt('settings_skills_upload') || 'Upload Skill'}</button></div>
     <!-- Upload modal -->
-    <div id="sk-upload-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center">
+    <div id="sk-upload-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1100;align-items:center;justify-content:center">
       <div style="background:var(--bg);border-radius:var(--radius-md);padding:24px;max-width:400px;width:100%">
         <h4 style="margin-bottom:12px">${tt('settings_skills_upload') || 'Upload Skill'}</h4>
         <div id="sk-dropzone" style="border:2px dashed var(--border);border-radius:var(--radius-sm);padding:32px;text-align:center;cursor:pointer;color:var(--fg-tertiary);font-size:14px;transition:border-color var(--transition)">
