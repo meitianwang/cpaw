@@ -44,12 +44,45 @@ export function getChatMainJs(): string {
   var sessionDom = new Map();
   var prevSessionId = null;
 
+  // sessionId → 未发送的输入（草稿）。localStorage 跨刷新保留。
+  var DRAFTS_KEY = SP + "_drafts";
+  var sessionDrafts = new Map();
+  try {
+    var draftsObj = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "{}");
+    Object.keys(draftsObj).forEach(function(k) { sessionDrafts.set(k, draftsObj[k]); });
+  } catch(_) {}
+  function persistDrafts() {
+    var obj = {};
+    sessionDrafts.forEach(function(v, k) { obj[k] = v; });
+    try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(obj)); } catch(_) {}
+  }
+  function setDraft(sid, text) {
+    if (!sid) return;
+    var trimmed = (text || "").trim();
+    var had = sessionDrafts.has(sid);
+    if (trimmed) sessionDrafts.set(sid, text);
+    else sessionDrafts.delete(sid);
+    persistDrafts();
+    if ((had && !trimmed) || (!had && trimmed)) renderSessionList();
+  }
+  function hasDraft(sid) {
+    return !!(sessionDrafts.get(sid) || "").trim();
+  }
+
   // Start with empty list, server is source of truth
   if (!currentSessionId) {
     currentSessionId = crypto.randomUUID();
     sessionsMeta.unshift({ id: currentSessionId, title: "New Chat", ts: Date.now() });
   }
   saveSessionMeta();
+
+  // 页面加载后恢复当前会话的草稿（localStorage 跨刷新保留）
+  var initialDraft = sessionDrafts.get(currentSessionId);
+  if (initialDraft) {
+    input.value = initialDraft;
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 200) + "px";
+  }
 
   i18nCallbacks.push(function() { renderSessionList(); });
   applyI18n();
@@ -103,9 +136,24 @@ export function getChatMainJs(): string {
   }
 
   function createNewChat() {
+    // 先找一个已经存在、从没用过、也没草稿的 "New Chat"。desktop 端也是这个思路：
+    // 用户连点"新对话"时不要无脑 push 新壳，能复用就复用。
+    var reusable = sessionsMeta.find(function(s) {
+      return s.title === "New Chat"
+        && !/^(feishu|dingtalk|wechat|wecom|qq|telegram|whatsapp):/.test(s.id)
+        && !hasDraft(s.id);
+    });
+    if (reusable) {
+      if (reusable.id !== currentSessionId) switchSession(reusable.id);
+      else closeSidebar();
+      input.focus();
+      return;
+    }
     var frag = document.createDocumentFragment();
     while (msgs.firstChild) frag.appendChild(msgs.firstChild);
     if (frag.childNodes.length) sessionDom.set(currentSessionId, frag);
+    // 离开当前会话时顺手把输入框的东西写进草稿
+    if (currentSessionId) setDraft(currentSessionId, input.value);
     prevSessionId = currentSessionId;
     currentSessionId = crypto.randomUUID();
     sessionsMeta.unshift({ id: currentSessionId, title: "New Chat", ts: Date.now() });
@@ -113,15 +161,35 @@ export function getChatMainJs(): string {
     busy = false; isStreaming = false; streamBuffer = ""; streamFullText = "";
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
     activeTools.clear(); agentContainers.clear(); toolContainer = null;
+    input.value = sessionDrafts.get(currentSessionId) || "";
+    input.style.height = "auto";
     updateBtn(); renderSessionList(); closeSidebar();
     showWelcome();
   }
 
   function switchSession(id) {
     if (id === currentSessionId) { closeSidebar(); return; }
+    // DOM 搬运会清空 msgs，必须在搬运前快照才能判断离开时是否有内容
+    var leavingHadContent = !!(currentSessionId && msgs.firstChild);
     var frag = document.createDocumentFragment();
     while (msgs.firstChild) frag.appendChild(msgs.firstChild);
     if (frag.childNodes.length) sessionDom.set(currentSessionId, frag);
+    // 离开前：存草稿
+    if (currentSessionId && currentSessionId !== id) setDraft(currentSessionId, input.value);
+    // 离开时回收空壳：title 还是 "New Chat"、没消息、没草稿 = 用户点了"新对话"但啥也没干。
+    // 纯客户端会话没登记过后端，直接从 sessionsMeta 抹掉即可；如果后端真的有条目，
+    // DELETE 会得到 404/无操作，吞掉即可。
+    if (currentSessionId && !leavingHadContent) {
+      var leaving = sessionsMeta.find(function(s) { return s.id === currentSessionId; });
+      var isChannel = leaving && /^(feishu|dingtalk|wechat|wecom|qq|telegram|whatsapp):/.test(leaving.id);
+      if (leaving && leaving.title === "New Chat" && !isChannel && !hasDraft(currentSessionId)) {
+        var gone = currentSessionId;
+        sessionsMeta = sessionsMeta.filter(function(s) { return s.id !== gone; });
+        sessionDom.delete(gone);
+        historyLoaded.delete(gone);
+        fetch("/api/sessions?sessionId=" + encodeURIComponent(gone), { method: "DELETE", credentials: "same-origin" }).catch(function() {});
+      }
+    }
     prevSessionId = currentSessionId;
     currentSessionId = id;
     var saved = sessionDom.get(id);
@@ -134,6 +202,9 @@ export function getChatMainJs(): string {
     busy = false; isStreaming = false; streamBuffer = ""; streamFullText = "";
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
     activeTools.clear(); agentContainers.clear(); toolContainer = null;
+    // 恢复目标会话的草稿
+    input.value = sessionDrafts.get(id) || "";
+    input.style.height = "auto";
     updateBtn(); saveSessionMeta(); renderSessionList(); closeSidebar(); scrollBottom();
   }
 
@@ -142,6 +213,7 @@ export function getChatMainJs(): string {
     sessionsMeta = sessionsMeta.filter(function(s){ return s.id !== id; });
     sessionDom.delete(id);
     historyLoaded.delete(id);
+    if (sessionDrafts.has(id)) { sessionDrafts.delete(id); persistDrafts(); }
     if (id === currentSessionId) {
       while (msgs.firstChild) msgs.removeChild(msgs.firstChild);
       activeTools.clear(); agentContainers.clear(); toolContainer = null;
@@ -190,6 +262,12 @@ export function getChatMainJs(): string {
       del.onclick = function(e) { deleteSession(s.id, e); };
       el.appendChild(icon);
       el.appendChild(title);
+      if (hasDraft(s.id)) {
+        var draftBadge = document.createElement("span");
+        draftBadge.className = "s-draft-badge";
+        draftBadge.textContent = tt("draft_badge");
+        el.appendChild(draftBadge);
+      }
       el.appendChild(del);
       el.onclick = function() { switchSession(s.id); };
       sessionListEl.appendChild(el);
@@ -209,6 +287,7 @@ export function getChatMainJs(): string {
     this.style.height = Math.min(this.scrollHeight, 200) + "px";
     updateBtn();
     handleSlashMenu();
+    if (currentSessionId) setDraft(currentSessionId, this.value);
   });
 
   // --- Slash command autocomplete ---

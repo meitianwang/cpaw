@@ -65,6 +65,28 @@ let pendingFiles = []  // { file, objectUrl, uploadId, uploading }
 let sessionDom = new Map()  // sessionId → DocumentFragment cache
 let switchSeq = 0  // monotonic; each switchSession run captures this and bails out if a newer click superseded it mid-await
 let sidebarCollapsed = localStorage.getItem('klaus_sidebar_collapsed') === '1'
+
+// sessionId → 未发送的输入（草稿）。持久化到 localStorage，应用重启后仍在。
+// 后端 SessionInfo 不带草稿字段，保持纯前端状态。
+const sessionDrafts = (() => {
+  try { return new Map(Object.entries(JSON.parse(localStorage.getItem('klaus_session_drafts') || '{}'))) }
+  catch { return new Map() }
+})()
+function persistDrafts() {
+  const obj = {}
+  for (const [k, v] of sessionDrafts) obj[k] = v
+  try { localStorage.setItem('klaus_session_drafts', JSON.stringify(obj)) } catch {}
+}
+function setDraft(sessionId, text) {
+  if (!sessionId) return
+  const trimmed = (text || '').trim()
+  const had = sessionDrafts.has(sessionId)
+  if (trimmed) sessionDrafts.set(sessionId, text)
+  else sessionDrafts.delete(sessionId)
+  persistDrafts()
+  // presence 变化时才重渲染侧栏，避免每个按键都 repaint
+  if ((had && !trimmed) || (!had && trimmed)) renderSessionList()
+}
 let userMenuOpen = false
 
 // --- DOM refs ---
@@ -196,7 +218,9 @@ function renderSessionList() {
     const displayTitle = s.title && s.title !== 'New Chat' ? s.title : tt('new_chat')
     const ch = detectChannelPrefix(s.id)
     const badgeHtml = ch ? `<span class="s-channel-badge">${escapeHtml(tt('settings_ch_' + ch))}</span>` : ''
-    div.innerHTML = `${badgeHtml}<div class="s-title">${escapeHtml(displayTitle)}</div><button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
+    const hasDraft = (sessionDrafts.get(s.id) || '').trim().length > 0
+    const draftHtml = hasDraft ? `<span class="s-draft-badge">${escapeHtml(tt('draft_badge'))}</span>` : ''
+    div.innerHTML = `${badgeHtml}<div class="s-title">${escapeHtml(displayTitle)}</div>${draftHtml}<button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
     div.onclick = () => switchSession(s.id)
     div.querySelector('.s-del').onclick = (e) => { e.stopPropagation(); deleteSession(s.id) }
     sessionListEl.appendChild(div)
@@ -210,17 +234,45 @@ async function switchSession(id) {
   if (typeof window.hideCronView === 'function') window.hideCronView()
   if (document.getElementById('settings-view')?.classList.contains('active')) toggleSettings()
 
+  // 必须在 DOM 搬运前快照；搬运会清空 messagesEl，之后 childNodes.length 恒为 0。
+  const leavingHadContent = !!(currentSessionId && messagesEl.childNodes.length)
+
   // Save current session's DOM
-  if (currentSessionId && messagesEl.childNodes.length) {
+  if (leavingHadContent) {
     const frag = document.createDocumentFragment()
     while (messagesEl.firstChild) frag.appendChild(messagesEl.firstChild)
     sessionDom.set(currentSessionId, frag)
+  }
+
+  // 离开前把输入框里的东西写进草稿。setDraft 内部会按 presence 变化触发
+  // renderSessionList，所以下面紧跟的那次 render 会覆盖到最新状态。
+  if (currentSessionId && currentSessionId !== id) setDraft(currentSessionId, inputEl.value)
+
+  // 离开时回收空壳：title 还是 'New Chat'、没消息、没草稿 = 用户点了"新对话"但
+  // 啥也没干。后端 newSession() 只写 registry 不落盘，delete 只是抹掉 registry
+  // 条目，没磁盘副作用。channelPrefix 保护飞书/微信等渠道会话不被误删。
+  if (currentSessionId && currentSessionId !== id && !leavingHadContent) {
+    const leaving = sessions.find(s => s.id === currentSessionId)
+    if (leaving
+        && leaving.title === 'New Chat'
+        && !detectChannelPrefix(leaving.id)
+        && !(sessionDrafts.get(currentSessionId) || '').trim()) {
+      const gone = currentSessionId
+      klausApi.session.delete(gone).catch(() => {})
+      sessions = sessions.filter(s => s.id !== gone)
+      sessionDom.delete(gone)
+    }
   }
 
   currentSessionId = id
   renderSessionList()
   messagesEl.innerHTML = ''
   resetStreamState()
+
+  // 恢复目标会话的草稿（没有则清空）
+  inputEl.value = sessionDrafts.get(id) || ''
+  autoResize()
+  updateSendBtn()
 
   // Restore from DOM cache if available
   const cached = sessionDom.get(id)
@@ -248,6 +300,19 @@ async function switchSession(id) {
 }
 
 async function newChat() {
+  // 复用已有的"未使用"会话：后端 newSession() 写入 title='New Chat' 的 registry
+  // 条目且不落盘（见 engine-host.ts:445）。只要 title 还是 'New Chat' 就说明
+  // 用户没发过首条消息，再造一个只会让侧栏堆空壳。
+  const reusable = sessions.find(s =>
+    s.title === 'New Chat'
+    && !detectChannelPrefix(s.id)
+    && !(sessionDrafts.get(s.id) || '').trim(),
+  )
+  if (reusable) {
+    if (reusable.id !== currentSessionId) await switchSession(reusable.id)
+    inputEl.focus()
+    return
+  }
   const info = await klausApi.session.new()
   sessions.unshift(info)
   await switchSession(info.id)
@@ -259,6 +324,7 @@ async function deleteSession(id) {
   await klausApi.session.delete(id)
   sessions = sessions.filter(s => s.id !== id)
   sessionDom.delete(id)
+  if (sessionDrafts.has(id)) { sessionDrafts.delete(id); persistDrafts() }
   if (currentSessionId === id) {
     // CRITICAL: clear currentSessionId + messagesEl BEFORE switchSession.
     // Otherwise switchSession's opening block re-caches the deleted session's
@@ -294,6 +360,10 @@ async function send() {
   btnSend.classList.add('busy')      // 切到停止图标 + 深色实心
   const finalText = inputEl.value.trim()
   inputEl.value = ''; autoResize(); hideSlashMenu()
+  // 发送后清掉本会话的草稿（currentSessionId 此时已由 newChat() 兜底）
+  if (currentSessionId && sessionDrafts.has(currentSessionId)) {
+    sessionDrafts.delete(currentSessionId); persistDrafts()
+  }
 
   // Collect uploaded file paths
   const media = pendingFiles
@@ -1406,7 +1476,10 @@ inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
 })
 
-inputEl.addEventListener('input', () => { autoResize(); updateSendBtn(); handleSlashMenu() })
+inputEl.addEventListener('input', () => {
+  autoResize(); updateSendBtn(); handleSlashMenu()
+  if (currentSessionId) setDraft(currentSessionId, inputEl.value)
+})
 btnSend.addEventListener('click', () => {
   if (busy) {
     // 中断当前响应

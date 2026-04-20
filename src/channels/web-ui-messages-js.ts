@@ -138,6 +138,11 @@ export function getMessagesJs(): string {
     renderPreviews();
 
     input.value = ""; input.style.height = "auto";
+    // 清掉本会话草稿
+    if (currentSessionId && typeof sessionDrafts !== "undefined" && sessionDrafts.has(currentSessionId)) {
+      sessionDrafts.delete(currentSessionId);
+      persistDrafts();
+    }
     busy = true; updateBtn(); showThinking();
     updateSessionTitle(text);
     if (ws && ws.readyState === WebSocket.OPEN) {

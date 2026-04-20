@@ -177,6 +177,17 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   flex-shrink: 0;
   letter-spacing: .3px;
 }
+.session-item .s-draft-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(234, 88, 12, 0.12);
+  color: #ea580c;
+  flex-shrink: 0;
+  letter-spacing: .3px;
+}
+.session-item:hover .s-draft-badge { display: none; }
 .session-item .s-title {
   flex: 1;
   white-space: nowrap;
