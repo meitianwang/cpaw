@@ -30,12 +30,339 @@
   const modalClose = document.getElementById('cron-modal-close')
   const fName = document.getElementById('cron-form-name')
   const fFreq = document.getElementById('cron-form-freq')
+  const fWeekday = document.getElementById('cron-form-weekday')
+  const fMonthday = document.getElementById('cron-form-monthday')
+  const fDate = document.getElementById('cron-form-date')
+  const fIntervalWrap = document.getElementById('cron-form-interval-wrap')
+  const fInterval = document.getElementById('cron-form-interval')
   const fTime = document.getElementById('cron-form-time')
-  const fCustomWrap = document.getElementById('cron-form-custom')
   const fSchedule = document.getElementById('cron-form-schedule')
+  const fScheduleHint = document.getElementById('cron-form-schedule-hint')
+  const fTzRow = document.getElementById('cron-form-tz-row')
+  const fTzWrap = document.getElementById('cron-form-tz')
+  const fTimezone = document.getElementById('cron-form-timezone')
+  const fTzPanel = fTzWrap.querySelector('.cron-tz-panel')
   const fPrompt = document.getElementById('cron-form-prompt')
   const saveBtn = document.getElementById('cron-form-save')
   const cancelBtn = document.getElementById('cron-form-cancel')
+
+  // Day-of-month dropdown (1-31) populated once.
+  {
+    const panel = fMonthday.querySelector('.cron-dd-panel')
+    for (let d = 1; d <= 31; d++) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'cron-dd-item'
+      btn.setAttribute('role', 'option')
+      btn.dataset.value = String(d)
+      btn.textContent = String(d)
+      panel.appendChild(btn)
+    }
+  }
+
+  // Timezone list (IANA) — populated lazily into the custom autocomplete panel.
+  let TZ_ALL = []
+  try { TZ_ALL = Intl.supportedValuesOf?.('timeZone') || [] } catch {}
+
+  // Position a popup below its anchor using viewport coords (the popups use
+  // `position: fixed` so they escape the modal's overflow clipping). Flips to
+  // align right edge when the popup would spill off-screen.
+  function positionPopup(anchor, popup) {
+    const rect = anchor.getBoundingClientRect()
+    popup.style.top = (rect.bottom + 4) + 'px'
+    popup.style.left = rect.left + 'px'
+    popup.style.right = 'auto'
+    requestAnimationFrame(() => {
+      const pr = popup.getBoundingClientRect()
+      if (pr.right > window.innerWidth - 8) {
+        popup.style.left = Math.max(8, rect.right - pr.width) + 'px'
+      }
+      if (pr.bottom > window.innerHeight - 8) {
+        popup.style.top = Math.max(8, rect.top - pr.height - 4) + 'px'
+      }
+    })
+  }
+
+  // ---- Custom dropdown (button + floating panel) ----
+  // Preferred over a native <select> so the open panel matches Klaus styling
+  // rather than rendering as an OS-native list with system accent colors.
+  function setupDd(root, onChange) {
+    const trigger = root.querySelector('.cron-dd-trigger')
+    const panel = root.querySelector('.cron-dd-panel')
+    const textEl = root.querySelector('.cron-dd-text')
+
+    function open() {
+      closeAllPopups(root)
+      root.classList.add('open')
+      panel.hidden = false
+      positionPopup(trigger, panel)
+    }
+    function close() {
+      root.classList.remove('open')
+      panel.hidden = true
+    }
+    function setValue(v) {
+      root.dataset.value = v
+      const item = panel.querySelector('.cron-dd-item[data-value="' + (window.CSS?.escape ? CSS.escape(v) : v) + '"]')
+      if (item) textEl.textContent = item.textContent
+      panel.querySelectorAll('.cron-dd-item').forEach(it => it.classList.toggle('is-selected', it.dataset.value === v))
+    }
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation()
+      root.classList.contains('open') ? close() : open()
+    })
+    panel.addEventListener('click', (e) => {
+      const item = e.target.closest('.cron-dd-item')
+      if (!item) return
+      setValue(item.dataset.value)
+      close()
+      onChange?.(item.dataset.value)
+    })
+    root.__dd = { setValue, close, getValue: () => root.dataset.value }
+    return root.__dd
+  }
+
+  // Close every open popup except the one being opened. One global close fn so
+  // dropdowns, calendar, time-wheel, and tz autocomplete all play nice.
+  function closeAllPopups(keep) {
+    document.querySelectorAll('.cron-dd.open').forEach(d => { if (d !== keep) d.__dd?.close() })
+    if (keep !== fDate) closeDatePopup()
+    if (keep !== fTime) closeTimePopup()
+    if (keep !== fTzWrap) closeTzPanel()
+  }
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('.cron-dd.open').forEach(dd => { if (!dd.contains(e.target)) dd.__dd?.close() })
+    if (!fDate.contains(e.target)) closeDatePopup()
+    if (!fTime.contains(e.target)) closeTimePopup()
+    if (!fTzWrap.contains(e.target)) closeTzPanel()
+  })
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.cron-dd.open').forEach(dd => dd.__dd?.close())
+      closeDatePopup()
+      closeTimePopup()
+      closeTzPanel()
+    }
+  })
+
+  const ddFreq = setupDd(fFreq, (v) => setMode(v))
+  const ddWeekday = setupDd(fWeekday)
+  const ddMonthday = setupDd(fMonthday)
+
+  // ---- Calendar date picker (YYYY-MM-DD) ----
+  const DAY_SHORT = ['Su','Mo','Tu','We','Th','Fr','Sa']
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  let dateViewY, dateViewM  // currently displayed month (independent of selection)
+
+  function pad2(n) { return String(n).padStart(2, '0') }
+  function fmtDate(y, m, d) { return `${y}-${pad2(m)}-${pad2(d)}` }
+
+  const dateTrigger = fDate.querySelector('.cron-date-trigger')
+  const dateText = fDate.querySelector('.cron-date-text')
+  const datePopup = fDate.querySelector('.cron-date-popup')
+  const dateTitle = fDate.querySelector('.cron-date-title')
+  const dateWeekdays = fDate.querySelector('.cron-date-weekdays')
+  const dateGrid = fDate.querySelector('.cron-date-grid')
+  dateWeekdays.innerHTML = DAY_SHORT.map(d => `<span>${d}</span>`).join('')
+
+  function openDatePopup() {
+    closeAllPopups(fDate)
+    datePopup.hidden = false
+    fDate.classList.add('open')
+    renderCalendar()
+    positionPopup(dateTrigger, datePopup)
+  }
+  function closeDatePopup() { datePopup.hidden = true; fDate.classList.remove('open') }
+  function setDateValue(iso) {
+    fDate.dataset.value = iso || ''
+    dateText.textContent = iso || t('cron_form_pick_date', 'Pick a date')
+    if (iso) {
+      const [y, m] = iso.split('-').map(Number)
+      dateViewY = y; dateViewM = m - 1
+    }
+  }
+  function renderCalendar() {
+    const y = dateViewY, m = dateViewM
+    dateTitle.textContent = `${MONTH_NAMES[m]} ${y}`
+    const first = new Date(y, m, 1)
+    const startDow = first.getDay()
+    const daysInMonth = new Date(y, m + 1, 0).getDate()
+    const daysInPrev = new Date(y, m, 0).getDate()
+    const selected = fDate.dataset.value
+    const cells = []
+    // Previous month tail
+    for (let i = startDow - 1; i >= 0; i--) {
+      cells.push({ day: daysInPrev - i, other: true })
+    }
+    // Current month
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({ day: d, other: false, iso: fmtDate(y, m + 1, d) })
+    }
+    // Next month leading — pad to 42 cells (6 rows)
+    let next = 1
+    while (cells.length < 42) cells.push({ day: next++, other: true })
+    dateGrid.innerHTML = cells.map(c => {
+      const isSel = c.iso && c.iso === selected
+      const cls = 'cron-date-cell' + (c.other ? ' is-other' : '') + (isSel ? ' is-selected' : '')
+      return c.iso
+        ? `<button type="button" class="${cls}" data-iso="${c.iso}">${c.day}</button>`
+        : `<span class="${cls}">${c.day}</span>`
+    }).join('')
+  }
+  dateTrigger.addEventListener('click', (e) => {
+    e.stopPropagation()
+    datePopup.hidden ? openDatePopup() : closeDatePopup()
+  })
+  fDate.querySelectorAll('.cron-date-nav').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      dateViewM += parseInt(btn.dataset.dir, 10)
+      if (dateViewM < 0) { dateViewM = 11; dateViewY-- }
+      else if (dateViewM > 11) { dateViewM = 0; dateViewY++ }
+      renderCalendar()
+    })
+  })
+  dateGrid.addEventListener('click', (e) => {
+    const cell = e.target.closest('.cron-date-cell[data-iso]')
+    if (!cell) return
+    setDateValue(cell.dataset.iso)
+    renderCalendar()
+    closeDatePopup()
+  })
+
+  // ---- Wheel time picker (two scrollable columns, snap-on-scroll) ----
+  const WHEEL_ITEM_H = 32
+  const WHEEL_VISIBLE = 7   // odd: center row is active
+  const WHEEL_PAD = Math.floor(WHEEL_VISIBLE / 2) * WHEEL_ITEM_H
+
+  const timeTrigger = fTime.querySelector('.cron-time-trigger')
+  const timeText = fTime.querySelector('.cron-time-text')
+  const timePopup = fTime.querySelector('.cron-time-popup')
+  const wheelHour = fTime.querySelector('[data-wheel="hour"]')
+  const wheelMinute = fTime.querySelector('[data-wheel="minute"]')
+
+  function buildWheel(el, values) {
+    const frag = document.createDocumentFragment()
+    const topPad = document.createElement('div')
+    topPad.className = 'cron-wheel-pad'
+    topPad.style.height = WHEEL_PAD + 'px'
+    frag.appendChild(topPad)
+    values.forEach(v => {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'cron-wheel-item'
+      btn.dataset.value = String(v)
+      btn.textContent = pad2(v)
+      frag.appendChild(btn)
+    })
+    const botPad = document.createElement('div')
+    botPad.className = 'cron-wheel-pad'
+    botPad.style.height = WHEEL_PAD + 'px'
+    frag.appendChild(botPad)
+    el.appendChild(frag)
+  }
+  const hourValues = Array.from({ length: 24 }, (_, i) => i)
+  const minuteValues = Array.from({ length: 60 }, (_, i) => i)
+  buildWheel(wheelHour, hourValues)
+  buildWheel(wheelMinute, minuteValues)
+
+  function setWheelValue(el, n) {
+    el.scrollTop = n * WHEEL_ITEM_H
+    syncWheelActive(el)
+  }
+  function syncWheelActive(el) {
+    const idx = Math.round(el.scrollTop / WHEEL_ITEM_H)
+    el.querySelectorAll('.cron-wheel-item').forEach((it, i) => it.classList.toggle('is-active', i === idx))
+  }
+  function getWheelValue(el) {
+    return Math.round(el.scrollTop / WHEEL_ITEM_H)
+  }
+  // Written after user scroll — wheel positions drive dataset + trigger text.
+  function syncTimeFromWheels() {
+    const hh = getWheelValue(wheelHour)
+    const mm = getWheelValue(wheelMinute)
+    fTime.dataset.hour = String(hh)
+    fTime.dataset.minute = String(mm)
+    timeText.textContent = `${pad2(hh)}:${pad2(mm)}`
+  }
+  // Authoritative setter — writes state even when wheels are inside a hidden
+  // modal (setting scrollTop on display:none elements is a no-op, so we can't
+  // round-trip through the wheels at load time).
+  function setTimeValue(h, m) {
+    const hh = Number(h) || 0
+    const mm = Number(m) || 0
+    fTime.dataset.hour = String(hh)
+    fTime.dataset.minute = String(mm)
+    timeText.textContent = `${pad2(hh)}:${pad2(mm)}`
+    setWheelValue(wheelHour, hh)
+    setWheelValue(wheelMinute, mm)
+  }
+
+  ;[wheelHour, wheelMinute].forEach(w => {
+    let t
+    w.addEventListener('scroll', () => {
+      clearTimeout(t)
+      t = setTimeout(() => { syncWheelActive(w); syncTimeFromWheels() }, 90)
+    })
+    w.addEventListener('click', (e) => {
+      const item = e.target.closest('.cron-wheel-item')
+      if (!item) return
+      const parent = item.parentElement
+      const idx = [...parent.querySelectorAll('.cron-wheel-item')].indexOf(item)
+      parent.scrollTo({ top: idx * WHEEL_ITEM_H, behavior: 'smooth' })
+    })
+  })
+
+  timeTrigger.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (timePopup.hidden) {
+      closeAllPopups(fTime)
+      timePopup.hidden = false
+      fTime.classList.add('open')
+      positionPopup(timeTrigger, timePopup)
+      // Re-sync scroll positions once panel is laid out.
+      requestAnimationFrame(() => {
+        setWheelValue(wheelHour, Number(fTime.dataset.hour) || 0)
+        setWheelValue(wheelMinute, Number(fTime.dataset.minute) || 0)
+      })
+    } else {
+      closeTimePopup()
+    }
+  })
+  function closeTimePopup() { timePopup.hidden = true; fTime.classList.remove('open') }
+
+  // ---- Timezone autocomplete (input + filtered Klaus-styled panel) ----
+  function renderTzPanel() {
+    const q = fTimezone.value.trim().toLowerCase()
+    const matches = (q ? TZ_ALL.filter(z => z.toLowerCase().includes(q)) : TZ_ALL).slice(0, 60)
+    if (!matches.length) { closeTzPanel(); return }
+    fTzPanel.innerHTML = matches.map(z =>
+      `<button type="button" class="cron-tz-item" data-value="${z}" role="option">${z}</button>`
+    ).join('')
+  }
+  function openTzPanel() {
+    closeAllPopups(fTzWrap)
+    renderTzPanel()
+    if (!fTzPanel.children.length) return
+    fTzPanel.hidden = false
+    fTzWrap.classList.add('open')
+    positionPopup(fTimezone, fTzPanel)
+  }
+  function closeTzPanel() { fTzPanel.hidden = true; fTzWrap.classList.remove('open') }
+
+  fTimezone.addEventListener('focus', openTzPanel)
+  fTimezone.addEventListener('input', () => {
+    if (fTzPanel.hidden) openTzPanel(); else { renderTzPanel(); positionPopup(fTimezone, fTzPanel) }
+  })
+  fTzPanel.addEventListener('mousedown', (e) => {
+    // mousedown (not click) so blur doesn't fire first and close the panel.
+    const item = e.target.closest('.cron-tz-item')
+    if (!item) return
+    e.preventDefault()
+    fTimezone.value = item.dataset.value
+    closeTzPanel()
+  })
+  fTimezone.addEventListener('blur', () => setTimeout(closeTzPanel, 120))
 
   // ---- State ----
   let cronVisible = false
@@ -295,39 +622,85 @@
   }
 
   // ---- Form ----
-  // Build a cron expression from the frequency dropdown + time picker.
-  // Returns null when freq is 'custom' — caller falls back to the raw cron input.
-  function compileSchedule(freq, time) {
-    if (freq === 'custom') return null
-    const [hh, mm] = (time || '09:00').split(':').map(Number)
-    const head = `${mm} ${hh} * * `
-    if (freq === 'daily') return head + '*'
-    if (freq === 'weekdays') return head + '1-5'
-    if (freq === 'weekends') return head + '0,6'
-    return head + freq // '0'..'6'
+  // Compile the picker state into a cron expression (or null when the caller
+  // should use the raw `custom` input verbatim). One-shot collapses into a
+  // specific-date cron that fires once per year; the scheduler+store handle
+  // the self-delete after the first execution so it never fires again.
+  function compileSchedule(state) {
+    const { freq, hour, minute, weekday, monthday, interval, isoDate } = state
+    switch (freq) {
+      case 'oneshot': {
+        if (!isoDate) return null
+        const [, m, d] = isoDate.split('-').map(Number)
+        return `${Number(minute) || 0} ${Number(hour) || 0} ${d} ${m} *`
+      }
+      case 'interval': {
+        const n = Math.max(1, Math.min(59, Number(interval) || 30))
+        return `*/${n} * * * *`
+      }
+      case 'hourly': return `0 * * * *`
+      case 'daily': return `${Number(minute) || 0} ${Number(hour) || 0} * * *`
+      case 'weekly': return `${Number(minute) || 0} ${Number(hour) || 0} * * ${weekday ?? '1'}`
+      case 'monthly': return `${Number(minute) || 0} ${Number(hour) || 0} ${monthday ?? '1'} * *`
+      default: return null
+    }
   }
 
-  // Try to decompose an existing cron expression into { freq, time } for the
-  // dropdown. Returns null if the schedule doesn't fit one of the presets —
-  // caller falls back to 'custom' mode.
-  function parseSchedule(cron) {
+  // Decompose a stored cron back into picker state. Everything that doesn't
+  // fit a preset falls through to 'custom' so the raw cron stays editable.
+  function parseSchedule(cron, deleteAfterRun) {
     if (!cron || typeof cron !== 'string') return null
     const parts = cron.trim().split(/\s+/)
     if (parts.length !== 5) return null
     const [min, hour, dom, mon, dow] = parts
-    if (!/^\d+$/.test(min) || !/^\d+$/.test(hour)) return null
-    if (dom !== '*' || mon !== '*') return null
-    const time = `${pad(hour)}:${pad(min)}`
-    if (dow === '*') return { freq: 'daily', time }
-    if (dow === '1-5') return { freq: 'weekdays', time }
-    if (dow === '0,6' || dow === '6,0') return { freq: 'weekends', time }
-    if (/^[0-6]$/.test(dow)) return { freq: dow, time }
+    const isNum = (s) => /^\d+$/.test(s)
+
+    // Interval: */N * * * *
+    const intMatch = min.match(/^\*\/(\d+)$/)
+    if (intMatch && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
+      return { freq: 'interval', interval: intMatch[1] }
+    }
+
+    // Hourly: 0 * * * *
+    if (isNum(min) && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
+      return { freq: 'hourly' }
+    }
+
+    if (!isNum(min) || !isNum(hour)) return null
+    const baseTime = { hour: String(Number(hour)), minute: String(Number(min)) }
+
+    // One-shot: M H D Mo * (day and month both numeric), flagged as delete-after-run
+    if (isNum(dom) && isNum(mon) && dow === '*' && deleteAfterRun) {
+      // Infer the year: pick the next upcoming occurrence at or after today.
+      const today = new Date()
+      const m = Number(mon), d = Number(dom)
+      let y = today.getFullYear()
+      const trial = new Date(y, m - 1, d, Number(hour), Number(min))
+      if (trial.getTime() < today.getTime()) y++
+      return { ...baseTime, freq: 'oneshot', isoDate: `${y}-${pad2(m)}-${pad2(d)}` }
+    }
+
+    if (dom === '*' && mon === '*') {
+      if (dow === '*') return { ...baseTime, freq: 'daily' }
+      if (/^[0-6]$/.test(dow)) return { ...baseTime, freq: 'weekly', weekday: dow }
+    }
+    if (isNum(dom) && mon === '*' && dow === '*') {
+      return { ...baseTime, freq: 'monthly', monthday: String(Number(dom)) }
+    }
     return null
   }
 
-  function setCustomMode(on) {
-    fCustomWrap.style.display = on ? '' : 'none'
-    fTime.style.display = on ? 'none' : ''
+  // Toggle secondary controls based on the selected frequency mode.
+  function setMode(freq) {
+    fDate.hidden = freq !== 'oneshot'
+    fWeekday.hidden = freq !== 'weekly'
+    fMonthday.hidden = freq !== 'monthly'
+    fIntervalWrap.hidden = freq !== 'interval'
+    fSchedule.hidden = freq !== 'custom'
+    fScheduleHint.hidden = freq !== 'custom'
+    fTzRow.hidden = freq !== 'custom'
+    // Time picker is meaningless for interval / hourly / custom.
+    fTime.hidden = freq === 'interval' || freq === 'hourly' || freq === 'custom'
   }
 
   function openForm(task) {
@@ -335,27 +708,41 @@
     modalTitle.textContent = editingId ? t('cron_edit', 'Edit task') : t('cron_new', 'New task')
     fName.value = task?.name ?? ''
     fPrompt.value = task?.prompt ?? ''
+    fTimezone.value = task?.timezone ?? ''
 
-    const parsed = parseSchedule(task?.schedule)
+    // Defaults
+    ddWeekday.setValue('1')
+    ddMonthday.setValue('1')
+    fInterval.value = '30'
+    fSchedule.value = ''
+
+    const parsed = parseSchedule(task?.schedule, !!task?.deleteAfterRun)
     if (parsed) {
-      fFreq.value = parsed.freq
-      fTime.value = parsed.time
-      fSchedule.value = ''
-      setCustomMode(false)
+      ddFreq.setValue(parsed.freq)
+      setTimeValue(parsed.hour ?? 9, parsed.minute ?? 0)
+      if (parsed.weekday) ddWeekday.setValue(parsed.weekday)
+      if (parsed.monthday) ddMonthday.setValue(parsed.monthday)
+      if (parsed.interval) fInterval.value = parsed.interval
+      if (parsed.isoDate) setDateValue(parsed.isoDate)
+      else setDateValue(defaultIsoToday())
     } else if (task?.schedule) {
-      fFreq.value = 'custom'
-      fTime.value = '09:00'
+      ddFreq.setValue('custom')
+      setTimeValue(9, 0)
       fSchedule.value = task.schedule
-      setCustomMode(true)
+      setDateValue(defaultIsoToday())
     } else {
-      fFreq.value = 'daily'
-      fTime.value = '09:00'
-      fSchedule.value = ''
-      setCustomMode(false)
+      ddFreq.setValue('daily')
+      setTimeValue(9, 0)
+      setDateValue(defaultIsoToday())
     }
+    setMode(ddFreq.getValue())
 
     modal.classList.add('active')
     setTimeout(() => fName.focus(), 50)
+  }
+  function defaultIsoToday() {
+    const d = new Date()
+    return fmtDate(d.getFullYear(), d.getMonth() + 1, d.getDate())
   }
   function closeForm() {
     modal.classList.remove('active')
@@ -364,10 +751,26 @@
   async function saveForm() {
     const name = fName.value.trim()
     const prompt = fPrompt.value.trim()
-    const isCustom = fFreq.value === 'custom'
+    const freq = ddFreq.getValue()
+    const isCustom = freq === 'custom'
+    const isOneShot = freq === 'oneshot'
+
+    if (isOneShot && !fDate.dataset.value) {
+      await window.klausDialog.alert(t('cron_form_date_required', 'Please pick a date for the one-shot task.'))
+      return
+    }
+
     const schedule = isCustom
       ? fSchedule.value.trim()
-      : compileSchedule(fFreq.value, fTime.value)
+      : compileSchedule({
+          freq,
+          hour: fTime.dataset.hour,
+          minute: fTime.dataset.minute,
+          weekday: ddWeekday.getValue(),
+          monthday: ddMonthday.getValue(),
+          interval: fInterval.value,
+          isoDate: fDate.dataset.value,
+        })
 
     if (!schedule || !prompt) {
       await window.klausDialog.alert(t('cron_fields_required', 'Schedule and prompt are required.'))
@@ -380,12 +783,15 @@
 
     const now = Date.now()
     const id = editingId ?? ('task-' + now.toString(36))
+    const tz = isCustom ? fTimezone.value.trim() : ''
     await api.upsert({
       id,
       name: name || undefined,
       schedule,
       prompt,
       enabled: true,
+      deleteAfterRun: isOneShot,
+      timezone: tz || undefined,
       createdAt: editingId ? undefined : now,
       updatedAt: now,
     })
@@ -432,6 +838,18 @@
     if (parts.length !== 5) return cron
     const [min, hour, dom, mon, dow] = parts
     const isInt = (s) => /^\d+$/.test(s)
+
+    // Interval: */N * * * *
+    const intMatch = min.match(/^\*\/(\d+)$/)
+    if (intMatch && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
+      return `${t('cron_freq_interval', 'Every ')} ${intMatch[1]} ${t('cron_unit_minutes', 'min')}`
+    }
+
+    // Hourly: M * * * *
+    if (isInt(min) && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
+      return min === '0' ? t('cron_freq_hourly', 'Hourly') : `${t('cron_freq_hourly', 'Hourly')} :${pad(min)}`
+    }
+
     const timeStr = isInt(hour) && isInt(min) ? `${pad(hour)}:${pad(min)}` : null
     if (timeStr && dom === '*' && mon === '*') {
       if (dow === '*') return `${t('cron_every_day', 'Daily')} ${timeStr}`
@@ -445,6 +863,17 @@
       }
       if (isInt(dow) && names[dow]) return `${t('cron_every', 'Every ')}${names[dow]} ${timeStr}`
     }
+
+    // Monthly: M H D * *
+    if (timeStr && isInt(dom) && mon === '*' && dow === '*') {
+      return `${t('cron_monthly', 'Monthly')} · ${dom} · ${timeStr}`
+    }
+
+    // One-shot / yearly: M H D Mo *
+    if (timeStr && isInt(dom) && isInt(mon) && dow === '*') {
+      return `${mon}/${dom} ${timeStr}`
+    }
+
     return cron
   }
 
@@ -461,7 +890,9 @@
   modalBackdrop?.addEventListener('click', closeForm)
   cancelBtn?.addEventListener('click', closeForm)
   saveBtn?.addEventListener('click', saveForm)
-  fFreq?.addEventListener('change', () => setCustomMode(fFreq.value === 'custom'))
+  // Popups are position:fixed, so they can't follow internal modal scroll —
+  // close them all when the modal body scrolls so they don't float off anchor.
+  document.querySelector('.cron-modal-body')?.addEventListener('scroll', () => closeAllPopups(null))
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('active')) closeForm()
   })

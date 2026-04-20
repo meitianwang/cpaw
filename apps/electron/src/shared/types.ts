@@ -69,6 +69,8 @@ export interface CronTask {
   enabled: boolean
   thinking?: string
   timeoutSeconds?: number
+  deleteAfterRun?: boolean
+  timezone?: string
   createdAt: number
   updatedAt: number
 }

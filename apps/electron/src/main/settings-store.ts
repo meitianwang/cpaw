@@ -66,6 +66,7 @@ export class SettingsStore {
         light_context     INTEGER DEFAULT 0,
         timeout_seconds   INTEGER,
         delete_after_run  INTEGER DEFAULT 0,
+        timezone          TEXT,
         deliver           TEXT,
         webhook_url       TEXT,
         webhook_token     TEXT,
@@ -118,6 +119,9 @@ export class SettingsStore {
     const cronCols = cols('cron_tasks')
     if (!cronCols.has('user_id')) {
       this.db.exec(`ALTER TABLE cron_tasks ADD COLUMN user_id TEXT;`)
+    }
+    if (!cronCols.has('timezone')) {
+      this.db.exec(`ALTER TABLE cron_tasks ADD COLUMN timezone TEXT;`)
     }
   }
 
@@ -326,17 +330,27 @@ export class SettingsStore {
   upsertTask(task: CronTask): void {
     const now = Date.now()
     this.db.prepare(`
-      INSERT INTO cron_tasks (id, name, description, schedule, prompt, enabled, thinking, timeout_seconds, created_at, updated_at)
-      VALUES (@id, @name, @description, @schedule, @prompt, @enabled, @thinking, @timeoutSeconds, @createdAt, @updatedAt)
+      INSERT INTO cron_tasks (
+        id, name, description, schedule, prompt, enabled, thinking,
+        timeout_seconds, delete_after_run, timezone, created_at, updated_at
+      ) VALUES (
+        @id, @name, @description, @schedule, @prompt, @enabled, @thinking,
+        @timeoutSeconds, @deleteAfterRun, @timezone, @createdAt, @updatedAt
+      )
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name, description=excluded.description, schedule=excluded.schedule,
         prompt=excluded.prompt, enabled=excluded.enabled, thinking=excluded.thinking,
-        timeout_seconds=excluded.timeout_seconds, updated_at=excluded.updated_at
+        timeout_seconds=excluded.timeout_seconds,
+        delete_after_run=excluded.delete_after_run,
+        timezone=excluded.timezone,
+        updated_at=excluded.updated_at
     `).run({
       id: task.id, name: task.name ?? null, description: task.description ?? null,
       schedule: task.schedule, prompt: task.prompt,
       enabled: task.enabled ? 1 : 0, thinking: task.thinking ?? null,
       timeoutSeconds: task.timeoutSeconds ?? null,
+      deleteAfterRun: task.deleteAfterRun ? 1 : 0,
+      timezone: task.timezone ?? null,
       createdAt: task.createdAt || now, updatedAt: now,
     })
   }
@@ -425,6 +439,8 @@ function rowToCronTask(r: any): CronTask {
     schedule: r.schedule, prompt: r.prompt,
     enabled: r.enabled === 1, thinking: r.thinking ?? undefined,
     timeoutSeconds: r.timeout_seconds ?? undefined,
+    deleteAfterRun: r.delete_after_run === 1,
+    timezone: r.timezone ?? undefined,
     createdAt: r.created_at, updatedAt: r.updated_at,
   }
 }

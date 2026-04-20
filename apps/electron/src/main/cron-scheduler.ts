@@ -63,17 +63,20 @@ export class CronScheduler {
   }
 
   private shouldRun(task: CronTask, now: Date): boolean {
-    // Simple cron matching — supports "M H D Mo DoW" (5 fields)
+    // Simple cron matching — supports "M H D Mo DoW" (5 fields). When the task
+    // carries a timezone, we read the clock parts from that zone instead of
+    // the process's local time.
     try {
       const parts = task.schedule.trim().split(/\s+/)
       if (parts.length < 5) return false
 
       const [minute, hour, day, month, dow] = parts
-      if (!matchField(minute!, now.getMinutes())) return false
-      if (!matchField(hour!, now.getHours())) return false
-      if (!matchField(day!, now.getDate())) return false
-      if (!matchField(month!, now.getMonth() + 1)) return false
-      if (!matchField(dow!, now.getDay())) return false
+      const p = task.timezone ? partsInZone(now, task.timezone) : localParts(now)
+      if (!matchField(minute!, p.minute)) return false
+      if (!matchField(hour!, p.hour)) return false
+      if (!matchField(day!, p.day)) return false
+      if (!matchField(month!, p.month)) return false
+      if (!matchField(dow!, p.dow)) return false
       return true
     } catch {
       return false
@@ -100,7 +103,52 @@ export class CronScheduler {
       )
     } finally {
       this.running.delete(task.id)
+      // One-shot tasks self-delete after their first run regardless of outcome.
+      if (task.deleteAfterRun) {
+        try { this.store.deleteTask(task.id) } catch (e) {
+          console.error(`[CronScheduler] Failed to delete one-shot task ${task.id}:`, e)
+        }
+      }
     }
+  }
+}
+
+function localParts(d: Date) {
+  return {
+    minute: d.getMinutes(),
+    hour: d.getHours(),
+    day: d.getDate(),
+    month: d.getMonth() + 1,
+    dow: d.getDay(),
+  }
+}
+
+// Extract clock parts in the given IANA timezone (e.g. "Asia/Shanghai").
+// Invalid tz falls back to local.
+function partsInZone(d: Date, tz: string) {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      hour12: false,
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', weekday: 'short',
+    })
+    const parts: Record<string, string> = {}
+    for (const p of fmt.formatToParts(d)) {
+      if (p.type !== 'literal') parts[p.type] = p.value
+    }
+    const dowMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+    // hour12:false can return '24' for midnight in some locales — normalize.
+    const h = parseInt(parts.hour ?? '0', 10)
+    return {
+      minute: parseInt(parts.minute ?? '0', 10),
+      hour: h === 24 ? 0 : h,
+      day: parseInt(parts.day ?? '1', 10),
+      month: parseInt(parts.month ?? '1', 10),
+      dow: dowMap[parts.weekday ?? 'Sun'] ?? 0,
+    }
+  } catch {
+    return localParts(d)
   }
 }
 

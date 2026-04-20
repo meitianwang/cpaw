@@ -1549,8 +1549,8 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  width: 100%;
-  max-width: 480px;
+  /* Fixed width so switching frequency modes doesn't resize the modal. */
+  width: min(540px, 94vw);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -1582,6 +1582,9 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .cron-modal-body {
   padding: 18px 20px;
   overflow-y: auto;
+  /* Stable height so the modal doesn't jump between modes (oneshot has 3 pills
+     + tz row, hourly has 1 pill — without this the card would shrink/grow). */
+  min-height: 360px;
 }
 .cron-modal-subtitle {
   font-size: 12.5px;
@@ -1592,38 +1595,399 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .cron-form-row { margin-bottom: 16px; }
 .cron-schedule-picker {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
+  /* Single stable row so swapping modes doesn't collapse onto a 2nd line. */
+  flex-wrap: nowrap;
+  min-height: 40px;
 }
-.cron-schedule-picker .cron-picker-select {
-  flex: 0 0 140px;
-  padding: 9px 12px;
-  border: 1px solid var(--input-border);
+
+/* Custom dropdown: button trigger + floating panel (Klaus-styled, not native). */
+.cron-dd { position: relative; display: inline-block; }
+.cron-dd-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 128px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--input-bg);
   color: var(--fg);
   font-family: var(--font);
   font-size: 13px;
-  outline: none;
   cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.cron-dd-trigger:hover { background: var(--bg-hover); }
+.cron-dd.open .cron-dd-trigger,
+.cron-dd-trigger:focus-visible {
+  border-color: var(--fg-quaternary);
+  outline: none;
+}
+.cron-dd-caret {
+  color: var(--fg-tertiary);
+  flex-shrink: 0;
+  transition: transform var(--transition);
+}
+.cron-dd.open .cron-dd-caret { transform: rotate(180deg); }
+.cron-dd-panel {
+  position: fixed;
+  min-width: 128px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 1200;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.cron-dd-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition);
+  white-space: nowrap;
+}
+.cron-dd-item:hover { background: var(--bg-hover); }
+.cron-dd-item.is-selected { color: var(--fg); font-weight: 500; }
+.cron-dd-item.is-selected::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,8 7,12 13,4'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,8 7,12 13,4'/%3E%3C/svg%3E") center / contain no-repeat;
+  color: var(--fg-secondary);
+  flex-shrink: 0;
+}
+.cron-dd-freq .cron-dd-trigger { min-width: 128px; }
+.cron-dd-weekday .cron-dd-trigger { min-width: 104px; }
+.cron-dd-monthday .cron-dd-trigger { min-width: 84px; }
+/* [hidden] needs to beat elements that carry an explicit `display` value. */
+.cron-dd[hidden],
+.cron-date[hidden],
+.cron-time[hidden],
+.cron-date-popup[hidden],
+.cron-time-popup[hidden],
+.cron-interval[hidden],
+.cron-tz-row[hidden],
+.cron-dd-panel[hidden] { display: none; }
+
+/* Day-of-month panel — 7-col grid so 31 entries fit compactly.
+   `:not([hidden])` keeps the [hidden] override (display: none) winning. */
+.cron-dd-monthday .cron-dd-panel:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  min-width: 224px;
+  padding: 6px;
+}
+.cron-dd-monthday .cron-dd-item {
+  justify-content: center;
+  padding: 6px 0;
+  font-variant-numeric: tabular-nums;
+}
+.cron-dd-monthday .cron-dd-item.is-selected {
+  background: var(--fg);
+  color: var(--bg-elevated);
+}
+.cron-dd-monthday .cron-dd-item.is-selected::after { display: none; }
+
+/* Date picker (calendar popover) */
+.cron-date { position: relative; display: inline-block; }
+.cron-date-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 168px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.cron-date-trigger:hover { background: var(--bg-hover); }
+.cron-date.open .cron-date-trigger { border-color: var(--fg-quaternary); }
+.cron-date-text { flex: 1; text-align: left; }
+.cron-date-trigger svg { color: var(--fg-tertiary); flex-shrink: 0; }
+.cron-date-popup {
+  position: fixed;
+  z-index: 1200;
+  padding: 12px;
+  min-width: 260px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.cron-date-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 10px;
+}
+.cron-date-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.cron-date-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.cron-date-nav:hover { background: var(--bg-hover); }
+.cron-date-weekdays,
+.cron-date-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.cron-date-weekdays > span {
+  text-align: center;
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-tertiary);
+  letter-spacing: 0.02em;
+}
+.cron-date-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.cron-date-cell:hover { background: var(--bg-hover); }
+.cron-date-cell.is-other { color: var(--fg-quaternary); cursor: default; }
+.cron-date-cell.is-other:hover { background: transparent; }
+.cron-date-cell.is-selected,
+.cron-date-cell.is-selected:hover {
+  background: var(--fg);
+  color: var(--bg-elevated);
+  font-weight: 600;
+}
+
+/* Time picker (wheel) */
+.cron-time { position: relative; display: inline-block; }
+.cron-time-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 120px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.cron-time-trigger:hover { background: var(--bg-hover); }
+.cron-time.open .cron-time-trigger { border-color: var(--fg-quaternary); }
+.cron-time-trigger svg { color: var(--fg-tertiary); flex-shrink: 0; }
+.cron-time-popup {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+/* Horizontal selection pill spanning both wheels — sits behind items at z=0. */
+.cron-time-band {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 32px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  z-index: 0;
+}
+.cron-wheel {
+  position: relative;
+  z-index: 1;
+  height: 224px; /* 7 rows × 32px */
+  width: 78px;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  /* Fade the top and bottom rows so only the centered 3-4 rows read clearly. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%);
+}
+.cron-wheel::-webkit-scrollbar { display: none; }
+.cron-wheel-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  height: 32px;
+  width: 100%;
+  padding: 0 18px 0 8px; /* right padding reserves space for ✓ */
+  background: transparent;
+  border: none;
+  color: var(--fg-tertiary);
+  font-family: var(--font);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  scroll-snap-align: center;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+.cron-wheel-item:hover { color: var(--fg-secondary); }
+.cron-wheel-item.is-active {
+  color: var(--fg);
+  font-weight: 600;
+}
+.cron-wheel-item.is-active::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  width: 11px;
+  height: 11px;
+  background: var(--fg-secondary);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,8 7,12 13,4'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,8 7,12 13,4'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.cron-wheel-pad { pointer-events: none; }
+
+/* Interval input */
+.cron-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cron-form-row .cron-interval-input {
+  width: 88px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  outline: none;
   transition: border-color var(--transition);
 }
-.cron-schedule-picker .cron-picker-time {
-  flex: 0 0 140px;
+.cron-form-row .cron-interval-input:focus { border-color: var(--fg-quaternary); }
+.cron-interval-unit {
+  font-size: 13px;
+  color: var(--fg-secondary);
+}
+
+/* Custom cron inline input */
+.cron-form-row .cron-schedule-input {
+  flex: 1;
+  min-width: 0;
   width: auto;
-  padding: 9px 12px;
-  border: 1px solid var(--input-border);
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--input-bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+.cron-form-row .cron-schedule-input:focus { border-color: var(--fg-quaternary); }
+
+/* Timezone row + Klaus-styled autocomplete (replaces native <datalist>) */
+.cron-tz-row { margin-top: 10px; display: flex; align-items: center; gap: 12px; }
+.cron-tz-row label { margin: 0; min-width: 52px; }
+.cron-tz { position: relative; flex: 1; min-width: 0; }
+.cron-form-row .cron-tz-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   color: var(--fg);
   font-family: var(--font);
   font-size: 13px;
   outline: none;
   transition: border-color var(--transition);
 }
-.cron-schedule-picker .cron-picker-select:focus,
-.cron-schedule-picker .cron-picker-time:focus { border-color: var(--input-focus); }
-.cron-form-custom { margin-top: 8px; }
+.cron-form-row .cron-tz-input:focus { border-color: var(--fg-quaternary); }
+.cron-tz-panel {
+  position: fixed;
+  z-index: 1200;
+  padding: 4px;
+  min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.cron-tz-panel[hidden] { display: none; }
+.cron-tz-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition);
+  white-space: nowrap;
+}
+.cron-tz-item:hover { background: var(--bg-hover); }
+
 .cron-form-row label {
   display: block;
   font-size: 12px;
@@ -1651,10 +2015,6 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   font-size: 13px;
   line-height: 1.55;
   min-height: 96px;
-}
-.cron-form-custom input {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
 }
 .cron-form-row input:focus,
 .cron-form-row textarea:focus { border-color: var(--input-focus); }
