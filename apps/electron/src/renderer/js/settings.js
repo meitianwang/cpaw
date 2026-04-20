@@ -294,7 +294,7 @@ async function loadModelsTab(container) {
         <div class="settings-card ${m.isDefault ? 'card-default' : ''}">
           <div class="card-header"><strong>${esc(m.name)}</strong>${m.isDefault ? `<span class="badge">${tt('model_badge_default')}</span>` : ''}${m.role ? `<span class="s-badge s-badge-blue">${esc(m.role)}</span>` : ''}</div>
           <div class="card-meta">${esc(m.provider || 'anthropic')} / ${esc(m.model)} &middot; ${m.maxContextTokens.toLocaleString()} tokens &middot; thinking: ${esc(m.thinking)}</div>
-          <div class="card-actions">${!m.isDefault ? `<button class="btn-xs" onclick="setDefaultModel('${esc(m.id)}')">${tt('set_default')}</button>` : ''}<button class="btn-xs btn-danger" onclick="deleteModel('${esc(m.id)}')">${tt('delete_title')}</button></div>
+          <div class="card-actions">${!m.isDefault ? `<button class="btn-xs" onclick="setDefaultModel('${esc(m.id)}')">${tt('set_default')}</button>` : ''}<button class="btn-xs" onclick="showModelForm('${esc(m.id)}')">${tt('model_edit')}</button><button class="btn-xs btn-danger" onclick="deleteModel('${esc(m.id)}')">${tt('delete_title')}</button></div>
         </div>`).join('')}</div>
       <div id="model-form" style="display:none"></div>`
   }
@@ -363,21 +363,60 @@ function bindSubscriptionHandlers(container) {
     loadSettingsTab('models')
   })
 }
-window.showAddModelForm = function() {
+// 编辑态下藏住 id —— add 时是 null，edit 时是目标 modelId
+let editingModelId = null
+
+// Add/edit 二合一：无参=add，传 id=edit（后端 upsert 已支持带 id 更新）
+window.showModelForm = async function(modelId) {
+  editingModelId = modelId || null
+  let existing = null
+  if (modelId) {
+    const models = await settingsApi.models.list()
+    existing = models.find(m => m.id === modelId)
+    if (!existing) { editingModelId = null; return }
+  }
   const form = document.getElementById('model-form'); form.style.display = 'block'
-  form.innerHTML = `<div class="settings-card"><h4 style="margin-bottom:12px">${tt('add_model_title')}</h4>
-    <div class="form-row"><label>${tt('model_field_name')}</label><input id="mf-name" placeholder="${esc(tt('model_placeholder_name'))}"></div>
-    <div class="form-row"><label>${tt('model_field_model_id')}</label><input id="mf-model" placeholder="claude-sonnet-4-20250514"></div>
-    <div class="form-row"><label>${tt('model_field_api_key')}</label><input id="mf-apikey" type="password" placeholder="sk-ant-..."></div>
-    <div class="form-row"><label>${tt('model_field_provider')}</label><select id="mf-provider"><option value="anthropic">Anthropic</option><option value="bedrock">AWS Bedrock</option><option value="vertex">Google Vertex</option></select></div>
-    <div class="form-row"><label>${tt('model_field_base_url')}</label><input id="mf-baseurl"></div>
-    <div class="form-row"><label>${tt('model_field_max_tokens')}</label><input id="mf-tokens" type="number" value="200000"></div>
-    <div class="form-row"><label>${tt('model_field_thinking')}</label><select id="mf-thinking"><option value="off">${tt('thinking_off')}</option><option value="low">${tt('thinking_low')}</option><option value="medium">${tt('thinking_medium')}</option><option value="high">${tt('thinking_high')}</option></select></div>
+  const title = existing ? tt('edit_model_title') : tt('add_model_title')
+  const v = (k, fallback = '') => existing ? (existing[k] ?? fallback) : fallback
+  const providers = ['anthropic', 'bedrock', 'vertex']
+  const thinkings = ['off', 'low', 'medium', 'high']
+  const selProvider = providers.map(p =>
+    `<option value="${p}" ${v('provider', 'anthropic') === p ? 'selected' : ''}>${p === 'anthropic' ? 'Anthropic' : p === 'bedrock' ? 'AWS Bedrock' : 'Google Vertex'}</option>`).join('')
+  const selThinking = thinkings.map(t =>
+    `<option value="${t}" ${v('thinking', 'off') === t ? 'selected' : ''}>${tt('thinking_' + t)}</option>`).join('')
+  form.innerHTML = `<div class="settings-card"><h4 style="margin-bottom:12px">${title}</h4>
+    <div class="form-row"><label>${tt('model_field_name')}</label><input id="mf-name" placeholder="${esc(tt('model_placeholder_name'))}" value="${esc(v('name'))}"></div>
+    <div class="form-row"><label>${tt('model_field_model_id')}</label><input id="mf-model" placeholder="claude-sonnet-4-20250514" value="${esc(v('model'))}"></div>
+    <div class="form-row"><label>${tt('model_field_api_key')}</label><input id="mf-apikey" type="password" placeholder="sk-ant-..." value="${esc(v('apiKey'))}"></div>
+    <div class="form-row"><label>${tt('model_field_provider')}</label><select id="mf-provider">${selProvider}</select></div>
+    <div class="form-row"><label>${tt('model_field_base_url')}</label><input id="mf-baseurl" value="${esc(v('baseUrl'))}"></div>
+    <div class="form-row"><label>${tt('model_field_max_tokens')}</label><input id="mf-tokens" type="number" value="${v('maxContextTokens', 200000)}"></div>
+    <div class="form-row"><label>${tt('model_field_thinking')}</label><select id="mf-thinking">${selThinking}</select></div>
     <div class="form-actions"><button class="btn-sm btn-primary" onclick="saveModel()">${tt('save')}</button><button class="btn-sm" onclick="document.getElementById('model-form').style.display='none'">${tt('cancel')}</button></div></div>`
 }
+// 兼容旧入口名
+window.showAddModelForm = () => window.showModelForm()
+
 window.saveModel = async function() {
   const now = Date.now()
-  await settingsApi.models.upsert({ id: crypto.randomUUID(), name: gv('mf-name') || 'Untitled', provider: gv('mf-provider'), model: gv('mf-model') || 'claude-sonnet-4-20250514', apiKey: gv('mf-apikey') || undefined, baseUrl: gv('mf-baseurl') || undefined, maxContextTokens: parseInt(gv('mf-tokens')) || 200000, thinking: gv('mf-thinking'), isDefault: false, createdAt: now, updatedAt: now })
+  let base = { id: crypto.randomUUID(), isDefault: false, createdAt: now }
+  if (editingModelId) {
+    const models = await settingsApi.models.list()
+    const existing = models.find(m => m.id === editingModelId)
+    if (existing) base = { ...existing } // 保留 isDefault / createdAt / role / cost_* 等未暴露字段
+  }
+  await settingsApi.models.upsert({
+    ...base,
+    name: gv('mf-name') || 'Untitled',
+    provider: gv('mf-provider'),
+    model: gv('mf-model') || 'claude-sonnet-4-20250514',
+    apiKey: gv('mf-apikey') || undefined,
+    baseUrl: gv('mf-baseurl') || undefined,
+    maxContextTokens: parseInt(gv('mf-tokens')) || 200000,
+    thinking: gv('mf-thinking'),
+    updatedAt: now,
+  })
+  editingModelId = null
   loadSettingsTab('models')
 }
 window.setDefaultModel = async (id) => {

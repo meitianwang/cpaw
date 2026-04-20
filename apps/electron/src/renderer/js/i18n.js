@@ -349,8 +349,10 @@ const I18N = {
     slash_new_desc: 'Start a new chat',
     slash_clear_desc: 'Clear current session',
     slash_help_desc: 'Show available commands',
-    // Add Model form
+    // Add / Edit Model form
     add_model_title: 'Add Model',
+    edit_model_title: 'Edit Model',
+    model_edit: 'Edit',
     model_field_name: 'Name', model_placeholder_name: 'My Claude Model',
     model_field_model_id: 'Model ID',
     model_field_api_key: 'API Key',
@@ -720,8 +722,10 @@ const I18N = {
     slash_new_desc: '开始新对话',
     slash_clear_desc: '清空当前会话',
     slash_help_desc: '查看可用命令',
-    // Add Model form
+    // Add / Edit Model form
     add_model_title: '添加模型',
+    edit_model_title: '编辑模型',
+    model_edit: '编辑',
     model_field_name: '名称', model_placeholder_name: '我的 Claude 模型',
     model_field_model_id: '模型 ID',
     model_field_api_key: 'API Key',
