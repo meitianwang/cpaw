@@ -323,12 +323,21 @@ export function registerIpcHandlers(
   })
 
   // --- Klaus user auth (PKCE + klaus:// callback, talks to Klaus web server) ---
+  const broadcastAuthUpdate = (user: unknown) => {
+    try { getMainWindow()?.webContents.send('klausAuth:updated', { user }) }
+    catch { /* window gone */ }
+  }
+
   ipcMain.handle('klausAuth:status', async () => {
     const { getStatus, refreshMe } = await import('./klaus-auth.js')
     const s = getStatus()
     if (s.loggedIn) {
-      // Best-effort refresh — updates display_name / avatar if changed on server
-      refreshMe().catch(() => {})
+      // Active refresh — pulls latest display_name/avatar so KV seeding in
+      // renderer always reflects server truth (addresses "cloud edits don't
+      // show up in desktop" case). Any network error falls back silently to
+      // the cached value.
+      const fresh = await refreshMe()
+      if (fresh) return { loggedIn: true, user: fresh }
     }
     return s
   })
@@ -337,6 +346,7 @@ export function registerIpcHandlers(
     try {
       const { startLogin } = await import('./klaus-auth.js')
       const auth = await startLogin()
+      broadcastAuthUpdate(auth.user)
       return { ok: true, user: auth.user }
     } catch (err: any) {
       console.error('[KlausAuth] login failed:', err)
@@ -348,9 +358,36 @@ export function registerIpcHandlers(
     try {
       const { logout } = await import('./klaus-auth.js')
       await logout()
+      broadcastAuthUpdate(null)
       return { ok: true }
     } catch (err: any) {
       console.error('[KlausAuth] logout failed:', err)
+      return { ok: false, error: err?.message ?? String(err) }
+    }
+  })
+
+  ipcMain.handle('klausAuth:updateProfile', async (_e, { displayName }: { displayName: string }) => {
+    try {
+      const { updateProfile } = await import('./klaus-auth.js')
+      const user = await updateProfile(String(displayName ?? '').trim())
+      if (!user) return { ok: false, error: 'update_failed' }
+      broadcastAuthUpdate(user)
+      return { ok: true, user }
+    } catch (err: any) {
+      console.error('[KlausAuth] updateProfile failed:', err)
+      return { ok: false, error: err?.message ?? String(err) }
+    }
+  })
+
+  ipcMain.handle('klausAuth:uploadAvatar', async (_e, { mime, buffer }: { mime: string; buffer: ArrayBuffer }) => {
+    try {
+      const { uploadAvatar } = await import('./klaus-auth.js')
+      const user = await uploadAvatar(mime, Buffer.from(buffer))
+      if (!user) return { ok: false, error: 'upload_failed' }
+      broadcastAuthUpdate(user)
+      return { ok: true, user }
+    } catch (err: any) {
+      console.error('[KlausAuth] uploadAvatar failed:', err)
       return { ok: false, error: err?.message ?? String(err) }
     }
   })

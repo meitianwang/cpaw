@@ -119,11 +119,15 @@ contextBridge.exposeInMainWorld('klaus', {
     logout: () => ipcRenderer.invoke('auth:logout'),
   },
 
-  // Klaus 用户登录（PKCE + klaus:// 回调，对接 Klaus web server）
+  // Klaus 用户登录（PKCE + loopback 回调，对接 Klaus web server）
   klausAuth: {
     status: () => ipcRenderer.invoke('klausAuth:status'),
     login: () => ipcRenderer.invoke('klausAuth:login'),
     logout: () => ipcRenderer.invoke('klausAuth:logout'),
+    updateProfile: (displayName: string) =>
+      ipcRenderer.invoke('klausAuth:updateProfile', { displayName }),
+    uploadAvatar: (mime: string, buffer: ArrayBuffer) =>
+      ipcRenderer.invoke('klausAuth:uploadAvatar', { mime, buffer }),
   },
 
   // Channels
@@ -156,6 +160,9 @@ contextBridge.exposeInMainWorld('klaus', {
     },
     trayOpenSettings: (cb: () => void) => {
       ipcRenderer.on('tray:open-settings', () => cb())
+    },
+    klausAuthUpdated: (cb: (payload: { user: any }) => void) => {
+      ipcRenderer.on('klausAuth:updated', (_e, payload) => cb(payload))
     },
   },
 })

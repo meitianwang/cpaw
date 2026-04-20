@@ -384,6 +384,90 @@ export async function apiGet<T>(path: string): Promise<T | null> {
 }
 
 /**
+ * Update display name on the server (PATCH /api/auth/profile with Bearer).
+ * On success updates local cached auth + disk file so subsequent getStatus()
+ * calls return the new name without waiting for a refreshMe roundtrip.
+ * Returns null if there's no token, or if the server rejected the request.
+ */
+export async function updateProfile(
+  displayName: string,
+): Promise<StoredAuth['user'] | null> {
+  if (!currentAuth) return null
+  const auth = currentAuth
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/auth/profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ displayName }),
+    })
+    if (resp.status === 401) {
+      currentAuth = null
+      deleteStoredAuth()
+      return null
+    }
+    if (!resp.ok) return null
+    const data = (await resp.json()) as { user: StoredAuth['user'] }
+    if (!data?.user) return null
+    currentAuth = { ...auth, user: data.user }
+    writeStoredAuth(currentAuth)
+    return data.user
+  } catch (err) {
+    console.warn('[KlausAuth] updateProfile failed:', err)
+    return null
+  }
+}
+
+/**
+ * Upload a new avatar (POST /api/auth/avatar with Bearer). `mime` must be
+ * image/jpeg|image/png|image/webp — matches the server's allowlist. Same
+ * success semantics as updateProfile: cached auth + disk file are updated
+ * with the fresh user payload (which contains the new avatarUrl).
+ */
+export async function uploadAvatar(
+  mime: string,
+  body: ArrayBuffer | Uint8Array,
+): Promise<StoredAuth['user'] | null> {
+  if (!currentAuth) return null
+  const auth = currentAuth
+  try {
+    const buf = body instanceof Uint8Array
+      ? body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength)
+      : body
+    const resp = await fetch(`${SERVER_URL}/api/auth/avatar`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        'Content-Type': mime,
+      },
+      body: buf as ArrayBuffer,
+    })
+    if (resp.status === 401) {
+      currentAuth = null
+      deleteStoredAuth()
+      return null
+    }
+    if (!resp.ok) return null
+    const data = (await resp.json()) as { user: StoredAuth['user'] }
+    if (!data?.user) return null
+    currentAuth = { ...auth, user: data.user }
+    writeStoredAuth(currentAuth)
+    return data.user
+  } catch (err) {
+    console.warn('[KlausAuth] uploadAvatar failed:', err)
+    return null
+  }
+}
+
+/** Absolute URL for a possibly-relative avatar path returned by the server. */
+export function absoluteAvatarUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  return url.startsWith('http') ? url : SERVER_URL + url
+}
+
+/**
  * Refresh user info from the server. Returns null if the token was rejected
  * (401) and local state is cleared. Network errors leave state untouched
  * and return the cached user.

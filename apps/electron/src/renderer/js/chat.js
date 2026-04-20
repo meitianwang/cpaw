@@ -1696,6 +1696,34 @@ loginLangMenu?.querySelectorAll('button').forEach(btn => {
   })
 })
 
+// 把云端 user (displayName/email/avatarUrl) 写进本地 KV，供 bootstrapProfile 读。
+// boot 时从 klausAuth:status 拿；登录成功 / 个人资料更新后由 klausAuth:updated 事件再调一次，
+// 这样侧栏和设置页都能立刻反映最新值。
+async function seedIdentityKv(user) {
+  if (!user) return
+  try {
+    if (user.displayName) await klausApi.settings.kv.set('display_name', user.displayName)
+    await klausApi.settings.kv.set('email', user.email || '')
+    if (user.avatarUrl) {
+      const url = user.avatarUrl.startsWith('http')
+        ? user.avatarUrl
+        : 'https://klaus-ai.site' + user.avatarUrl
+      await klausApi.settings.kv.set('avatar_data_url', url)
+    } else {
+      await klausApi.settings.kv.set('avatar_data_url', '')
+    }
+  } catch {}
+}
+window.seedIdentityKv = seedIdentityKv
+
+// 登录完成 / 服务端资料更新时 main 会广播 klausAuth:updated
+klausApi.on?.klausAuthUpdated?.(async ({ user }) => {
+  if (user) {
+    await seedIdentityKv(user)
+    if (typeof window.bootstrapProfile === 'function') await window.bootstrapProfile()
+  }
+})
+
 // --- Boot ---
 async function boot() {
   try {
@@ -1711,18 +1739,8 @@ async function boot() {
   try {
     const status = await klausApi.klausAuth?.status?.()
     loggedIn = !!status?.loggedIn
-    if (loggedIn && status?.user?.displayName) {
-      // Seed display_name + avatar kv so sidebar bootstrapProfile picks up server identity
-      try {
-        await klausApi.settings.kv.set('display_name', status.user.displayName)
-        await klausApi.settings.kv.set('email', status.user.email || '')
-        if (status.user.avatarUrl) {
-          const avatar = status.user.avatarUrl.startsWith('http')
-            ? status.user.avatarUrl
-            : 'https://klaus-ai.site' + status.user.avatarUrl
-          await klausApi.settings.kv.set('avatar_data_url', avatar)
-        }
-      } catch {}
+    if (loggedIn && status?.user) {
+      await seedIdentityKv(status.user)
     }
   } catch (err) {
     console.warn('klausAuth status failed:', err)

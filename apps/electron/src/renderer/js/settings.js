@@ -151,10 +151,10 @@ async function loadProfileTab(container) {
         img.onerror = reject
         img.src = dataUrl
       })
+      // 立即本地回显（canvas 输出 dataURL，不等网络）
       await settingsApi.kv.set('avatar_data_url', resized)
       const name = document.getElementById('profile-name-input')?.value?.trim() || tt('user_default_name')
       applyAvatar(resized, name)
-      // 设置页内的 avatar-wrap 也刷新（applyAvatar 会处理，但它的 initial 逻辑针对侧栏，这里直接设背景）
       const wrap = document.getElementById('profile-avatar-wrap')
       if (wrap) {
         wrap.style.backgroundImage = `url("${resized}")`
@@ -163,6 +163,14 @@ async function loadProfileTab(container) {
         wrap.style.color = 'transparent'
         Array.from(wrap.childNodes).forEach(n => { if (n.nodeType === 3) n.remove() })
       }
+      // 后台把 PNG 原始字节上传到云端；成功后 main 会广播 klausAuth:updated，
+      // chat.js 的监听会把 avatar_data_url 覆盖成服务端绝对 URL
+      try {
+        const pngBuf = await (await fetch(resized)).arrayBuffer()
+        await window.klaus?.klausAuth?.uploadAvatar?.('image/png', pngBuf)
+      } catch (err) {
+        console.warn('[Settings] avatar cloud upload failed:', err)
+      }
       showToast(tt('avatar_updated'))
     } catch (err) {
       showToast(tt('avatar_upload_failed_prefix') + (err?.message || String(err)))
@@ -170,14 +178,23 @@ async function loadProfileTab(container) {
   })
   document.getElementById('profile-save-btn')?.addEventListener('click', async () => {
     const name = document.getElementById('profile-name-input')?.value?.trim()
-    if (name) {
+    if (!name) return
+    const statusEl = document.getElementById('profile-save-status')
+    if (statusEl) statusEl.textContent = ''
+    // 先回写云端；失败也落本地 KV，避免完全丢失用户输入
+    let cloudOk = false
+    try {
+      const r = await window.klaus?.klausAuth?.updateProfile?.(name)
+      cloudOk = !!r?.ok
+    } catch { cloudOk = false }
+    // main 成功时会广播 klausAuth:updated，自动刷新 KV + 侧栏；失败这里兜底
+    if (!cloudOk) {
       await settingsApi.kv.set('display_name', name)
-      document.getElementById('profile-name-display').textContent = name
-      document.getElementById('profile-save-status').textContent = tt('saved')
-      setTimeout(() => document.getElementById('profile-save-status').textContent = '', 2000)
-      // 统一走 bootstrapProfile —— 会正确处理头像（有图时不被首字母覆盖）和侧栏名
       if (typeof window.bootstrapProfile === 'function') window.bootstrapProfile()
     }
+    document.getElementById('profile-name-display').textContent = name
+    if (statusEl) statusEl.textContent = cloudOk ? tt('saved') : tt('saved') + ' (local)'
+    setTimeout(() => { if (statusEl) statusEl.textContent = '' }, 2000)
   })
 
   // Theme switch

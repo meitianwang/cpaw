@@ -57,6 +57,19 @@ export function getSessionToken(req: IncomingMessage): string {
   return parseCookies(req.headers.cookie)[COOKIE_NAME] ?? "";
 }
 
+// Resolve current user from either a web session cookie or a desktop Bearer
+// token. Lets profile/avatar endpoints serve both web and desktop clients
+// through the same route. Web session wins if both are present.
+function resolveAuthUser(req: IncomingMessage, userStore: UserStore) {
+  const token = getSessionToken(req);
+  const session = userStore.validateSession(token);
+  if (session) return session.user;
+  const authHeader = req.headers.authorization ?? "";
+  const match = authHeader.match(/^Bearer\s+(\S+)$/);
+  if (!match) return null;
+  return userStore.validateDesktopToken(match[1] ?? "");
+}
+
 function setSessionCookie(
   res: ServerResponse,
   token: string,
@@ -431,9 +444,8 @@ export async function handleAuthProfile(
     return;
   }
 
-  const token = getSessionToken(req);
-  const auth = userStore.validateSession(token);
-  if (!auth) {
+  const user = resolveAuthUser(req, userStore);
+  if (!user) {
     json(res, 401, { error: "not_authenticated" });
     return;
   }
@@ -457,8 +469,8 @@ export async function handleAuthProfile(
     return;
   }
 
-  userStore.setDisplayName(auth.user.id, displayName);
-  const updated = userStore.getUserById(auth.user.id);
+  userStore.setDisplayName(user.id, displayName);
+  const updated = userStore.getUserById(user.id);
   if (!updated) {
     json(res, 500, { error: "update_failed" });
     return;
@@ -485,9 +497,8 @@ export async function handleAvatarUpload(
     return;
   }
 
-  const token = getSessionToken(req);
-  const auth = userStore.validateSession(token);
-  if (!auth) {
+  const user = resolveAuthUser(req, userStore);
+  if (!user) {
     json(res, 401, { error: "not_authenticated" });
     return;
   }
@@ -506,13 +517,13 @@ export async function handleAvatarUpload(
       : contentType === "image/webp"
         ? "webp"
         : "jpg";
-  const fileName = `${auth.user.id}.${ext}`;
+  const fileName = `${user.id}.${ext}`;
   mkdirSync(AVATARS_DIR, { recursive: true });
 
   // Remove old avatar files with different extensions
   for (const oldExt of ["jpg", "png", "webp"]) {
     if (oldExt === ext) continue;
-    const oldPath = join(AVATARS_DIR, `${auth.user.id}.${oldExt}`);
+    const oldPath = join(AVATARS_DIR, `${user.id}.${oldExt}`);
     try {
       unlinkSync(oldPath);
     } catch {
@@ -523,9 +534,9 @@ export async function handleAvatarUpload(
   writeFileSync(join(AVATARS_DIR, fileName), body);
 
   const avatarUrl = `/api/avatars/${fileName}`;
-  userStore.setAvatarUrl(auth.user.id, avatarUrl);
+  userStore.setAvatarUrl(user.id, avatarUrl);
 
-  const updated = userStore.getUserById(auth.user.id);
+  const updated = userStore.getUserById(user.id);
   if (!updated) {
     json(res, 500, { error: "update_failed" });
     return;
