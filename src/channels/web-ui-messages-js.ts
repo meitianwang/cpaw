@@ -151,7 +151,10 @@ export function getMessagesJs(): string {
 
   sendBtn.addEventListener("click", send);
   input.addEventListener("keydown", function(e) {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    // IME 合成中按回车是在确认候选词，不应发送。isComposing 在 Chromium 上
+    // 按回车确认时可能已变 false，用 keyCode === 229 兜底。
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter" && !e.shiftKey) {
       var sm = document.getElementById("slash-menu");
       if (sm && !sm.classList.contains("hidden")) return;
       e.preventDefault(); send();

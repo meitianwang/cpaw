@@ -281,6 +281,8 @@ export function getChatMainJs(): string {
   }
 
   input.addEventListener("keydown", function(e) {
+    // IME 合成中不拦截（方向键/回车让给输入法）
+    if (e.isComposing || e.keyCode === 229) return;
     if (slashMenu.classList.contains("hidden")) return;
     var items = slashMenu.querySelectorAll(".slash-menu-item");
     if (!items.length) return;

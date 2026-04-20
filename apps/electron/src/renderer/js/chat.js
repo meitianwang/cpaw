@@ -1091,6 +1091,8 @@ function wireQuestionCard(card, req, questions) {
     if (card.classList.contains('question-resolved')) return
     const all = document.querySelectorAll('.question-card:not(.question-resolved)')
     if (all.length && all[all.length - 1] !== card) return
+    // 输入法合成中，回车是在选候选词，不是在提交
+    if (e.isComposing || e.keyCode === 229) return
     const active = document.activeElement
     if (e.key === 'Enter' && !e.shiftKey) {
       if (active && active.tagName === 'TEXTAREA') {
@@ -1385,6 +1387,10 @@ function updateSendBtn() {
 // ==================== Input events ====================
 
 inputEl.addEventListener('keydown', (e) => {
+  // IME 合成中（中/日/韩输入法候选词选择）按回车不应触发任何快捷行为。
+  // isComposing 在 Chromium 上并不总是可靠（按回车确认候选时常已变 false），
+  // 同时用 keyCode === 229 兜底，这是 W3C/业界通用做法。
+  if (e.isComposing || e.keyCode === 229) return
   // Slash menu navigation
   if (!slashMenu.classList.contains('hidden')) {
     if (e.key === 'ArrowDown') { e.preventDefault(); navigateSlashMenu(1); return }
