@@ -1847,11 +1847,13 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   transition: all 0.15s;
   position: relative;
 }
-.settings-theme-card.active .settings-theme-radio {
+.settings-theme-card.active .settings-theme-radio,
+.perm-row.active .settings-theme-radio {
   border-color: var(--accent, #2563eb);
   background: var(--accent, #2563eb);
 }
-.settings-theme-card.active .settings-theme-radio::after {
+.settings-theme-card.active .settings-theme-radio::after,
+.perm-row.active .settings-theme-radio::after {
   content: '';
   position: absolute;
   inset: 3px;
@@ -1860,33 +1862,9 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 }
 .settings-theme-label { font-size: 13px; color: var(--fg); font-weight: 500; }
 
-/* Permission mode cards */
-.settings-perm-card {
-  display: flex;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  cursor: pointer;
-  margin-bottom: 8px;
-  transition: all var(--transition);
-}
-.settings-perm-card:hover { border-color: var(--fg-tertiary); background: var(--bg-hover); }
-.settings-perm-card.active { border-color: var(--accent); background: rgba(99,102,241,0.05); }
-.settings-perm-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--fg-secondary);
-  flex-shrink: 0;
-}
-.settings-perm-card.active .settings-perm-icon { color: var(--accent); }
-.settings-perm-label { font-size: 14px; font-weight: 600; margin-bottom: 2px; color: var(--fg); }
-.settings-perm-desc { font-size: 12px; color: var(--fg-tertiary); line-height: 1.4; }
+/* Permission mode — 复用 pref-card 行布局 + theme-radio 指示器 */
+.perm-row { cursor: pointer; user-select: none; transition: background var(--transition); }
+.perm-row:hover { background: var(--bg-hover); }
 
 /* Model cards */
 .settings-card {

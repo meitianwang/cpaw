@@ -236,10 +236,19 @@ async function loadPreferencesTab(container) {
   container.innerHTML = `<div class="settings-section">
     <div class="settings-field">
       <label class="settings-field-label">${tt("permission_mode")}</label>
-      <div id="perm-options">
-        <div class="settings-perm-card ${permMode === 'default' ? 'active' : ''}" data-perm="default"><div class="settings-perm-icon">🛡</div><div><div class="settings-perm-label">${tt('perm_default')}</div><div class="settings-perm-desc">${tt('perm_default_desc')}</div></div></div>
-        <div class="settings-perm-card ${permMode === 'auto' ? 'active' : ''}" data-perm="auto"><div class="settings-perm-icon">⚡</div><div><div class="settings-perm-label">${tt('perm_auto')}</div><div class="settings-perm-desc">${tt('perm_auto_desc')}</div></div></div>
-        <div class="settings-perm-card ${permMode === 'bypassPermissions' ? 'active' : ''}" data-perm="bypassPermissions"><div class="settings-perm-icon">🔓</div><div><div class="settings-perm-label">${tt('perm_bypass')}</div><div class="settings-perm-desc">${tt('perm_bypass_desc')}</div></div></div>
+      <div class="pref-card" id="perm-options" style="margin-top:0">
+        <div class="pref-row perm-row ${permMode === 'default' ? 'active' : ''}" data-perm="default">
+          <div class="pref-row-text"><div class="pref-row-label">${tt('perm_default')}</div><div class="pref-row-desc">${tt('perm_default_desc')}</div></div>
+          <div class="settings-theme-radio"></div>
+        </div>
+        <div class="pref-row perm-row ${permMode === 'auto' ? 'active' : ''}" data-perm="auto">
+          <div class="pref-row-text"><div class="pref-row-label">${tt('perm_auto')}</div><div class="pref-row-desc">${tt('perm_auto_desc')}</div></div>
+          <div class="settings-theme-radio"></div>
+        </div>
+        <div class="pref-row perm-row ${permMode === 'bypassPermissions' ? 'active' : ''}" data-perm="bypassPermissions">
+          <div class="pref-row-text"><div class="pref-row-label">${tt('perm_bypass')}</div><div class="pref-row-desc">${tt('perm_bypass_desc')}</div></div>
+          <div class="settings-theme-radio"></div>
+        </div>
       </div>
     </div>
 
@@ -252,8 +261,8 @@ async function loadPreferencesTab(container) {
   </div>`
 
   container.querySelector('#perm-options')?.addEventListener('click', async (e) => {
-    const card = e.target.closest('.settings-perm-card'); if (!card) return
-    container.querySelectorAll('.settings-perm-card').forEach(c => c.classList.toggle('active', c.dataset.perm === card.dataset.perm))
+    const card = e.target.closest('.perm-row'); if (!card) return
+    container.querySelectorAll('.perm-row').forEach(c => c.classList.toggle('active', c.dataset.perm === card.dataset.perm))
     await settingsApi.kv.set('permission_mode', card.dataset.perm); showToast(tt('perm_mode_saved'))
   })
   container.querySelector('#pref-login-item')?.addEventListener('change', async (e) => {

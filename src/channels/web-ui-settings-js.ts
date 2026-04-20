@@ -119,17 +119,17 @@ export function getSettingsJs(): string {
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var mode = d.permission_mode || "default";
-        permOptionsEl.querySelectorAll(".settings-perm-card").forEach(function(c) {
+        permOptionsEl.querySelectorAll(".perm-row").forEach(function(c) {
           c.classList.toggle("active", c.getAttribute("data-perm") === mode);
         });
       }).catch(function() {});
   }
   loadUserPermissionMode();
   permOptionsEl.addEventListener("click", function(e) {
-    var card = e.target.closest(".settings-perm-card");
+    var card = e.target.closest(".perm-row");
     if (!card) return;
     var mode = card.getAttribute("data-perm");
-    permOptionsEl.querySelectorAll(".settings-perm-card").forEach(function(c) {
+    permOptionsEl.querySelectorAll(".perm-row").forEach(function(c) {
       c.classList.toggle("active", c.getAttribute("data-perm") === mode);
     });
     fetch("/api/user/settings", {
