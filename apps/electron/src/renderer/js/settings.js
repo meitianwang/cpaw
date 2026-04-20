@@ -782,22 +782,23 @@ function renderWhatsappFlow(body, connected) {
   })
 }
 
-// ==================== Skills (3 tabs: market / builtin / installed) ====================
+// ==================== Skills (2 tabs: market / installed) ====================
+// Note: QoderWork has a 3rd "built-in" tab for system skills, but Klaus has no
+// such concept — listAll() only surfaces user-installed skills — so we ship 2.
 async function loadSkillsTab(container) {
   const [installed, market] = await Promise.all([window.klaus.skills.list(), window.klaus.skills.market()])
 
-  const builtin = installed.filter(s => s.source === 'builtin')
-  const userInstalled = installed.filter(s => s.source !== 'builtin')
+  const userInstalled = installed
+
+  // Guard against stale state (user was on the old 'builtin' tab before upgrade)
+  if (skillsView !== 'market' && skillsView !== 'installed') skillsView = 'market'
 
   const tabs = [
     { key: 'market', label: tt('skills_tab_market'), count: market.length, showBadge: false },
-    { key: 'builtin', label: tt('skills_tab_builtin'), count: builtin.length, showBadge: builtin.length > 0 },
     { key: 'installed', label: tt('skills_tab_installed'), count: userInstalled.length, showBadge: userInstalled.length > 0 },
   ]
 
-  const baseList = skillsView === 'market' ? market
-    : skillsView === 'builtin' ? builtin
-    : userInstalled
+  const baseList = skillsView === 'market' ? market : userInstalled
   const filtered = applySkillsFilters(baseList, skillsView)
 
   const refreshSvg = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 5a5.5 5.5 0 1 0 .5 4"/><polyline points="13.5,2 13.5,5 10.5,5"/></svg>`
@@ -832,7 +833,6 @@ async function loadSkillsTab(container) {
       </div>
 
       ${skillsView === 'market' ? `<div class="sk-section-label">${tt('skills_section_official')}</div>` : ''}
-      ${skillsView === 'builtin' && builtin.length === 0 ? `<p class="empty-text sk-empty">${tt('skills_section_builtin_empty')}</p>` : ''}
       <div class="sk-grid" id="sk-grid">${renderSkillCards(filtered, skillsView)}</div>
 
       <!-- Upload modal -->
