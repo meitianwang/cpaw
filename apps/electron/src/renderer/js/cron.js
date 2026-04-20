@@ -332,11 +332,7 @@
   function createViaKlaus() {
     hide()
     const seed = t('cron_via_klaus_seed',
-      'I want to create a scheduled task. Please help me work out:\n' +
-      '1. What the task should do (the content you want Klaus to run)\n' +
-      '2. How often it should run (daily / weekly / weekdays / a specific time)\n' +
-      '3. A short name for it\n' +
-      'Then confirm the details and I\'ll add it on the Scheduled Tasks page.')
+      'I want to create a scheduled task. Run [task] every [interval].')
     // Land on a fresh chat with the prompt pre-filled
     const startFresh = async () => {
       try {
