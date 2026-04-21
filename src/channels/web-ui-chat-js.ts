@@ -236,6 +236,13 @@ export function getChatMainJs(): string {
     }
   }
 
+  // 草稿徽章只在"空会话 + 输入区有内容"时显示。跟桌面端同一套判定。
+  function sessionHasMessages(s) {
+    if (s.id === currentSessionId) return !!msgs.firstChild;
+    if (sessionDom.has(s.id)) return true;
+    return s.title !== "New Chat";
+  }
+
   function renderSessionList() {
     sessionListEl.innerHTML = "";
     sessionsMeta.forEach(function(s) {
@@ -262,7 +269,7 @@ export function getChatMainJs(): string {
       del.onclick = function(e) { deleteSession(s.id, e); };
       el.appendChild(icon);
       el.appendChild(title);
-      if (hasDraft(s.id)) {
+      if (hasDraft(s.id) && !sessionHasMessages(s)) {
         var draftBadge = document.createElement("span");
         draftBadge.className = "s-draft-badge";
         draftBadge.textContent = tt("draft_badge");

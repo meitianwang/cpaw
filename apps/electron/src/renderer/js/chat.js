@@ -16,6 +16,8 @@ const thinkingUI = {
   startTime: 0,
   show() {
     if (this.el) return // 幂等
+    // 新一轮思考开始前先给上一段 text block 收口，避免旧 msg-group 被后续 text_delta 回填
+    finalizeStream()
     this.startTime = Date.now()
     const el = document.createElement('div')
     el.className = 'thinking-indicator'
@@ -210,6 +212,16 @@ function detectChannelPrefix(sessionId) {
   return null
 }
 
+// 草稿徽章只在"空会话 + 输入区有内容"时显示。空会话判定：
+// 当前会话看 messagesEl 里有没有 DOM；非当前看 DOM 缓存；title 被 auto-title
+// 覆盖过（!== 'New Chat'）直接视为有消息——后端只有 registry-only 会话才叫
+// 'New Chat'，一旦落盘就会拿 firstPrompt.slice(0,50) 当 title。
+function sessionHasMessages(s) {
+  if (s.id === currentSessionId) return messagesEl.childNodes.length > 0
+  if (sessionDom.has(s.id)) return true
+  return s.title !== 'New Chat'
+}
+
 function renderSessionList() {
   sessionListEl.innerHTML = ''
   for (const s of sessions) {
@@ -219,7 +231,8 @@ function renderSessionList() {
     const ch = detectChannelPrefix(s.id)
     const badgeHtml = ch ? `<span class="s-channel-badge">${escapeHtml(tt('settings_ch_' + ch))}</span>` : ''
     const hasDraft = (sessionDrafts.get(s.id) || '').trim().length > 0
-    const draftHtml = hasDraft ? `<span class="s-draft-badge">${escapeHtml(tt('draft_badge'))}</span>` : ''
+    const showDraft = hasDraft && !sessionHasMessages(s)
+    const draftHtml = showDraft ? `<span class="s-draft-badge">${escapeHtml(tt('draft_badge'))}</span>` : ''
     div.innerHTML = `${badgeHtml}<div class="s-title">${escapeHtml(displayTitle)}</div>${draftHtml}<button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
     div.onclick = () => switchSession(s.id)
     div.querySelector('.s-del').onclick = (e) => { e.stopPropagation(); deleteSession(s.id) }
@@ -360,10 +373,8 @@ async function send() {
   btnSend.classList.add('busy')      // 切到停止图标 + 深色实心
   const finalText = inputEl.value.trim()
   inputEl.value = ''; autoResize(); hideSlashMenu()
-  // 发送后清掉本会话的草稿（currentSessionId 此时已由 newChat() 兜底）
-  if (currentSessionId && sessionDrafts.has(currentSessionId)) {
-    sessionDrafts.delete(currentSessionId); persistDrafts()
-  }
+  // 发送后清掉本会话的草稿（走 setDraft 以便触发侧栏重渲染，去掉残留的草稿徽章）
+  if (currentSessionId) setDraft(currentSessionId, '')
 
   // Collect uploaded file paths
   const media = pendingFiles
@@ -616,6 +627,11 @@ function finalizeStream() {
     msgEl.classList.remove('streaming')
     postProcessMsg(msgEl)
   }
+  // 对齐 cc 的 content-block 模型：每段 text block 到此收口。
+  // 下一段 text_delta 必须新建 msg-group，不能回填旧组——否则 tool_use 之后的第二段正文
+  // 会覆盖到第一段上面的旧气泡里，顺序和光标都会错位。
+  currentMsgGroup = null
+  streamBuffer = ''
 }
 
 // ==================== Tool rendering ====================

@@ -138,11 +138,8 @@ export function getMessagesJs(): string {
     renderPreviews();
 
     input.value = ""; input.style.height = "auto";
-    // 清掉本会话草稿
-    if (currentSessionId && typeof sessionDrafts !== "undefined" && sessionDrafts.has(currentSessionId)) {
-      sessionDrafts.delete(currentSessionId);
-      persistDrafts();
-    }
+    // 清掉本会话草稿（走 setDraft 以便触发侧栏重渲染，去掉残留徽章）
+    if (currentSessionId && typeof setDraft === "function") setDraft(currentSessionId, "");
     busy = true; updateBtn(); showThinking();
     updateSessionTitle(text);
     if (ws && ws.readyState === WebSocket.OPEN) {
