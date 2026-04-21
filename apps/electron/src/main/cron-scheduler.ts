@@ -85,10 +85,12 @@ export class CronScheduler {
 
   private async execute(task: CronTask, trigger: CronRunTrigger): Promise<void> {
     this.running.set(task.id, true)
-    const sessionId = `cron-${task.id}`
     const startedAt = Date.now()
-    const runId = this.store.createCronRun(task.id, task.name ?? task.id, trigger)
-    console.log(`[CronScheduler] Executing task: ${task.id} (${trigger}, run=${runId})`)
+    // Each run gets its own sessionId (minted by the store) so the sidebar
+    // can show every execution as an independent chat thread. The engine
+    // creates the session lazily on first chat() call.
+    const { id: runId, sessionId } = this.store.createCronRun(task.id, task.name ?? task.id, trigger)
+    console.log(`[CronScheduler] Executing task: ${task.id} (${trigger}, run=${runId}, session=${sessionId})`)
 
     try {
       await this.engine.chat(sessionId, task.prompt)

@@ -82,6 +82,7 @@ export interface CronRun {
   id: number
   taskId: string
   taskName: string
+  sessionId: string
   startedAt: number
   finishedAt: number | null
   durationMs: number | null

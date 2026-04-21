@@ -91,6 +91,54 @@ function setDraft(sessionId, text) {
 }
 let userMenuOpen = false
 
+// --- Sidebar cron group state ---
+// The pinned "定时任务" group at the top of the session list. Each task is a
+// collapsible row; each expanded task shows its per-run sessionIds as clickable
+// sub-items (one execution = one chat thread, via CronScheduler per-run ids).
+let cronTasks = []                           // CronTask[] fetched on demand
+const cronRunsByTask = new Map()             // taskId → CronRun[]
+let cronGroupExpanded = localStorage.getItem('klaus_cron_group_expanded') !== '0'
+const cronTaskExpanded = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem('klaus_cron_tasks_expanded') || '[]')) }
+  catch { return new Set() }
+})()
+function persistCronExpanded() {
+  try {
+    localStorage.setItem('klaus_cron_group_expanded', cronGroupExpanded ? '1' : '0')
+    localStorage.setItem('klaus_cron_tasks_expanded', JSON.stringify([...cronTaskExpanded]))
+  } catch {}
+}
+function isCronRunSession(id) { return typeof id === 'string' && id.startsWith('cron-run-') }
+
+// Exposed so cron.js (the full Scheduled Tasks view) can force a sidebar
+// refresh after create/edit/delete without knowing about chat.js internals.
+window.refreshCronSidebar = () => refreshCronTasksForSidebar()
+async function refreshCronTasksForSidebar() {
+  try {
+    cronTasks = (await klausApi.settings.cron.list()) || []
+    // Preload runs for tasks the user has expanded so the first expand
+    // doesn't flicker empty-then-populated.
+    await Promise.all([...cronTaskExpanded].map(async (tid) => {
+      try {
+        const runs = (await klausApi.settings.cron.runs({ taskId: tid, limit: 100 })) || []
+        cronRunsByTask.set(tid, runs)
+      } catch { cronRunsByTask.set(tid, []) }
+    }))
+  } catch (err) {
+    console.warn('[Sidebar] cron load failed:', err)
+    cronTasks = []
+  }
+  renderSessionList()
+}
+
+async function refreshCronRunsForTask(taskId) {
+  try {
+    const runs = (await klausApi.settings.cron.runs({ taskId, limit: 100 })) || []
+    cronRunsByTask.set(taskId, runs)
+  } catch { cronRunsByTask.set(taskId, []) }
+  renderSessionList()
+}
+
 // --- DOM refs ---
 const messagesEl = document.getElementById('messages')
 const welcomeEl = document.getElementById('welcome')
@@ -147,6 +195,10 @@ async function init() {
   if (sidebarCollapsed) document.getElementById('sidebar')?.classList.add('collapsed')
 
   sessions = await klausApi.session.list()
+  // Kick off cron sidebar load in parallel — it renders the pinned "定时任务"
+  // group above the flat session list. Non-blocking: renderSessionList() runs
+  // now with an empty cronTasks, then re-renders once tasks arrive.
+  refreshCronTasksForSidebar()
   renderSessionList()
   updateWelcomeGreeting()
   refreshAuthPill()
@@ -224,7 +276,12 @@ function sessionHasMessages(s) {
 
 function renderSessionList() {
   sessionListEl.innerHTML = ''
+  // Pinned "定时任务" group at the top. Renders nothing when no cron tasks.
+  renderCronSidebarGroup()
+  // Regular flat sessions, excluding cron-run sessions (they live under
+  // their task in the pinned group above).
   for (const s of sessions) {
+    if (isCronRunSession(s.id)) continue
     const div = document.createElement('div')
     div.className = 'session-item' + (s.id === currentSessionId ? ' active' : '')
     const displayTitle = s.title && s.title !== 'New Chat' ? s.title : tt('new_chat')
@@ -238,6 +295,104 @@ function renderSessionList() {
     div.querySelector('.s-del').onclick = (e) => { e.stopPropagation(); deleteSession(s.id) }
     sessionListEl.appendChild(div)
   }
+}
+
+// Pinned "定时任务" group at top of the sidebar. Two-level collapse:
+// outer group header → list of tasks; each task header → list of runs.
+// Click a run to open its dedicated chat thread via switchSession().
+function renderCronSidebarGroup() {
+  if (!cronTasks || cronTasks.length === 0) return
+  const group = document.createElement('div')
+  group.className = 'cron-sb-group' + (cronGroupExpanded ? ' open' : '')
+
+  const head = document.createElement('div')
+  head.className = 'cron-sb-head'
+  head.innerHTML = `
+    <svg class="cron-sb-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4.5,3 7.5,6 4.5,9"/></svg>
+    <svg class="cron-sb-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><polyline points="8,4 8,8 10.5,9.5"/></svg>
+    <span class="cron-sb-title">${escapeHtml(tt('cron'))}</span>`
+  head.onclick = () => {
+    cronGroupExpanded = !cronGroupExpanded
+    persistCronExpanded()
+    renderSessionList()
+  }
+  group.appendChild(head)
+
+  if (cronGroupExpanded) {
+    const body = document.createElement('div')
+    body.className = 'cron-sb-body'
+    for (const task of cronTasks) {
+      body.appendChild(renderCronSidebarTask(task))
+    }
+    group.appendChild(body)
+  }
+  sessionListEl.appendChild(group)
+}
+
+function renderCronSidebarTask(task) {
+  const expanded = cronTaskExpanded.has(task.id)
+  const wrap = document.createElement('div')
+  wrap.className = 'cron-sb-task' + (expanded ? ' open' : '')
+
+  const head = document.createElement('div')
+  head.className = 'cron-sb-task-head'
+  const title = task.name || task.id
+  head.innerHTML = `
+    <svg class="cron-sb-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4.5,3 7.5,6 4.5,9"/></svg>
+    <span class="cron-sb-task-title">${escapeHtml(title)}</span>`
+  head.onclick = async () => {
+    if (cronTaskExpanded.has(task.id)) {
+      cronTaskExpanded.delete(task.id)
+      persistCronExpanded()
+      renderSessionList()
+    } else {
+      cronTaskExpanded.add(task.id)
+      persistCronExpanded()
+      // Always re-fetch on expand — a run may have fired while this task
+      // was collapsed (the chat-event refresh only pokes currently-open tasks).
+      // refreshCronRunsForTask ends with a renderSessionList() call.
+      await refreshCronRunsForTask(task.id)
+    }
+  }
+  wrap.appendChild(head)
+
+  if (expanded) {
+    const runs = cronRunsByTask.get(task.id) || []
+    const body = document.createElement('div')
+    body.className = 'cron-sb-runs'
+    if (runs.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'cron-sb-run-empty'
+      empty.textContent = tt('cron_runs_empty')
+      body.appendChild(empty)
+    } else {
+      for (const run of runs) {
+        body.appendChild(renderCronSidebarRun(run))
+      }
+    }
+    wrap.appendChild(body)
+  }
+  return wrap
+}
+
+function renderCronSidebarRun(run) {
+  const el = document.createElement('div')
+  const active = run.sessionId && run.sessionId === currentSessionId
+  el.className = 'cron-sb-run' + (active ? ' active' : '')
+  const label = formatCronRunLabel(run)
+  const dot = run.status === 'failed' ? 'failed' : run.status === 'running' ? 'running' : 'success'
+  el.innerHTML = `<span class="cron-sb-run-dot ${dot}"></span><span class="cron-sb-run-label">${escapeHtml(label)}</span>`
+  el.onclick = () => {
+    if (!run.sessionId) return
+    switchSession(run.sessionId)
+  }
+  return el
+}
+
+function formatCronRunLabel(run) {
+  const d = new Date(run.startedAt)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 async function switchSession(id) {
@@ -319,6 +474,7 @@ async function newChat() {
   const reusable = sessions.find(s =>
     s.title === 'New Chat'
     && !detectChannelPrefix(s.id)
+    && !isCronRunSession(s.id)
     && !(sessionDrafts.get(s.id) || '').trim(),
   )
   if (reusable) {
@@ -1283,7 +1439,16 @@ klausApi.on.notifySound?.((kind) => playNotifySound(kind))
 // so its title/mtime updates are visible.
 klausApi.on.chatEvent((event) => {
   if (event.sessionId && event.sessionId !== currentSessionId) {
-    if (event.type === 'done') updateSessionInList()
+    if (event.type === 'done') {
+      updateSessionInList()
+      // Cron scheduler just finished a run in the background — pull fresh
+      // runs for every expanded task so the new execution appears. (The
+      // sessionId encoding doesn't uniquely identify the taskId because
+      // taskIds may themselves contain hyphens.)
+      if (isCronRunSession(event.sessionId)) {
+        for (const tid of cronTaskExpanded) refreshCronRunsForTask(tid)
+      }
+    }
     return
   }
 

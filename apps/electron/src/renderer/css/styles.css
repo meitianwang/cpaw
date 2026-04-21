@@ -207,6 +207,94 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .session-item:hover .s-del { display: block; }
 .session-item .s-del:hover { color: #dc2626; background: rgba(220,38,38,0.08); }
 
+/* ---- Pinned 定时任务 sidebar group ---- */
+.cron-sb-group { margin-bottom: 6px; }
+.cron-sb-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--fg-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  user-select: none;
+}
+.cron-sb-head:hover { background: var(--bg-hover); color: var(--fg); }
+.cron-sb-caret {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  transition: transform .15s ease;
+  color: var(--fg-tertiary);
+}
+.cron-sb-group.open > .cron-sb-head .cron-sb-caret { transform: rotate(90deg); }
+.cron-sb-icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--fg-tertiary); }
+.cron-sb-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cron-sb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+}
+.cron-sb-task { display: flex; flex-direction: column; }
+.cron-sb-task-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 18px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--fg-secondary);
+  font-size: 13px;
+  user-select: none;
+}
+.cron-sb-task-head:hover { background: var(--bg-hover); color: var(--fg); }
+.cron-sb-task.open > .cron-sb-task-head .cron-sb-caret { transform: rotate(90deg); }
+.cron-sb-task-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cron-sb-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0;
+}
+.cron-sb-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 34px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cron-sb-run:hover { background: var(--bg-hover); color: var(--fg); }
+.cron-sb-run.active { background: var(--bg-hover); color: var(--fg); font-weight: 500; }
+.cron-sb-run-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.cron-sb-run-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+.cron-sb-run-dot.failed { background: #dc2626; }
+.cron-sb-run-dot.running { background: #3b82f6; animation: cron-sb-pulse 1.2s ease-in-out infinite; }
+.cron-sb-run-empty {
+  padding: 6px 8px 6px 34px;
+  font-size: 12px;
+  color: var(--fg-quaternary);
+  font-style: italic;
+}
+@keyframes cron-sb-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding: 12px 16px;

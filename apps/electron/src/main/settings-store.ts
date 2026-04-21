@@ -78,6 +78,7 @@ export class SettingsStore {
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id      TEXT NOT NULL,
         task_name    TEXT NOT NULL,
+        session_id   TEXT NOT NULL DEFAULT '',
         started_at   INTEGER NOT NULL,
         finished_at  INTEGER,
         duration_ms  INTEGER,
@@ -122,6 +123,15 @@ export class SettingsStore {
     }
     if (!cronCols.has('timezone')) {
       this.db.exec(`ALTER TABLE cron_tasks ADD COLUMN timezone TEXT;`)
+    }
+
+    const cronRunCols = cols('cron_runs')
+    if (!cronRunCols.has('session_id')) {
+      // Dev stage: wipe old cron_runs on first migration so every row has a
+      // real per-run sessionId the sidebar can open. Old rows shared
+      // `cron-<taskId>` and don't fit the new per-run model.
+      this.db.exec(`DELETE FROM cron_runs;`)
+      this.db.exec(`ALTER TABLE cron_runs ADD COLUMN session_id TEXT NOT NULL DEFAULT '';`)
     }
   }
 
@@ -361,12 +371,15 @@ export class SettingsStore {
 
   // --- Cron runs (execution history) ---
 
-  createCronRun(taskId: string, taskName: string, triggerType: CronRunTrigger): number {
+  createCronRun(taskId: string, taskName: string, triggerType: CronRunTrigger): { id: number; sessionId: string } {
     const now = Date.now()
+    // Per-run sessionId so the sidebar "定时任务" group can open each execution
+    // as its own chat. Prefix keeps them filterable out of the flat list.
+    const sessionId = `cron-run-${taskId}-${now}-${Math.random().toString(36).slice(2, 8)}`
     const info = this.db.prepare(
-      'INSERT INTO cron_runs (task_id, task_name, started_at, trigger_type, status) VALUES (?, ?, ?, ?, ?)'
-    ).run(taskId, taskName, now, triggerType, 'running')
-    return Number(info.lastInsertRowid)
+      'INSERT INTO cron_runs (task_id, task_name, session_id, started_at, trigger_type, status) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(taskId, taskName, sessionId, now, triggerType, 'running')
+    return { id: Number(info.lastInsertRowid), sessionId }
   }
 
   finishCronRun(id: number, status: Exclude<CronRunStatus, 'running'>, durationMs: number, error?: string | null): void {
@@ -450,6 +463,7 @@ function rowToCronRun(r: any): CronRun {
     id: r.id,
     taskId: r.task_id,
     taskName: r.task_name,
+    sessionId: r.session_id ?? '',
     startedAt: r.started_at,
     finishedAt: r.finished_at ?? null,
     durationMs: r.duration_ms ?? null,

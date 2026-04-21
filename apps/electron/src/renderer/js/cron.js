@@ -428,6 +428,9 @@
     cachedTasks = tasks
     populateRunsTaskFilter(tasks)
     renderTasks()
+    // Keep the left-sidebar "定时任务" pinned group in sync with whatever
+    // just changed here (new/edited/deleted/toggled task).
+    try { window.refreshCronSidebar?.() } catch {}
   }
 
   function renderTasks() {
