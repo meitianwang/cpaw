@@ -300,8 +300,9 @@ function renderSessionList() {
 // Pinned "定时任务" group at top of the sidebar. Two-level collapse:
 // outer group header → list of tasks; each task header → list of runs.
 // Click a run to open its dedicated chat thread via switchSession().
+// Always renders — even with zero tasks — so the folder is a stable entry
+// point for users to go create one.
 function renderCronSidebarGroup() {
-  if (!cronTasks || cronTasks.length === 0) return
   const group = document.createElement('div')
   group.className = 'cron-sb-group' + (cronGroupExpanded ? ' open' : '')
 
@@ -321,8 +322,15 @@ function renderCronSidebarGroup() {
   if (cronGroupExpanded) {
     const body = document.createElement('div')
     body.className = 'cron-sb-body'
-    for (const task of cronTasks) {
-      body.appendChild(renderCronSidebarTask(task))
+    if (!cronTasks || cronTasks.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'cron-sb-task-empty'
+      empty.textContent = tt('cron_no_tasks') || tt('cron_runs_empty')
+      body.appendChild(empty)
+    } else {
+      for (const task of cronTasks) {
+        body.appendChild(renderCronSidebarTask(task))
+      }
     }
     group.appendChild(body)
   }

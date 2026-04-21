@@ -290,6 +290,12 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   color: var(--fg-quaternary);
   font-style: italic;
 }
+.cron-sb-task-empty {
+  padding: 8px 10px 8px 18px;
+  font-size: 12px;
+  color: var(--fg-quaternary);
+  font-style: italic;
+}
 @keyframes cron-sb-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.3; }
