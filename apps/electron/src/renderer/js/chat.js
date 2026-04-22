@@ -113,6 +113,30 @@ function persistCronExpanded() {
 }
 function isCronRunSession(id) { return typeof id === 'string' && id.startsWith('cron-run-') }
 
+// Unread-run tracking — persists per-run-session "has the user opened this
+// yet?" across restarts. When a cron run finishes, its sessionId is still
+// out of the set → the task row shows a blue dot. On switchSession, we add
+// the id so the dot clears. Running runs force the dot regardless of read
+// state (pulsing animation indicates "in flight").
+const cronReadRuns = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem('klaus_cron_read_runs') || '[]')) }
+  catch { return new Set() }
+})()
+function markCronRunRead(sessionId) {
+  if (!sessionId || !isCronRunSession(sessionId) || cronReadRuns.has(sessionId)) return
+  cronReadRuns.add(sessionId)
+  try { localStorage.setItem('klaus_cron_read_runs', JSON.stringify([...cronReadRuns])) } catch {}
+}
+function runNeedsDot(run) {
+  if (!run) return false
+  if (run.status === 'running') return true
+  return !!run.sessionId && !cronReadRuns.has(run.sessionId)
+}
+function taskHasUnread(taskId) {
+  const runs = cronRunsByTask.get(taskId) || []
+  return runs.some(runNeedsDot)
+}
+
 // Channel display label — reuses the settings_ch_<id> keys that the
 // Channels settings page already localizes (微信 / 飞书 / 钉钉 / ...). Stays
 // current with the locale without us maintaining a second table.
@@ -157,14 +181,23 @@ async function refreshCronTasksForSidebar() {
     const keep = new Set(cronTasks.map(t => t.id))
     for (const tid of [...cronRunsByTask.keys()]) if (!keep.has(tid)) cronRunsByTask.delete(tid)
     for (const tid of [...cronTaskExpanded]) if (!keep.has(tid)) cronTaskExpanded.delete(tid)
-    // Preload runs for tasks the user has expanded so the first expand
-    // doesn't flicker empty-then-populated.
-    await Promise.all([...cronTaskExpanded].map(async (tid) => {
-      try {
-        const runs = (await klausApi.settings.cron.runs({ taskId: tid, limit: 100 })) || []
-        cronRunsByTask.set(tid, runs)
-      } catch { cronRunsByTask.set(tid, []) }
-    }))
+    // Pull a bounded page of recent runs across all tasks and fan them
+    // out per-task. Serves two purposes: expanded tasks get their runs
+    // preloaded (no flicker on first paint), and collapsed tasks get the
+    // run data needed to compute task-level unread dots. One IPC call
+    // instead of N-per-task.
+    try {
+      const runs = (await klausApi.settings.cron.runs({ limit: 500 })) || []
+      const byTask = new Map()
+      for (const r of runs) {
+        if (!r?.taskId) continue
+        if (!byTask.has(r.taskId)) byTask.set(r.taskId, [])
+        byTask.get(r.taskId).push(r)
+      }
+      for (const task of cronTasks) {
+        cronRunsByTask.set(task.id, byTask.get(task.id) || [])
+      }
+    } catch {}
     // If the currently-open chat is a cron-run whose task got deleted, the
     // JSONL is gone — the viewport is showing a zombie. Pull the engine's
     // fresh session list and fall back to the first surviving one (or the
@@ -195,6 +228,28 @@ async function refreshCronRunsForTask(taskId) {
     const runs = (await klausApi.settings.cron.runs({ taskId, limit: 100 })) || []
     cronRunsByTask.set(taskId, runs)
   } catch { cronRunsByTask.set(taskId, []) }
+  renderSessionList()
+}
+
+// Refresh runs for every known task in one IPC call. The task-level unread
+// dot depends on `cronRunsByTask.get(taskId)` — collapsed tasks never get
+// their runs refreshed on the normal event path, so a freshly-fired
+// scheduled run wouldn't surface any badge. This grabs a bounded page of
+// the newest runs across all tasks and fans them out per-task.
+async function refreshCronRunsForAllTasks() {
+  if (!cronTasks || cronTasks.length === 0) return
+  try {
+    const runs = (await klausApi.settings.cron.runs({ limit: 500 })) || []
+    const byTask = new Map()
+    for (const r of runs) {
+      if (!r?.taskId) continue
+      if (!byTask.has(r.taskId)) byTask.set(r.taskId, [])
+      byTask.get(r.taskId).push(r)
+    }
+    for (const task of cronTasks) {
+      cronRunsByTask.set(task.id, byTask.get(task.id) || [])
+    }
+  } catch {}
   renderSessionList()
 }
 
@@ -367,9 +422,18 @@ function renderSessionList() {
   }
 }
 
-// Pinned "定时任务" group at top of the sidebar. Two-level collapse:
-// outer group header → list of tasks; each task header → list of runs.
-// Click a run to open its dedicated chat thread via switchSession().
+// Pinned "定时任务" group at top of the sidebar.
+//
+// Layout (per reference design):
+//   ▸ Group header: muted label on the left, caret on the right. The
+//     common "caret-on-left disclosure" pattern is inverted so the header
+//     reads as a soft section title rather than a clickable tree node.
+//   ▸ Task row: clock icon + name on left, unread dot on right. Expand
+//     caret only appears on hover (or when the task is already open), so
+//     collapsed tasks look like flat leaf entries.
+//   ▸ Run sub-row (task.open): timestamp + unread dot. Clicking a run
+//     opens its dedicated chat thread.
+//
 // Always renders — even with zero tasks — so the folder is a stable entry
 // point for users to go create one.
 function renderCronSidebarGroup() {
@@ -379,9 +443,8 @@ function renderCronSidebarGroup() {
   const head = document.createElement('div')
   head.className = 'cron-sb-head'
   head.innerHTML = `
-    <svg class="cron-sb-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4.5,3 7.5,6 4.5,9"/></svg>
-    <svg class="cron-sb-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><polyline points="8,4 8,8 10.5,9.5"/></svg>
-    <span class="cron-sb-title">${escapeHtml(tt('cron'))}</span>`
+    <span class="cron-sb-title">${escapeHtml(tt('cron'))}</span>
+    <svg class="cron-sb-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4.5,3 7.5,6 4.5,9"/></svg>`
   head.onclick = () => {
     cronGroupExpanded = !cronGroupExpanded
     persistCronExpanded()
@@ -415,9 +478,16 @@ function renderCronSidebarTask(task) {
   const head = document.createElement('div')
   head.className = 'cron-sb-task-head'
   const title = task.name || task.id
+  const unread = taskHasUnread(task.id)
+  // Caret + clock + title + unread dot. CSS hides the caret unless the
+  // row is hovered or the task is already open (`.cron-sb-task.open`).
+  // Result: collapsed tasks look like leaf entries with just the clock
+  // icon; hovering reveals that they're expandable.
   head.innerHTML = `
     <svg class="cron-sb-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4.5,3 7.5,6 4.5,9"/></svg>
-    <span class="cron-sb-task-title">${escapeHtml(title)}</span>`
+    <svg class="cron-sb-task-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><polyline points="8,4 8,8 10.5,9.5"/></svg>
+    <span class="cron-sb-task-title">${escapeHtml(title)}</span>
+    ${unread ? '<span class="cron-sb-dot"></span>' : ''}`
   head.onclick = async () => {
     if (cronTaskExpanded.has(task.id)) {
       cronTaskExpanded.delete(task.id)
@@ -488,7 +558,16 @@ function renderCronSidebarRun(run, parentTask) {
   const active = run.sessionId && run.sessionId === currentSessionId
   el.className = 'cron-sb-run' + (active ? ' active' : '')
   const label = formatCronRunLabel(run)
-  const dot = run.status === 'failed' ? 'failed' : run.status === 'running' ? 'running' : 'success'
+  // Status tint on the dot: running pulses, failed is red, everything
+  // else (success) uses the default blue. But the dot only shows if the
+  // run genuinely needs attention — running OR unread.
+  const needsDot = runNeedsDot(run)
+  let dotClass = ''
+  if (needsDot) {
+    if (run.status === 'failed') dotClass = 'failed'
+    else if (run.status === 'running') dotClass = 'running'
+    else dotClass = 'unread'
+  }
   // Tiny channel badge on runs whose parent task is IM-bound — hints that
   // the run's final text also lands in a remote chat. Purely informational;
   // clicking still opens the in-app cron-run view.
@@ -499,7 +578,8 @@ function renderCronSidebarRun(run, parentTask) {
     // English labels like "Feishu" clip to "Fe" which is fine for a 20px badge.
     channelBadge = `<span class="cron-sb-run-channel" title="${escapeHtml(chLabel)}">${escapeHtml(chLabel.slice(0, 2))}</span>`
   }
-  el.innerHTML = `<span class="cron-sb-run-dot ${dot}"></span><span class="cron-sb-run-label">${escapeHtml(label)}</span>${channelBadge}`
+  const dotHtml = needsDot ? `<span class="cron-sb-dot ${dotClass}"></span>` : ''
+  el.innerHTML = `<span class="cron-sb-run-label">${escapeHtml(label)}</span>${channelBadge}${dotHtml}`
   el.onclick = () => {
     if (!run.sessionId) return
     switchSession(run.sessionId)
@@ -551,6 +631,10 @@ async function switchSession(id) {
   }
 
   currentSessionId = id
+  // Entering a cron-run session clears its "unread" mark — the next
+  // renderSessionList reflects that (dot removed from the run row, and
+  // from the parent task row if this was the last unread one).
+  if (isCronRunSession(id)) markCronRunRead(id)
   renderSessionList()
   renderCronChannelBanner(id)
   messagesEl.innerHTML = ''
@@ -1576,13 +1660,12 @@ klausApi.on.chatEvent((event) => {
   if (event.sessionId && event.sessionId !== currentSessionId) {
     if (event.type === 'done') {
       updateSessionInList()
-      // Cron scheduler just finished a run in the background — pull fresh
-      // runs for every expanded task so the new execution appears. (The
-      // sessionId encoding doesn't uniquely identify the taskId because
-      // taskIds may themselves contain hyphens.)
-      if (isCronRunSession(event.sessionId)) {
-        for (const tid of cronTaskExpanded) refreshCronRunsForTask(tid)
-      }
+      // Cron scheduler just finished a run in the background. We refresh
+      // runs for EVERY known task (not just expanded ones) so the task-
+      // level unread dot can appear even while that task's run list is
+      // collapsed — otherwise the user doesn't see anything changed in the
+      // sidebar after a scheduled task fires.
+      if (isCronRunSession(event.sessionId)) refreshCronRunsForAllTasks()
     }
     return
   }
@@ -1646,13 +1729,10 @@ klausApi.on.chatEvent((event) => {
       btnSend.disabled = !inputEl.value.trim()
       inputEl.focus()
       updateSessionInList()
-      // If the session that just finished is a cron run, flip its sidebar
-      // status dot from running→success/failed. The "other session" branch
-      // above handles this too, but that branch doesn't fire when the user
-      // is actively viewing the run (currentSessionId matches).
-      if (isCronRunSession(event.sessionId)) {
-        for (const tid of cronTaskExpanded) refreshCronRunsForTask(tid)
-      }
+      // If the session that just finished is a cron run, refresh runs for
+      // every task so the task-level unread dot can update — same reason
+      // as the off-screen "done" branch above.
+      if (isCronRunSession(event.sessionId)) refreshCronRunsForAllTasks()
       break
   }
 })
