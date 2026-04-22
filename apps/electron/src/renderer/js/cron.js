@@ -71,15 +71,12 @@
   const saveBtn = document.getElementById('cron-form-save')
   const cancelBtn = document.getElementById('cron-form-cancel')
 
-  // Built-in channel plugin ids → display labels (fallback when i18n missing).
-  const CHANNEL_LABELS = {
-    feishu: 'Feishu',
-    dingtalk: 'DingTalk',
-    wechat: 'WeChat',
-    wecom: 'WeCom',
-    qq: 'QQ',
-    telegram: 'Telegram',
-    whatsapp: 'WhatsApp',
+  // Channel display label — reuses the settings_ch_<id> keys that the
+  // Channels settings page already localizes (微信 / 飞书 / 钉钉 / ...).
+  function channelLabelOf(id) {
+    const key = 'settings_ch_' + id
+    const v = window.tt ? window.tt(key) : key
+    return v === key ? id : v
   }
 
   // Bound on first form open and re-bound on language change. Items rebuilt
@@ -497,7 +494,7 @@
     const binding = task.channelBinding
     let bindingHtml = ''
     if (binding) {
-      const chLabel = CHANNEL_LABELS[binding.channelId] || binding.channelId
+      const chLabel = channelLabelOf(binding.channelId)
       const target = binding.chatType === 'group'
         ? (t('cron_form_channel_group', '群 · ') + (binding.label || binding.targetId))
         : (binding.label || t('cron_form_channel_me', '发给你本人'))
@@ -802,7 +799,7 @@
       fChannelBoundEl.hidden = false
       if (task?.channelBinding) {
         const b = task.channelBinding
-        const label = CHANNEL_LABELS[b.channelId] || b.channelId
+        const label = channelLabelOf(b.channelId)
         const target = b.chatType === 'group'
           ? t('cron_form_channel_group', '群 · ') + (b.label || b.targetId)
           : (b.label || t('cron_form_channel_me', '发给你本人'))
@@ -832,7 +829,7 @@
       // save time, a worse UX than just explaining in the hint below.
       const key = `channel.${ch.id}.owner_id`
       const ownerId = await window.klaus.settings.kv.get(key).catch(() => undefined)
-      const label = CHANNEL_LABELS[ch.id] || ch.name || ch.id
+      const label = channelLabelOf(ch.id)
       if (ownerId) {
         items.push({ value: ch.id, label: `${label} · ${t('cron_form_channel_me', 'send to you')}` })
       } else {

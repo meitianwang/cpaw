@@ -110,18 +110,13 @@ function persistCronExpanded() {
 }
 function isCronRunSession(id) { return typeof id === 'string' && id.startsWith('cron-run-') }
 
-// Built-in channel plugin ids → display labels. Kept in sync with
-// cron.js's map; both files want the same short "Feishu" / "Telegram"
-// strings for badges. Not worth factoring into a shared module yet —
-// copying two 7-entry objects is cheaper than another import cycle.
-const CRON_CHANNEL_LABELS = {
-  feishu: 'Feishu',
-  dingtalk: 'DingTalk',
-  wechat: 'WeChat',
-  wecom: 'WeCom',
-  qq: 'QQ',
-  telegram: 'Telegram',
-  whatsapp: 'WhatsApp',
+// Channel display label — reuses the settings_ch_<id> keys that the
+// Channels settings page already localizes (微信 / 飞书 / 钉钉 / ...). Stays
+// current with the locale without us maintaining a second table.
+function cronChannelLabel(channelId) {
+  const key = 'settings_ch_' + channelId
+  const v = typeof tt === 'function' ? tt(key) : key
+  return v === key ? channelId : v
 }
 // Resolve a cron-run sessionId back to its parent task so we can seed the
 // user prompt bubble before the engine JSONL exists. Returns null when the
@@ -459,7 +454,7 @@ function renderCronChannelBanner(sessionId) {
     el.innerHTML = ''
     return
   }
-  const chLabel = CRON_CHANNEL_LABELS[binding.channelId] || binding.channelId
+  const chLabel = cronChannelLabel(binding.channelId)
   const target = binding.chatType === 'group'
     ? (tt('cron_form_channel_group') || '群 · ') + (binding.label || binding.targetId)
     : (binding.label || tt('cron_form_channel_me') || '发给你本人')
@@ -485,7 +480,9 @@ function renderCronSidebarRun(run, parentTask) {
   // clicking still opens the in-app cron-run view.
   let channelBadge = ''
   if (parentTask?.channelBinding) {
-    const chLabel = CRON_CHANNEL_LABELS[parentTask.channelBinding.channelId] || parentTask.channelBinding.channelId
+    const chLabel = cronChannelLabel(parentTask.channelBinding.channelId)
+    // Chinese labels like 微信/飞书 are already 2 chars — slice stays full.
+    // English labels like "Feishu" clip to "Fe" which is fine for a 20px badge.
     channelBadge = `<span class="cron-sb-run-channel" title="${escapeHtml(chLabel)}">${escapeHtml(chLabel.slice(0, 2))}</span>`
   }
   el.innerHTML = `<span class="cron-sb-run-dot ${dot}"></span><span class="cron-sb-run-label">${escapeHtml(label)}</span>${channelBadge}`
