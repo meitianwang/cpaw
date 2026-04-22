@@ -10,10 +10,10 @@ let skillsView = 'market' // market | builtin | installed
 let skillsFilter = 'all' // all | enabled | disabled (only applied on installed tab)
 let skillsSearchQuery = ''
 
-function toggleSettings() {
+function toggleSettings(tab) {
   settingsVisible = !settingsVisible
   const view = document.getElementById('settings-view')
-  if (settingsVisible) { view.classList.add('active'); loadSettingsTab(currentSettingsTab) }
+  if (settingsVisible) { view.classList.add('active'); loadSettingsTab(tab || currentSettingsTab) }
   else { view.classList.remove('active') }
 }
 

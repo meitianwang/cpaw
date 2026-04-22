@@ -368,8 +368,11 @@ window.addEventListener('klaus:auth-mode-changed', refreshAuthPill)
 
 // 点 pill 跳设置页模型 tab
 document.getElementById('auth-mode-pill')?.addEventListener('click', () => {
-  if (typeof window.toggleSettings === 'function' && !settingsVisibleIfAny()) window.toggleSettings()
-  if (typeof window.loadSettingsTab === 'function') window.loadSettingsTab('models')
+  if (!settingsVisibleIfAny()) {
+    if (typeof window.toggleSettings === 'function') window.toggleSettings('models')
+  } else {
+    if (typeof window.loadSettingsTab === 'function') window.loadSettingsTab('models')
+  }
 })
 
 function updateWelcomeGreeting() {
@@ -1825,8 +1828,11 @@ function appendAuthRequired(reason, mode) {
       }
     } else {
       // 跳转到模型设置页配置自定义模型
-      if (typeof window.toggleSettings === 'function' && !settingsVisibleIfAny()) window.toggleSettings()
-      if (typeof window.loadSettingsTab === 'function') window.loadSettingsTab('models')
+      if (!settingsVisibleIfAny()) {
+        if (typeof window.toggleSettings === 'function') window.toggleSettings('models')
+      } else {
+        if (typeof window.loadSettingsTab === 'function') window.loadSettingsTab('models')
+      }
     }
   })
 
