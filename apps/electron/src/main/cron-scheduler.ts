@@ -3,6 +3,14 @@ import type { EngineHost } from './engine-host.js'
 import type { CronTask, CronRunTrigger } from '../shared/types.js'
 import { getMainWindow } from './window.js'
 
+/** Minimal structural type — main/index.ts injects ChannelManager after channels boot. */
+interface ChannelDeliverer {
+  deliverToBinding(
+    binding: { channelId: string; accountId?: string; targetId: string; chatType: 'direct' | 'group'; threadId?: string },
+    text: string,
+  ): Promise<boolean>
+}
+
 /**
  * Simple cron scheduler for the Electron app.
  * Polls tasks from settings.db, executes them via EngineHost.chat(),
@@ -18,10 +26,41 @@ export class CronScheduler {
   // run's cleanup before cascading — guarantees the cron_runs row the catch
   // block writes is swept in the same delete, no orphan state.
   private running = new Map<string, { sessionId: string; done: Promise<void> }>()
+  // Late-bound — wired in from main/index.ts after channels boot. Null while
+  // channels are still starting; IM-bound tasks that fire during that window
+  // get their delivery silently dropped (logged). Accepts the trade-off:
+  // channels take ~2s to come up and cron tasks don't fire on :00:00 exactly.
+  private channelDeliverer: ChannelDeliverer | null = null
 
   constructor(store: SettingsStore, engine: EngineHost) {
     this.store = store
     this.engine = engine
+  }
+
+  setChannelDeliverer(deliverer: ChannelDeliverer): void {
+    this.channelDeliverer = deliverer
+  }
+
+  // --- Bridge surface used by the engine's CronCreate/Delete tools ---
+  //
+  // These are thin passthroughs that give the engine a "scheduler" interface
+  // it can call without knowing Klaus's store layout. The heavy lifting
+  // (persistence, run records, interrupt on cascade) stays in the SettingsStore
+  // + existing execute() path — the scheduler's own polling tick picks the
+  // task up on the next 60s cycle, so we don't need to do anything further
+  // here beyond persist.
+  addTask(task: CronTask): void { this.store.upsertTask(task) }
+  editTask(id: string, patch: Partial<CronTask>): boolean {
+    const current = this.store.getTask(id)
+    if (!current) return false
+    this.store.upsertTask({ ...current, ...patch, id, updatedAt: Date.now() })
+    return true
+  }
+  removeTask(id: string): boolean {
+    // Fire-and-forget the cascade so callers (engine tool) aren't forced
+    // to await. UI already awaits via the IPC path.
+    void this.deleteTaskCascade(id)
+    return true
   }
 
   start(): void {
@@ -111,8 +150,12 @@ export class CronScheduler {
     console.log(`[CronScheduler] Executing task: ${task.id} (${trigger}, run=${runId}, session=${sessionId})`)
 
     const loop = async () => {
+      let finalText: string | null = null
       try {
-        await this.engine.chat(sessionId, task.prompt, undefined, {
+        // engine.chat returns the assistant's final text for the last turn.
+        // We capture it here (instead of scraping from stream events) so IM
+        // delivery sees the same text the engine persists to JSONL.
+        finalText = await this.engine.chat(sessionId, task.prompt, undefined, {
           // Forward engine events to the renderer just like chat:send does,
           // so the sidebar + open chat view of this cron-run session animate
           // live (text_delta, tool_use, done, etc.). Without this, cron
@@ -127,14 +170,28 @@ export class CronScheduler {
           // against the seed and produce a duplicate bubble.
         })
         this.store.finishCronRun(runId, 'success', Date.now() - startedAt)
+        // IM delivery: only on success, only when bound, only once per run.
+        // Final text only — we intentionally don't stream text_delta to IM,
+        // since IM surfaces have no streaming UI and would pile up chunks.
+        if (task.channelBinding && finalText && finalText.trim()) {
+          void this.deliverToBoundChannel(task, finalText).catch(err => {
+            console.warn(`[CronScheduler] IM delivery for ${task.id} failed:`, err)
+          })
+        }
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
         console.error(`[CronScheduler] Task ${task.id} failed:`, err)
-        this.store.finishCronRun(
-          runId,
-          'failed',
-          Date.now() - startedAt,
-          err instanceof Error ? err.message : String(err),
-        )
+        this.store.finishCronRun(runId, 'failed', Date.now() - startedAt, errMsg)
+        // Match success path: if bound, tell the user in the same IM channel
+        // that the task failed. Otherwise a silent IM-bound task that fails
+        // looks exactly like a healthy one that just had nothing to say.
+        if (task.channelBinding) {
+          const taskLabel = task.name || task.id
+          const failText = `定时任务「${taskLabel}」运行失败：${errMsg.split('\n')[0]}`
+          void this.deliverToBoundChannel(task, failText).catch(deliverErr => {
+            console.warn(`[CronScheduler] failure-notice delivery for ${task.id} failed:`, deliverErr)
+          })
+        }
       } finally {
         this.running.delete(task.id)
         // One-shot tasks self-delete after their first run regardless of outcome.
@@ -148,6 +205,23 @@ export class CronScheduler {
     }
     void loop()
     return { sessionId, done }
+  }
+
+  private async deliverToBoundChannel(task: CronTask, text: string): Promise<void> {
+    const binding = task.channelBinding
+    if (!binding) return
+    const tag = `${binding.channelId}:${binding.targetId}`
+    if (!this.channelDeliverer) {
+      console.warn(`[CronScheduler] ${task.id} → ${tag}: channel manager not wired yet, dropping delivery`)
+      return
+    }
+    console.log(`[CronScheduler] ${task.id} → ${tag}: delivering ${text.length} chars`)
+    const ok = await this.channelDeliverer.deliverToBinding(binding, text)
+    if (ok) {
+      console.log(`[CronScheduler] ${task.id} → ${tag}: delivered OK`)
+    } else {
+      console.warn(`[CronScheduler] ${task.id} → ${tag}: delivery returned failure (see earlier [ChannelManager] log for the root cause)`)
+    }
   }
 
   /**

@@ -3,7 +3,7 @@ import type { ValidationResult } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { getScopedUserId } from '../../bootstrap/state.js'
-import { getKlausCronStore, getKlausCronScheduler } from '../../utils/klausCronBridge.js'
+import { getKlausCronStore, getKlausCronScheduler, resolveCronUserId } from '../../utils/klausCronBridge.js'
 import {
   buildCronDeletePrompt,
   CRON_DELETE_DESCRIPTION,
@@ -53,10 +53,7 @@ export const CronDeleteTool = buildTool({
     return ''
   },
   async validateInput(input): Promise<ValidationResult> {
-    const userId = getScopedUserId()
-    if (!userId) {
-      return { result: false, message: 'No user context available.', errorCode: 1 }
-    }
+    const userId = resolveCronUserId(getScopedUserId())
     const store = getKlausCronStore()
     if (!store) {
       return { result: false, message: 'Cron system not available.', errorCode: 2 }
@@ -73,7 +70,7 @@ export const CronDeleteTool = buildTool({
     return { result: true }
   },
   async call({ id }) {
-    const userId = getScopedUserId()!
+    const userId = resolveCronUserId(getScopedUserId())
     const store = getKlausCronStore()!
     const scheduler = getKlausCronScheduler()
 

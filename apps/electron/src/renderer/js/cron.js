@@ -66,8 +66,30 @@
   const fTimezone = document.getElementById('cron-form-timezone')
   const fTzPanel = fTzWrap.querySelector('.cron-tz-panel')
   const fPrompt = document.getElementById('cron-form-prompt')
+  const fChannelEl = document.getElementById('cron-form-channel')
+  const fChannelBoundEl = document.getElementById('cron-form-channel-bound')
   const saveBtn = document.getElementById('cron-form-save')
   const cancelBtn = document.getElementById('cron-form-cancel')
+
+  // Built-in channel plugin ids → display labels (fallback when i18n missing).
+  const CHANNEL_LABELS = {
+    feishu: 'Feishu',
+    dingtalk: 'DingTalk',
+    wechat: 'WeChat',
+    wecom: 'WeCom',
+    qq: 'QQ',
+    telegram: 'Telegram',
+    whatsapp: 'WhatsApp',
+  }
+
+  // Bound on first form open and re-bound on language change. Items rebuilt
+  // every openForm() call so the latest channel connection state is reflected
+  // without the user having to close/reopen the page.
+  const fChannelSelect = window.klsSelect.bind(fChannelEl, {
+    items: [{ value: '', i18nKey: 'cron_form_channel_none' }],
+    value: '',
+    onChange: () => {},
+  })
 
   // Day-of-month dropdown (1-31) populated once.
   {
@@ -472,6 +494,19 @@
     const title = task.name || task.id
     const prompt = task.prompt || ''
     const preview = prompt.length > 140 ? prompt.slice(0, 140) + '…' : prompt
+    const binding = task.channelBinding
+    let bindingHtml = ''
+    if (binding) {
+      const chLabel = CHANNEL_LABELS[binding.channelId] || binding.channelId
+      const target = binding.chatType === 'group'
+        ? (t('cron_form_channel_group', '群 · ') + (binding.label || binding.targetId))
+        : (binding.label || t('cron_form_channel_me', '发给你本人'))
+      bindingHtml = `
+        <div class="cron-card-channel" title="${escHtml(chLabel + ' · ' + target)}">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 9l3 3 3-3M8 12V3M3 14h10"/></svg>
+          <span>${escHtml(chLabel)} · ${escHtml(target)}</span>
+        </div>`
+    }
     return `
       <div class="cron-card" data-cron-id="${escHtml(task.id)}">
         <div class="cron-card-top">
@@ -492,6 +527,7 @@
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><polyline points="8,4 8,8 10.5,9.5"/></svg>
             <span>${escHtml(humanizeSchedule(task.schedule))}</span>
           </div>
+          ${bindingHtml}
         </div>
       </div>`
   }
@@ -745,12 +781,90 @@
     fTime.hidden = freq === 'interval' || freq === 'hourly' || freq === 'custom'
   }
 
+  // Populate the "When done, send to" dropdown from the channels IPC. Runs
+  // on every openForm() call so newly-connected channels show up without
+  // page reload. When the task is being edited (or was created from IM
+  // inbound), the dropdown is replaced with a read-only summary — bindings
+  // are not editable per product decision (avoid "move someone else's
+  // channel to mine" footguns).
+  async function refreshChannelOptions(task) {
+    const hideSelect = () => { fChannelEl.hidden = true }
+    const showSelect = () => { fChannelEl.hidden = false }
+    const editing = !!task?.id && cachedTasks.some(x => x.id === task.id)
+
+    // Binding is write-once: set on create, never changed. So in edit mode
+    // we always show a read-only summary (either the lock-badge for bound
+    // tasks, or a "no binding" hint for unbound ones) — never the editable
+    // dropdown. Creating a new task is the only path that lets the user
+    // pick.
+    if (editing) {
+      hideSelect()
+      fChannelBoundEl.hidden = false
+      if (task?.channelBinding) {
+        const b = task.channelBinding
+        const label = CHANNEL_LABELS[b.channelId] || b.channelId
+        const target = b.chatType === 'group'
+          ? t('cron_form_channel_group', '群 · ') + (b.label || b.targetId)
+          : (b.label || t('cron_form_channel_me', '发给你本人'))
+        fChannelBoundEl.textContent = `${label} · ${target}`
+        fChannelBoundEl.classList.add('is-locked')
+      } else {
+        fChannelBoundEl.textContent = t('cron_form_channel_none_bound', '此任务未绑定通道')
+        fChannelBoundEl.classList.remove('is-locked')
+      }
+      return
+    }
+
+    fChannelBoundEl.hidden = true
+    fChannelBoundEl.classList.remove('is-locked')
+    showSelect()
+
+    let channels = []
+    try { channels = (await window.klaus.channels.list()) || [] } catch {}
+    const items = [{ value: '', i18nKey: 'cron_form_channel_none' }]
+    const pendingDmChannels = []
+    for (const ch of channels) {
+      if (!ch.connected) continue
+      // owner_id is captured on first DM to the bot; until that happens we
+      // don't have a target for "send to me" delivery. Drop the channel from
+      // the picker — klsSelect has no disabled-item support and keeping the
+      // option clickable-but-no-op would silently drop the user's pick at
+      // save time, a worse UX than just explaining in the hint below.
+      const key = `channel.${ch.id}.owner_id`
+      const ownerId = await window.klaus.settings.kv.get(key).catch(() => undefined)
+      const label = CHANNEL_LABELS[ch.id] || ch.name || ch.id
+      if (ownerId) {
+        items.push({ value: ch.id, label: `${label} · ${t('cron_form_channel_me', 'send to you')}` })
+      } else {
+        pendingDmChannels.push(label)
+      }
+    }
+    fChannelSelect.setItems(items, { value: '' })
+
+    // Hint morphs depending on what's available:
+    //  - nothing configured at all → baseline hint about Settings
+    //  - some configured but not DM'd → tell the user to DM first so those
+    //    channels show up here
+    const hintEl = document.getElementById('cron-form-channel-hint')
+    if (hintEl) {
+      if (pendingDmChannels.length) {
+        hintEl.textContent = t('cron_form_channel_hint_dm', 'Connected but not yet ready: ')
+          + pendingDmChannels.join(', ')
+          + t('cron_form_channel_hint_dm_suffix', ' — DM Klaus from there once so it knows who you are.')
+      } else {
+        hintEl.textContent = t('cron_form_channel_hint',
+          "Only channels you've connected in Settings show up. Group chats must be created from inside that chat.")
+      }
+    }
+  }
+
   function openForm(task) {
     editingId = task?.id ?? null
     modalTitle.textContent = editingId ? t('cron_edit', 'Edit task') : t('cron_new', 'New task')
     fName.value = task?.name ?? ''
     fPrompt.value = task?.prompt ?? ''
     fTimezone.value = task?.timezone ?? ''
+    refreshChannelOptions(task)
 
     // Defaults
     ddWeekday.setValue('1')
@@ -826,6 +940,30 @@
     const now = Date.now()
     const id = editingId ?? ('task-' + now.toString(36))
     const tz = isCustom ? fTimezone.value.trim() : ''
+
+    // channelBinding is only written on create. Edits retain whatever the
+    // row already had (upsertTask preserves the column on conflict). So we
+    // just avoid sending a binding when editing; the form UI shows existing
+    // bindings as read-only anyway.
+    let channelBinding
+    let createdBy
+    if (!editingId) {
+      const pickedChannel = fChannelSelect.getValue()
+      if (pickedChannel && !pickedChannel.startsWith('__disabled__:')) {
+        const ownerId = await window.klaus.settings.kv.get(`channel.${pickedChannel}.owner_id`).catch(() => undefined)
+        if (ownerId) {
+          channelBinding = {
+            channelId: pickedChannel,
+            accountId: 'default',
+            targetId: ownerId,
+            chatType: 'direct',
+          }
+          createdBy = 'manual'
+        }
+      }
+      if (!createdBy) createdBy = 'manual'
+    }
+
     await api.upsert({
       id,
       name: name || undefined,
@@ -834,6 +972,8 @@
       enabled: true,
       deleteAfterRun: isOneShot,
       timezone: tz || undefined,
+      channelBinding,
+      createdBy,
       createdAt: editingId ? undefined : now,
       updatedAt: now,
     })

@@ -109,6 +109,20 @@ function persistCronExpanded() {
   } catch {}
 }
 function isCronRunSession(id) { return typeof id === 'string' && id.startsWith('cron-run-') }
+
+// Built-in channel plugin ids → display labels. Kept in sync with
+// cron.js's map; both files want the same short "Feishu" / "Telegram"
+// strings for badges. Not worth factoring into a shared module yet —
+// copying two 7-entry objects is cheaper than another import cycle.
+const CRON_CHANNEL_LABELS = {
+  feishu: 'Feishu',
+  dingtalk: 'DingTalk',
+  wechat: 'WeChat',
+  wecom: 'WeCom',
+  qq: 'QQ',
+  telegram: 'Telegram',
+  whatsapp: 'WhatsApp',
+}
 // Resolve a cron-run sessionId back to its parent task so we can seed the
 // user prompt bubble before the engine JSONL exists. Returns null when the
 // run isn't in the expanded-task cache (user opened a run whose task was
@@ -422,7 +436,7 @@ function renderCronSidebarTask(task) {
       body.appendChild(empty)
     } else {
       for (const run of runs) {
-        body.appendChild(renderCronSidebarRun(run))
+        body.appendChild(renderCronSidebarRun(run, task))
       }
     }
     wrap.appendChild(body)
@@ -430,13 +444,51 @@ function renderCronSidebarTask(task) {
   return wrap
 }
 
-function renderCronSidebarRun(run) {
+function renderCronChannelBanner(sessionId) {
+  const el = document.getElementById('cron-channel-banner')
+  if (!el) return
+  if (!isCronRunSession(sessionId)) {
+    el.hidden = true
+    el.innerHTML = ''
+    return
+  }
+  const task = findCronTaskBySessionId(sessionId)
+  const binding = task?.channelBinding
+  if (!binding) {
+    el.hidden = true
+    el.innerHTML = ''
+    return
+  }
+  const chLabel = CRON_CHANNEL_LABELS[binding.channelId] || binding.channelId
+  const target = binding.chatType === 'group'
+    ? (tt('cron_form_channel_group') || '群 · ') + (binding.label || binding.targetId)
+    : (binding.label || tt('cron_form_channel_me') || '发给你本人')
+  el.innerHTML = `
+    <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M5 9l3 3 3-3M8 12V3M3 14h10"/>
+    </svg>
+    <span class="cron-channel-banner-text">
+      ${escapeHtml(tt('cron_chat_banner_prefix') || '运行结束会推到')}
+      <strong>${escapeHtml(chLabel)}</strong> · ${escapeHtml(target)}
+    </span>`
+  el.hidden = false
+}
+
+function renderCronSidebarRun(run, parentTask) {
   const el = document.createElement('div')
   const active = run.sessionId && run.sessionId === currentSessionId
   el.className = 'cron-sb-run' + (active ? ' active' : '')
   const label = formatCronRunLabel(run)
   const dot = run.status === 'failed' ? 'failed' : run.status === 'running' ? 'running' : 'success'
-  el.innerHTML = `<span class="cron-sb-run-dot ${dot}"></span><span class="cron-sb-run-label">${escapeHtml(label)}</span>`
+  // Tiny channel badge on runs whose parent task is IM-bound — hints that
+  // the run's final text also lands in a remote chat. Purely informational;
+  // clicking still opens the in-app cron-run view.
+  let channelBadge = ''
+  if (parentTask?.channelBinding) {
+    const chLabel = CRON_CHANNEL_LABELS[parentTask.channelBinding.channelId] || parentTask.channelBinding.channelId
+    channelBadge = `<span class="cron-sb-run-channel" title="${escapeHtml(chLabel)}">${escapeHtml(chLabel.slice(0, 2))}</span>`
+  }
+  el.innerHTML = `<span class="cron-sb-run-dot ${dot}"></span><span class="cron-sb-run-label">${escapeHtml(label)}</span>${channelBadge}`
   el.onclick = () => {
     if (!run.sessionId) return
     switchSession(run.sessionId)
@@ -489,6 +541,7 @@ async function switchSession(id) {
 
   currentSessionId = id
   renderSessionList()
+  renderCronChannelBanner(id)
   messagesEl.innerHTML = ''
   resetStreamState()
 
@@ -1507,6 +1560,8 @@ klausApi.on.notifySound?.((kind) => playNotifySound(kind))
 // (channel just finished replying in the background), refresh the sidebar
 // so its title/mtime updates are visible.
 klausApi.on.chatEvent((event) => {
+  // DEBUG: 临时 log — 定位 "一次回复渲染成两段" 问题。确认后删除。
+  console.log('[chat:event]', event.type, event)
   if (event.sessionId && event.sessionId !== currentSessionId) {
     if (event.type === 'done') {
       updateSessionInList()

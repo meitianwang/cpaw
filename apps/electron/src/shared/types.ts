@@ -60,6 +60,20 @@ export interface PromptRecord {
   updatedAt: number
 }
 
+export interface CronChannelBinding {
+  /** Plugin id — 'feishu' | 'dingtalk' | 'telegram' | 'wechat' | 'wecom' | 'qq' | 'whatsapp' */
+  channelId: string
+  /** Multi-account key, 'default' unless the user runs multiple accounts. */
+  accountId?: string
+  /** user_id for DMs, group_id for groups — the chat the run output gets pushed to. */
+  targetId: string
+  chatType: 'direct' | 'group'
+  /** Feishu/DingTalk thread id when the origin was a thread. */
+  threadId?: string
+  /** Human-facing label cached at bind time ("@张三" / "群·产品日报"). Display-only. */
+  label?: string
+}
+
 export interface CronTask {
   id: string
   name?: string
@@ -71,6 +85,10 @@ export interface CronTask {
   timeoutSeconds?: number
   deleteAfterRun?: boolean
   timezone?: string
+  /** IM delivery binding. Populated for manual tasks that opted in (target = owner) or for tasks created from an IM conversation (target = that conversation). Absent = in-app only. */
+  channelBinding?: CronChannelBinding
+  /** How the task got into the DB — 'manual' | 'klaus_chat' | 'im_inbound'. Mostly for display so the management card can show provenance. */
+  createdBy?: 'manual' | 'klaus_chat' | 'im_inbound'
   createdAt: number
   updatedAt: number
 }

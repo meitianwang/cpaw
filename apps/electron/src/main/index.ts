@@ -143,6 +143,18 @@ app.whenReady().then(async () => {
     cronScheduler.start()
     cronSchedulerRef = cronScheduler
 
+    // Wire the engine's CronCreate/Delete/List tools through to Klaus's
+    // SQLite store + scheduler. Without this the engine tool is disabled
+    // (isKlausCronAvailable returns false), meaning an IM user who asks
+    // "create a cron task for me" would have nowhere to land. SettingsStore
+    // and CronScheduler both satisfy the bridge's structural interfaces.
+    try {
+      const { setKlausCronBridge } = await import('../engine/utils/klausCronBridge.js')
+      setKlausCronBridge(settingsStore as any, cronScheduler as any)
+    } catch (err) {
+      console.warn('[Klaus] Failed to wire klaus cron bridge:', err)
+    }
+
     // Restore keep-awake state from the last session (user-set toggle on the
     // Scheduled Tasks page). Defaults to off.
     try {
@@ -169,6 +181,43 @@ app.whenReady().then(async () => {
       // animates; the rest fall through.
       const handler = async (msg: any): Promise<string | null> => {
         const sessionKey = msg.sessionKey || `channel:${msg.senderId || 'unknown'}`
+        // Derive the channel id from the sessionKey prefix (every plugin
+        // builds sessionKey as `${pluginId}:...`). Falls back to 'channel'
+        // when the plugin didn't set one, in which case owner_id capture and
+        // cron binding are both no-ops — no channelId to target.
+        const channelId = String(sessionKey).split(':')[0] || ''
+        const isDirect = msg.chatType === 'direct' || msg.chatType === 'private'
+
+        // First-private-message owner claim. Desktop doesn't know "who you
+        // are" in each IM network (token connects != knowing your personal
+        // id), so we treat the first DM to the bot as owner. Only written
+        // once — if someone else DMs first, they become owner; same trade-off
+        // as OpenClaw's first-user-wins convention, documented in ui hint.
+        if (channelId && msg.senderId && isDirect) {
+          const key = `channel.${channelId}.owner_id`
+          if (!settingsStore.get(key)) {
+            settingsStore.set(key, String(msg.senderId))
+            console.log(`[Klaus] Captured owner_id for ${channelId}: ${msg.senderId}`)
+          }
+        }
+
+        // Stash per-session channel context so the engine's CronCreate tool
+        // can bind a freshly-created task to this IM conversation without
+        // each channel plugin having to plumb it through. Cleared in the
+        // finally block to avoid leaking across sessions that reuse the
+        // handler later.
+        let cronBridge: typeof import('../engine/utils/klausCronBridge.js') | null = null
+        try {
+          cronBridge = await import('../engine/utils/klausCronBridge.js')
+          cronBridge.setSessionChannelContext(sessionKey, {
+            channelId,
+            accountId: 'default',
+            targetId: deriveTargetId(sessionKey, msg),
+            chatType: isDirect ? 'direct' : 'group',
+            senderLabel: msg.senderName ?? undefined,
+          })
+        } catch {}
+
         try {
           const reply = await engineHost.chat(sessionKey, msg.text || '', msg.media, {
             onEvent: (event) => getMainWindow()?.webContents.send('chat:event', event),
@@ -181,7 +230,24 @@ app.whenReady().then(async () => {
         } catch (err) {
           console.warn('[Klaus] Channel handler error:', err)
           return null
+        } finally {
+          try { cronBridge?.clearSessionChannelContext(sessionKey) } catch {}
         }
+      }
+
+      // sessionKey formats we've seen across plugins:
+      //   feishu:${open_id}                   (DM)
+      //   feishu:${chat_id}:...               (group variants)
+      //   telegram:${chatId}                  (DM or group — chatId == user id for DMs in Bot API)
+      //   telegram:${chatId}:topic:${tid}     (forum topic)
+      //   wechat:${senderId|groupId}
+      // Target id for a *reply* is always the second segment — that's the
+      // chat Klaus would respond into. For DMs the bot API uses senderId as
+      // the conversation id, so this works uniformly.
+      function deriveTargetId(sessionKey: string, msg: any): string {
+        const segs = String(sessionKey).split(':')
+        if (segs.length >= 2 && segs[1]) return segs[1]
+        return String(msg.senderId ?? '')
       }
 
       // buildNotify is a no-op now — the chat:event stream already carries
@@ -216,9 +282,24 @@ app.whenReady().then(async () => {
         }
       }
 
-      // Start all enabled channels
-      await channelManager.startAll()
-      console.log('[Klaus] Channel plugins started')
+      // Wire cron scheduler → channel manager BEFORE startAll(). Each
+      // channel's gateway loop runs forever (`while !aborted`), so
+      // `await startAll()` never returns and any code after it is dead.
+      // The channelManager instance exists at this point though, so the
+      // pointer is valid — channels come online asynchronously and pick
+      // up cron delivery as soon as they're running.
+      try {
+        cronScheduler.setChannelDeliverer(channelManager)
+      } catch (err) {
+        console.warn('[Klaus] Failed to wire cron → channel deliverer:', err)
+      }
+
+      // Start all enabled channels (intentionally fire-and-forget — see
+      // comment above). startAll() returns a promise that only resolves
+      // when every channel has stopped; during normal operation it sits
+      // pending for the life of the process.
+      void channelManager.startAll()
+      console.log('[Klaus] Channel plugins starting (runs in background)')
     } catch (err) {
       console.warn('[Klaus] Channel plugins init failed (non-fatal):', err)
     }

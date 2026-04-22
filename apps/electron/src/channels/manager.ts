@@ -227,6 +227,55 @@ export class ChannelManager {
     return result;
   }
 
+  /**
+   * Deliver a message to a cron task's channelBinding. Handles group vs DM
+   * chatType correctly (buildDeliverers hardcodes "direct" which is wrong
+   * for group-bound tasks). Returns true on success, false on any failure
+   * — cron-scheduler logs failures but does not retry.
+   */
+  async deliverToBinding(binding: {
+    channelId: string
+    accountId?: string
+    targetId: string
+    chatType: 'direct' | 'group'
+    threadId?: string
+  }, text: string): Promise<boolean> {
+    const plugin = this.plugins.find(p => p.meta.id === binding.channelId);
+    if (!plugin) {
+      console.warn(`[ChannelManager] deliverToBinding: no plugin for "${binding.channelId}"`);
+      return false;
+    }
+    const accountId = binding.accountId ?? 'default';
+    const account = plugin.config?.resolveAccount(this.opts.settingsStore, accountId) ?? {};
+    try {
+      if (plugin.outbound) {
+        const ctx: OutboundContext = {
+          accountId,
+          sessionKey: '',
+          chatType: binding.chatType,
+          targetId: binding.targetId,
+          threadId: binding.threadId,
+          config: account,
+        };
+        const res = await plugin.outbound.sendText(ctx, text);
+        if (!res.ok) {
+          console.warn(`[ChannelManager] deliverToBinding ${binding.channelId} failed:`, res.error);
+          return false;
+        }
+        return true;
+      }
+      if (plugin.deliver) {
+        await plugin.deliver(binding.targetId, text);
+        return true;
+      }
+      console.warn(`[ChannelManager] deliverToBinding: "${binding.channelId}" has no outbound / deliver adapter`);
+      return false;
+    } catch (err) {
+      console.warn(`[ChannelManager] deliverToBinding ${binding.channelId} threw:`, err);
+      return false;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Internal
   // -------------------------------------------------------------------------

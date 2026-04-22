@@ -4,7 +4,7 @@ import { cronToHuman } from '../../utils/cron.js'
 import { truncate } from '../../utils/format.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { getScopedUserId } from '../../bootstrap/state.js'
-import { getKlausCronStore } from '../../utils/klausCronBridge.js'
+import { getKlausCronStore, resolveCronUserId } from '../../utils/klausCronBridge.js'
 import {
   buildCronListPrompt,
   CRON_LIST_DESCRIPTION,
@@ -58,9 +58,9 @@ export const CronListTool = buildTool({
     return buildCronListPrompt(isDurableCronEnabled())
   },
   async call() {
-    const userId = getScopedUserId()
+    const userId = resolveCronUserId(getScopedUserId())
     const store = getKlausCronStore()
-    if (!userId || !store) {
+    if (!store) {
       return { data: { jobs: [] } }
     }
 

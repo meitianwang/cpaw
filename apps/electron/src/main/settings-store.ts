@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { join } from 'path'
 import { homedir } from 'os'
 import { mkdirSync } from 'fs'
-import type { ModelRecord, PromptRecord, CronTask, CronRun, CronRunFilters, CronRunTrigger, CronRunStatus } from '../shared/types.js'
+import type { ModelRecord, PromptRecord, CronTask, CronChannelBinding, CronRun, CronRunFilters, CronRunTrigger, CronRunStatus } from '../shared/types.js'
 
 const CONFIG_DIR = join(homedir(), '.klaus')
 
@@ -71,6 +71,8 @@ export class SettingsStore {
         webhook_url       TEXT,
         webhook_token     TEXT,
         failure_alert     TEXT,
+        channel_binding   TEXT,
+        created_by        TEXT,
         created_at        INTEGER NOT NULL,
         updated_at        INTEGER NOT NULL
       );
@@ -123,6 +125,12 @@ export class SettingsStore {
     }
     if (!cronCols.has('timezone')) {
       this.db.exec(`ALTER TABLE cron_tasks ADD COLUMN timezone TEXT;`)
+    }
+    if (!cronCols.has('channel_binding')) {
+      this.db.exec(`ALTER TABLE cron_tasks ADD COLUMN channel_binding TEXT;`)
+    }
+    if (!cronCols.has('created_by')) {
+      this.db.exec(`ALTER TABLE cron_tasks ADD COLUMN created_by TEXT;`)
     }
 
     const cronRunCols = cols('cron_runs')
@@ -339,13 +347,24 @@ export class SettingsStore {
 
   upsertTask(task: CronTask): void {
     const now = Date.now()
+    // channel_binding is upsert-only on *create* — editing a task never rewrites
+    // it (UI enforces read-only; the IM-inbound path creates a new task). So
+    // keep the existing column value on UPDATE by intentionally omitting it
+    // from the SET clause. Same goes for created_by.
+    const existing = this.getTask(task.id)
+    const bindingJson = task.channelBinding
+      ? JSON.stringify(task.channelBinding)
+      : (existing?.channelBinding ? JSON.stringify(existing.channelBinding) : null)
+    const createdBy = task.createdBy ?? existing?.createdBy ?? 'manual'
     this.db.prepare(`
       INSERT INTO cron_tasks (
-        id, name, description, schedule, prompt, enabled, thinking,
-        timeout_seconds, delete_after_run, timezone, created_at, updated_at
+        id, user_id, name, description, schedule, prompt, enabled, thinking,
+        timeout_seconds, delete_after_run, timezone,
+        channel_binding, created_by, created_at, updated_at
       ) VALUES (
-        @id, @name, @description, @schedule, @prompt, @enabled, @thinking,
-        @timeoutSeconds, @deleteAfterRun, @timezone, @createdAt, @updatedAt
+        @id, @userId, @name, @description, @schedule, @prompt, @enabled, @thinking,
+        @timeoutSeconds, @deleteAfterRun, @timezone,
+        @channelBinding, @createdBy, @createdAt, @updatedAt
       )
       ON CONFLICT(id) DO UPDATE SET
         name=excluded.name, description=excluded.description, schedule=excluded.schedule,
@@ -355,14 +374,30 @@ export class SettingsStore {
         timezone=excluded.timezone,
         updated_at=excluded.updated_at
     `).run({
-      id: task.id, name: task.name ?? null, description: task.description ?? null,
+      id: task.id, userId: (task as any).userId ?? null,
+      name: task.name ?? null, description: task.description ?? null,
       schedule: task.schedule, prompt: task.prompt,
       enabled: task.enabled ? 1 : 0, thinking: task.thinking ?? null,
       timeoutSeconds: task.timeoutSeconds ?? null,
       deleteAfterRun: task.deleteAfterRun ? 1 : 0,
       timezone: task.timezone ?? null,
+      channelBinding: bindingJson,
+      createdBy,
       createdAt: task.createdAt || now, updatedAt: now,
     })
+  }
+
+  /** Engine bridge — list all tasks for a given userId scope. Desktop falls back to all tasks when userId is absent. */
+  listUserTasks(userId: string | null | undefined): CronTask[] {
+    if (!userId) return this.listTasks()
+    return (this.db.prepare(
+      'SELECT * FROM cron_tasks WHERE user_id = ? ORDER BY created_at ASC'
+    ).all(userId) as any[]).map(rowToCronTask)
+  }
+
+  /** Engine bridge — delete a single task within a userId scope. Desktop ignores the scope. */
+  deleteUserTask(_userId: string, id: string): boolean {
+    return this.deleteTask(id)
   }
 
   deleteTask(id: string): boolean {
@@ -467,6 +502,15 @@ function rowToPrompt(r: any): PromptRecord {
 }
 
 function rowToCronTask(r: any): CronTask {
+  let channelBinding: CronChannelBinding | undefined
+  if (r.channel_binding) {
+    try {
+      const parsed = JSON.parse(r.channel_binding)
+      if (parsed && typeof parsed === 'object' && parsed.channelId && parsed.targetId) {
+        channelBinding = parsed
+      }
+    } catch {}
+  }
   return {
     id: r.id, name: r.name ?? undefined, description: r.description ?? undefined,
     schedule: r.schedule, prompt: r.prompt,
@@ -474,6 +518,8 @@ function rowToCronTask(r: any): CronTask {
     timeoutSeconds: r.timeout_seconds ?? undefined,
     deleteAfterRun: r.delete_after_run === 1,
     timezone: r.timezone ?? undefined,
+    channelBinding,
+    createdBy: r.created_by ?? undefined,
     createdAt: r.created_at, updatedAt: r.updated_at,
   }
 }

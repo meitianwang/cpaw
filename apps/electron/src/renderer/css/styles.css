@@ -1580,6 +1580,79 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   font-size: 12px;
   color: var(--fg-tertiary);
 }
+.cron-card-channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-tertiary);
+  max-width: 55%;
+  overflow: hidden;
+}
+.cron-card-channel span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tiny channel badge on a cron-run sidebar entry — "TG" / "FS" stamp */
+.cron-sb-run-channel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--fg-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  margin-left: 4px;
+}
+
+/* Banner sitting above the messages list when a cron-run session is bound */
+.cron-channel-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 24px 0;
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  color: var(--fg-tertiary);
+  font-size: 12px;
+  border-radius: 8px;
+}
+.cron-channel-banner[hidden] { display: none; }
+.cron-channel-banner strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Read-only summary displayed instead of the dropdown when editing a bound task */
+.cron-form-channel-bound {
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  color: var(--fg-tertiary);
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+}
+/* Lock badge drawn with inline SVG background (no emoji so the glyph style
+   stays consistent with the rest of the Klaus chrome). 11x11 padlock at 55%
+   opacity, sized to sit inline with the 13px text. */
+.cron-form-channel-bound.is-locked::before {
+  content: '';
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  opacity: 0.55;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.6'><rect x='3' y='7' width='10' height='7' rx='1.2'/><path d='M5 7V5a3 3 0 0 1 6 0v2'/></svg>") center / contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.6'><rect x='3' y='7' width='10' height='7' rx='1.2'/><path d='M5 7V5a3 3 0 0 1 6 0v2'/></svg>") center / contain no-repeat;
+}
 
 .cron-empty {
   display: flex;

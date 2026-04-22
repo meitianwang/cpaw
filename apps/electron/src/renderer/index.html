@@ -125,6 +125,11 @@
         </div>
       </div>
 
+      <!-- Channel-binding banner (cron-run sessions bound to an IM). Sits
+           just above the messages list so the user knows results will be
+           forwarded somewhere they might not have open. -->
+      <div id="cron-channel-banner" class="cron-channel-banner" hidden></div>
+
       <!-- Messages -->
       <div id="messages" style="display:none"></div>
 
@@ -338,6 +343,13 @@
               </div>
 
               <p class="cron-form-hint" id="cron-form-schedule-hint" data-i18n="cron_form_schedule_hint" hidden>Examples: 0 9 * * * (every day at 9:00), 0 12 * * 1-5 (weekdays at noon)</p>
+            </div>
+
+            <div class="cron-form-row">
+              <label data-i18n="cron_form_channel">When done, send to</label>
+              <div id="cron-form-channel" class="kls-select"></div>
+              <div id="cron-form-channel-bound" class="cron-form-channel-bound" hidden></div>
+              <p class="cron-form-hint" id="cron-form-channel-hint" data-i18n="cron_form_channel_hint">Only channels you've connected in Settings show up. Group chats must be created from inside that chat.</p>
             </div>
 
             <div class="cron-form-row">

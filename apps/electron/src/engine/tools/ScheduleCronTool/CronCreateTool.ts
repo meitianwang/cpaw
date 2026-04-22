@@ -5,8 +5,13 @@ import { cronToHuman, parseCronExpression } from '../../utils/cron.js'
 import { nextCronRunMs } from '../../utils/cronTasks.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { semanticBoolean } from '../../utils/semanticBoolean.js'
-import { getScopedUserId } from '../../bootstrap/state.js'
-import { getKlausCronStore, getKlausCronScheduler } from '../../utils/klausCronBridge.js'
+import { getScopedUserId, getSessionId } from '../../bootstrap/state.js'
+import {
+  getKlausCronStore,
+  getKlausCronScheduler,
+  getSessionChannelContext,
+  resolveCronUserId,
+} from '../../utils/klausCronBridge.js'
 import {
   buildCronCreateDescription,
   buildCronCreatePrompt,
@@ -83,10 +88,7 @@ export const CronCreateTool = buildTool({
         errorCode: 2,
       }
     }
-    const userId = getScopedUserId()
-    if (!userId) {
-      return { result: false, message: 'No user context available.', errorCode: 3 }
-    }
+    const userId = resolveCronUserId(getScopedUserId())
     const store = getKlausCronStore()
     if (!store) {
       return { result: false, message: 'Cron system not available.', errorCode: 4 }
@@ -102,12 +104,32 @@ export const CronCreateTool = buildTool({
     return { result: true }
   },
   async call({ cron, prompt, recurring = true, name }) {
-    const userId = getScopedUserId()!
+    const userId = resolveCronUserId(getScopedUserId())
     const store = getKlausCronStore()!
     const scheduler = getKlausCronScheduler()
 
     const id = `cron-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
     const now = Date.now()
+
+    // Auto-bind to the IM conversation the user is in, if any. The channel
+    // handler (apps/electron/src/main/index.ts) stashes context per-session
+    // before engine.chat() runs and clears it after. Desktop-chat sessions
+    // (and web multi-user sessions with no channel) get no context → no
+    // binding, which is the intended behavior: "通过 Klaus 创建" is always
+    // in-app-only.
+    const sessionId = getSessionId() as unknown as string | undefined
+    const ctx = sessionId ? getSessionChannelContext(sessionId) : null
+    const channelBinding = ctx
+      ? {
+          channelId: ctx.channelId,
+          accountId: ctx.accountId ?? 'default',
+          targetId: ctx.targetId,
+          chatType: ctx.chatType,
+          threadId: ctx.threadId,
+          label: ctx.senderLabel,
+        }
+      : undefined
+    const createdBy = channelBinding ? 'im_inbound' : 'klaus_chat'
 
     const task = {
       id,
@@ -117,6 +139,8 @@ export const CronCreateTool = buildTool({
       prompt,
       enabled: true,
       deleteAfterRun: !recurring,
+      channelBinding,
+      createdBy,
       createdAt: now,
       updatedAt: now,
     }

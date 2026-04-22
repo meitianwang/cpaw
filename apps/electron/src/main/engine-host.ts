@@ -684,6 +684,16 @@ export class EngineHost {
     // receives stream events — aligns with Web 端 gateway.createAgentEventForwarder pattern.
     if (options?.onEvent) this.sessionEmitters.set(sessionId, options.onEvent)
     if (options?.onPermissionRequest) this.sessionPermissionEmitters.set(sessionId, options.onPermissionRequest)
+
+    // Mirror channel context from channelKey → engine uuid gets set up below,
+    // once the session entry (and therefore uuid) exists.
+    let cronBridgeMod: typeof import('../engine/utils/klausCronBridge.js') | null = null
+    let mirroredUuid: string | null = null
+    const cleanupMirror = () => {
+      if (mirroredUuid && cronBridgeMod) {
+        try { cronBridgeMod.clearSessionChannelContext(mirroredUuid) } catch {}
+      }
+    }
     console.log('[Engine] chat() called', { sessionId, textLen: text?.length })
     // 等待引擎初始化完成（init 仍在后台进行时，chat 自然排队，用户感知不到）
     await this.init()
@@ -693,6 +703,17 @@ export class EngineHost {
     const uuid = session.uuid
     const projectDir = getProjectDir(CANONICAL_CWD)
     const transcriptPath = join(projectDir, `${uuid}.jsonl`)
+
+    // Now that uuid is pinned, alias any channel context set by the handler
+    // under the uuid so engine tools (CronCreate) can read it via STATE.sessionId.
+    try {
+      cronBridgeMod = await import('../engine/utils/klausCronBridge.js')
+      const ctx = cronBridgeMod.getSessionChannelContext(sessionId)
+      if (ctx && uuid && uuid !== sessionId) {
+        cronBridgeMod.setSessionChannelContext(uuid, ctx)
+        mirroredUuid = uuid
+      }
+    } catch {}
 
     // Swap CC's ambient session id / project dir → subsequent recordTranscript
     // calls will write to ~/.klaus/projects/<sanitized-canonical>/<uuid>.jsonl.
@@ -1138,6 +1159,7 @@ export class EngineHost {
       // Unregister per-session forwarders so late events from abandoned queries don't leak.
       this.sessionEmitters.delete(sessionId)
       this.sessionPermissionEmitters.delete(sessionId)
+      cleanupMirror()
     }
 
     // Persistence already happened inside the for-await loop via

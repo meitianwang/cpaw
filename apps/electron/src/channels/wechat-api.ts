@@ -165,13 +165,31 @@ export async function sendMessageWechat(params: {
       context_token: contextToken,
     },
   };
-  await apiFetch({
+  const rawText = await apiFetch({
     baseUrl: config.baseUrl,
     endpoint: "ilink/bot/sendmessage",
     body: JSON.stringify({ ...body, base_info: { channel_version: CHANNEL_VERSION } }),
     token: config.token,
     timeoutMs: API_TIMEOUT_MS,
   });
+  // HTTP-200 doesn't mean the message landed — the iLink API signals failure
+  // via {errcode, errmsg} in the body. Without this check a missing or
+  // expired context_token would appear successful while the user's phone
+  // stays silent (this is how cron → WeChat delivery was silently dropping
+  // messages before the diagnostic was added).
+  try {
+    const parsed = JSON.parse(rawText) as { errcode?: number; errmsg?: string };
+    if (parsed && typeof parsed.errcode === 'number' && parsed.errcode !== 0) {
+      throw new Error(
+        `WeChat API sendmessage errcode=${parsed.errcode}${parsed.errmsg ? ` ${parsed.errmsg}` : ''}`
+          + (contextToken ? '' : ' (no context_token — a user must DM the bot first before outbound send will deliver)'),
+      );
+    }
+  } catch (err) {
+    // JSON.parse failure on a 200 is unusual but not necessarily fatal —
+    // only re-throw our errcode-based Error.
+    if (err instanceof Error && err.message.startsWith('WeChat API sendmessage errcode')) throw err;
+  }
 }
 
 export { DEFAULT_BASE_URL };
