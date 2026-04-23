@@ -1253,16 +1253,14 @@ export class EngineHost {
       }
 
       // 完整的 assistant 消息 —— 把里面的 content 块拆成 UI 能渲染的事件
-      // CC query() 默认不发 stream_event（partial messages），所以这里兜底全量
+      // text 块不在这里兜底：stream_event 已经把分片 text_delta 推过了，
+      // 再补一次会让前端把同一段正文渲染两遍
       case 'assistant': {
         session.messages.push(event as Message)
         const content = (event as any).message?.content
         if (Array.isArray(content)) {
           for (const block of content) {
-            if (block.type === 'text' && block.text) {
-              this.pushEvent({ type: 'stream_mode', sessionId, mode: 'responding' })
-              this.pushEvent({ type: 'text_delta', sessionId, text: block.text })
-            } else if ((block.type === 'thinking' || block.type === 'redacted_thinking') && (block.thinking || block.data)) {
+            if ((block.type === 'thinking' || block.type === 'redacted_thinking') && (block.thinking || block.data)) {
               this.pushEvent({ type: 'stream_mode', sessionId, mode: 'thinking' })
               this.pushEvent({ type: 'thinking_delta', sessionId, thinking: block.thinking ?? block.data ?? '' })
             } else if (block.type === 'tool_use') {
