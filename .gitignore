@@ -8,6 +8,7 @@ pi-mono/
 OPENCLAW-ANALYSIS.md
 *.md
 !skills-market/**/SKILL.md
+docs/cli-proxy-api.md
 antigravity-sync-mcp/
 # iOS / Xcode
 ios/KlausAI.xcworkspace/
