@@ -15,4 +15,5 @@ export default defineConfig({
   banner: {
     js: "#!/usr/bin/env node",
   },
+  onSuccess: "cp -R src/engine/utils/vendor dist/",
 });
