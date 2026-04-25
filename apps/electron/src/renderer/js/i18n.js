@@ -3,7 +3,7 @@
 const I18N = {
   en: {
     // Chat
-    new_chat: 'New chat', recents: 'Recents', send: 'Send', draft_badge: 'Draft',
+    new_chat: 'New chat', recents: 'Recents', im_sessions: 'IM', send: 'Send', draft_badge: 'Draft',
     placeholder: 'Send a message...', connected: 'Connected',
     initializing: 'Initializing...', error: 'Error',
     thinking: 'Thinking...', copy: 'Copy', copied: 'Copied!',
@@ -239,6 +239,7 @@ const I18N = {
     cron_form_channel_group: 'Group · ',
     cron_form_channel_hint_dm: 'Connected but not ready yet: ',
     cron_form_channel_hint_dm_suffix: ' — DM Klaus from there once so it knows who you are.',
+    cron_form_channel_qq_warning: 'Heads up — QQ official bots can only send proactive messages after platform audit. Unapproved bots have a 5-minute passive-reply window after a user DM, so scheduled runs outside that window may be silently dropped by QQ servers.',
     cron_form_channel_none_bound: 'No channel bound',
     cron_chat_banner_prefix: 'Results will be pushed to',
     cron_every_day: 'Daily', cron_weekdays: 'Weekdays', cron_weekends: 'Weekends', cron_every: 'Every ',
@@ -415,7 +416,7 @@ const I18N = {
   },
   zh: {
     // Chat
-    new_chat: '新对话', recents: '最近', send: '发送', draft_badge: '草稿',
+    new_chat: '新对话', recents: '最近', im_sessions: 'IM 会话', send: '发送', draft_badge: '草稿',
     placeholder: '输入消息...', connected: '已连接',
     initializing: '初始化中...', error: '错误',
     thinking: '思考中...', copy: '复制', copied: '已复制！',
@@ -651,6 +652,7 @@ const I18N = {
     cron_form_channel_group: '群 · ',
     cron_form_channel_hint_dm: '已接入但暂不可用：',
     cron_form_channel_hint_dm_suffix: '——先在里面给 Klaus 发一条私聊，让它认识你。',
+    cron_form_channel_qq_warning: '注意：QQ 官方 Bot 发送主动消息需要通过平台审核。未审核的 Bot 只能在用户私聊后 5 分钟内回复被动消息，定时任务在此窗口之外触发时可能被 QQ 服务端静默丢弃。',
     cron_form_channel_none_bound: '此任务未绑定通道',
     cron_chat_banner_prefix: '运行结束会推送到',
     cron_every_day: '每天', cron_weekdays: '工作日', cron_weekends: '周末', cron_every: '每',

@@ -100,16 +100,14 @@ let userMenuOpen = false
 // sub-items (one execution = one chat thread, via CronScheduler per-run ids).
 let cronTasks = []                           // CronTask[] fetched on demand
 const cronRunsByTask = new Map()             // taskId → CronRun[]
-let cronGroupExpanded = localStorage.getItem('klaus_cron_group_expanded') !== '0'
+// Per-task expand state — each task in the cron pinned group is collapsed by
+// default (just a row), and the user clicks it to reveal its run history.
 const cronTaskExpanded = (() => {
   try { return new Set(JSON.parse(localStorage.getItem('klaus_cron_tasks_expanded') || '[]')) }
   catch { return new Set() }
 })()
-function persistCronExpanded() {
-  try {
-    localStorage.setItem('klaus_cron_group_expanded', cronGroupExpanded ? '1' : '0')
-    localStorage.setItem('klaus_cron_tasks_expanded', JSON.stringify([...cronTaskExpanded]))
-  } catch {}
+function persistCronTaskExpanded() {
+  try { localStorage.setItem('klaus_cron_tasks_expanded', JSON.stringify([...cronTaskExpanded])) } catch {}
 }
 function isCronRunSession(id) { return typeof id === 'string' && id.startsWith('cron-run-') }
 
@@ -147,8 +145,8 @@ function cronChannelLabel(channelId) {
 }
 // Resolve a cron-run sessionId back to its parent task so we can seed the
 // user prompt bubble before the engine JSONL exists. Returns null when the
-// run isn't in the expanded-task cache (user opened a run whose task was
-// never expanded — we'd have to fetch, but that's rare).
+// run isn't in the per-task run cache (refreshCronTasksForSidebar preloads
+// every known task's runs on boot so this is almost always a hit).
 function findCronTaskBySessionId(sid) {
   for (const task of cronTasks) {
     const runs = cronRunsByTask.get(task.id) || []
@@ -161,15 +159,12 @@ function findCronTaskBySessionId(sid) {
 // refresh after create/edit/delete without knowing about chat.js internals.
 window.refreshCronSidebar = () => refreshCronTasksForSidebar()
 // Exposed so cron.js can surface a freshly-started cron run in the sidebar
-// without pulling the user out of the cron management page. We only expand
-// the task + refresh its runs; the user decides whether to click in and
-// watch. (Auto-switching meant staring at a blank chat while the engine
-// spun up, which was worse than just leaving a pulsing dot in the sidebar.)
+// without pulling the user out of the cron management page. Runs are always
+// shown under their task in the sidebar — we just refresh to pick up the
+// newly-minted row; the user decides whether to click in and watch.
+// (Auto-switching meant staring at a blank chat while the engine spun up,
+// which was worse than just leaving a pulsing dot in the sidebar.)
 window.surfaceCronRunInSidebar = async (taskId) => {
-  if (taskId) {
-    cronTaskExpanded.add(taskId)
-    try { localStorage.setItem('klaus_cron_tasks_expanded', JSON.stringify([...cronTaskExpanded])) } catch {}
-  }
   await refreshCronTasksForSidebar()
   if (taskId) await refreshCronRunsForTask(taskId)
 }
@@ -180,7 +175,6 @@ async function refreshCronTasksForSidebar() {
     // the cron page — engine.deleteSession already wiped their JSONLs).
     const keep = new Set(cronTasks.map(t => t.id))
     for (const tid of [...cronRunsByTask.keys()]) if (!keep.has(tid)) cronRunsByTask.delete(tid)
-    for (const tid of [...cronTaskExpanded]) if (!keep.has(tid)) cronTaskExpanded.delete(tid)
     // Pull a bounded page of recent runs across all tasks and fan them
     // out per-task. Serves two purposes: expanded tasks get their runs
     // preloaded (no flicker on first paint), and collapsed tasks get the
@@ -411,36 +405,74 @@ function renderSessionList() {
     cronWrap.innerHTML = ''
     renderCronSidebarGroup(cronWrap)
   }
+  // Pinned "IM 会话" group — aggregates every channel-prefixed session so
+  // Recents can stay a clean list of locally-started web chats.
+  const imWrap = document.getElementById('im-pinned-wrap')
+  if (imWrap) {
+    imWrap.innerHTML = ''
+    renderImSidebarGroup(imWrap)
+  }
   // Regular flat sessions, excluding cron-run sessions (they live under
-  // their task in the pinned group above).
+  // their task in the pinned group above) and channel-prefixed sessions
+  // (they live in the IM pinned group above).
   for (const s of sessions) {
     if (isCronRunSession(s.id)) continue
-    const div = document.createElement('div')
-    div.className = 'session-item' + (s.id === currentSessionId ? ' active' : '')
-    const displayTitle = s.title && s.title !== 'New Chat' ? s.title : tt('new_chat')
-    const ch = detectChannelPrefix(s.id)
-    const badgeHtml = ch ? `<span class="s-channel-badge">${escapeHtml(tt('settings_ch_' + ch))}</span>` : ''
-    const hasDraft = (sessionDrafts.get(s.id) || '').trim().length > 0
-    const showDraft = hasDraft && !sessionHasMessages(s)
-    const draftHtml = showDraft ? `<span class="s-draft-badge">${escapeHtml(tt('draft_badge'))}</span>` : ''
-    div.innerHTML = `${badgeHtml}<div class="s-title">${escapeHtml(displayTitle)}</div>${draftHtml}<button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
-    div.onclick = () => switchSession(s.id)
-    div.querySelector('.s-del').onclick = (e) => { e.stopPropagation(); deleteSession(s.id) }
-    sessionListEl.appendChild(div)
+    if (detectChannelPrefix(s.id)) continue
+    sessionListEl.appendChild(buildSessionItem(s))
   }
+}
+
+// One session row — reused by both Recents and the IM pinned group so a
+// session rendered in either place looks and behaves identically.
+function buildSessionItem(s) {
+  const div = document.createElement('div')
+  div.className = 'session-item' + (s.id === currentSessionId ? ' active' : '')
+  const displayTitle = s.title && s.title !== 'New Chat' ? s.title : tt('new_chat')
+  const ch = detectChannelPrefix(s.id)
+  const badgeHtml = ch ? `<span class="s-channel-badge">${escapeHtml(tt('settings_ch_' + ch))}</span>` : ''
+  const hasDraft = (sessionDrafts.get(s.id) || '').trim().length > 0
+  const showDraft = hasDraft && !sessionHasMessages(s)
+  const draftHtml = showDraft ? `<span class="s-draft-badge">${escapeHtml(tt('draft_badge'))}</span>` : ''
+  div.innerHTML = `${badgeHtml}<div class="s-title">${escapeHtml(displayTitle)}</div>${draftHtml}<button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
+  div.onclick = () => switchSession(s.id)
+  div.querySelector('.s-del').onclick = (e) => { e.stopPropagation(); deleteSession(s.id) }
+  return div
+}
+
+// Pinned IM sessions group. Static section header (matches 定时任务 / 最近),
+// body is a flat list of session rows — no sub-tree, no per-task expansion.
+// Empty → whole group hidden so Recents sits flush against the sidebar nav
+// when nothing is pinned.
+function renderImSidebarGroup(container) {
+  const imSessions = sessions.filter(s => !isCronRunSession(s.id) && detectChannelPrefix(s.id))
+  if (imSessions.length === 0) return
+
+  const group = document.createElement('div')
+  group.className = 'cron-sb-group'
+
+  const head = document.createElement('div')
+  head.className = 'sidebar-section-label'
+  head.textContent = tt('im_sessions')
+  group.appendChild(head)
+
+  const body = document.createElement('div')
+  body.className = 'cron-sb-body'
+  for (const s of imSessions) body.appendChild(buildSessionItem(s))
+  group.appendChild(body)
+
+  container.appendChild(group)
 }
 
 // Pinned "定时任务" group at top of the sidebar.
 //
-// Layout (per reference design):
-//   ▸ Group header: muted label on the left, caret on the right. The
-//     common "caret-on-left disclosure" pattern is inverted so the header
-//     reads as a soft section title rather than a clickable tree node.
-//   ▸ Task row: clock icon + name on left, unread dot on right. Expand
-//     caret only appears on hover (or when the task is already open), so
-//     collapsed tasks look like flat leaf entries.
-//   ▸ Run sub-row (task.open): timestamp + unread dot. Clicking a run
-//     opens its dedicated chat thread.
+// Layout:
+//   ▸ Group header: static muted section label, visually mirroring "最近".
+//   ▸ Task row: clock icon + name + aggregate unread dot. Collapsed by
+//     default; click toggles expansion. Caret only fades in on hover or
+//     when open, so collapsed rows read as flat leaves.
+//   ▸ Run sub-rows (when task is open): timestamp + channel badge + unread
+//     dot. Click opens the run's dedicated chat thread. Active state lives
+//     here only — picking a run does NOT highlight the task header above it.
 //
 // 零任务时整个 group 不渲染 —— 顶部已有"定时任务"入口按钮，这里再显示一个
 // 空分组标题 + "还没有定时任务"文案视觉冗余。有任务才出现 pinned group。
@@ -448,29 +480,21 @@ function renderCronSidebarGroup(container) {
   if (!cronTasks || cronTasks.length === 0) return
 
   const group = document.createElement('div')
-  group.className = 'cron-sb-group' + (cronGroupExpanded ? ' open' : '')
+  group.className = 'cron-sb-group'
 
   const head = document.createElement('div')
-  head.className = 'cron-sb-head'
-  head.innerHTML = `
-    <span class="cron-sb-title">${escapeHtml(tt('cron'))}</span>
-    <svg class="cron-sb-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4.5,3 7.5,6 4.5,9"/></svg>`
-  head.onclick = () => {
-    cronGroupExpanded = !cronGroupExpanded
-    persistCronExpanded()
-    renderSessionList()
-  }
+  head.className = 'sidebar-section-label'
+  head.textContent = tt('cron')
   group.appendChild(head)
 
-  if (cronGroupExpanded) {
-    const body = document.createElement('div')
-    body.className = 'cron-sb-body'
-    for (const task of cronTasks) {
-      body.appendChild(renderCronSidebarTask(task))
-    }
-    group.appendChild(body)
+  const body = document.createElement('div')
+  body.className = 'cron-sb-body'
+  for (const task of cronTasks) {
+    body.appendChild(renderCronSidebarTask(task))
   }
-  (container || sessionListEl).appendChild(group)
+  group.appendChild(body)
+
+  ;(container || sessionListEl).appendChild(group)
 }
 
 function renderCronSidebarTask(task) {
@@ -482,10 +506,6 @@ function renderCronSidebarTask(task) {
   head.className = 'cron-sb-task-head'
   const title = task.name || task.id
   const unread = taskHasUnread(task.id)
-  // Caret + clock + title + unread dot. CSS hides the caret unless the
-  // row is hovered or the task is already open (`.cron-sb-task.open`).
-  // Result: collapsed tasks look like leaf entries with just the clock
-  // icon; hovering reveals that they're expandable.
   head.innerHTML = `
     <svg class="cron-sb-caret" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4.5,3 7.5,6 4.5,9"/></svg>
     <svg class="cron-sb-task-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><polyline points="8,4 8,8 10.5,9.5"/></svg>
@@ -494,11 +514,11 @@ function renderCronSidebarTask(task) {
   head.onclick = async () => {
     if (cronTaskExpanded.has(task.id)) {
       cronTaskExpanded.delete(task.id)
-      persistCronExpanded()
+      persistCronTaskExpanded()
       renderSessionList()
     } else {
       cronTaskExpanded.add(task.id)
-      persistCronExpanded()
+      persistCronTaskExpanded()
       // Always re-fetch on expand — a run may have fired while this task
       // was collapsed (the chat-event refresh only pokes currently-open tasks).
       // refreshCronRunsForTask ends with a renderSessionList() call.

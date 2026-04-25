@@ -85,8 +85,30 @@
   const fChannelSelect = window.klsSelect.bind(fChannelEl, {
     items: [{ value: '', i18nKey: 'cron_form_channel_none' }],
     value: '',
-    onChange: () => {},
+    onChange: (value) => updateChannelHint(value),
   })
+
+  // Base hint text (stored per-openForm) so the onChange handler can restore
+  // it when the user switches away from a channel with a channel-specific
+  // warning. Written by refreshChannelOptions, read by updateChannelHint.
+  let baseChannelHint = ''
+
+  // Channel-specific gotchas that aren't obvious from the dropdown item alone.
+  // QQ is the current standout: official bots can't send proactive messages
+  // without audit approval, so a cron-triggered push can silently fail on the
+  // server side.
+  function updateChannelHint(pickedValue) {
+    const hintEl = document.getElementById('cron-form-channel-hint')
+    if (!hintEl) return
+    if (pickedValue === 'qq') {
+      hintEl.textContent = t('cron_form_channel_qq_warning',
+        'Heads up — QQ official bots can only send proactive messages after platform audit. Unapproved bots have a 5-minute passive-reply window after a user DM, so scheduled runs outside that window may be silently dropped by QQ servers.')
+      hintEl.classList.add('is-warning')
+      return
+    }
+    hintEl.textContent = baseChannelHint
+    hintEl.classList.remove('is-warning')
+  }
 
   // Day-of-month dropdown (1-31) populated once.
   {
@@ -842,17 +864,17 @@
     //  - nothing configured at all → baseline hint about Settings
     //  - some configured but not DM'd → tell the user to DM first so those
     //    channels show up here
-    const hintEl = document.getElementById('cron-form-channel-hint')
-    if (hintEl) {
-      if (pendingDmChannels.length) {
-        hintEl.textContent = t('cron_form_channel_hint_dm', 'Connected but not yet ready: ')
-          + pendingDmChannels.join(', ')
-          + t('cron_form_channel_hint_dm_suffix', ' — DM Klaus from there once so it knows who you are.')
-      } else {
-        hintEl.textContent = t('cron_form_channel_hint',
-          "Only channels you've connected in Settings show up. Group chats must be created from inside that chat.")
-      }
+    if (pendingDmChannels.length) {
+      baseChannelHint = t('cron_form_channel_hint_dm', 'Connected but not yet ready: ')
+        + pendingDmChannels.join(', ')
+        + t('cron_form_channel_hint_dm_suffix', ' — DM Klaus from there once so it knows who you are.')
+    } else {
+      baseChannelHint = t('cron_form_channel_hint',
+        "Only channels you've connected in Settings show up. Group chats must be created from inside that chat.")
     }
+    // Channel just reset to '' by setItems — repaint the hint through the
+    // same path onChange uses so QQ warning / base hint logic stays one place.
+    updateChannelHint('')
   }
 
   function openForm(task) {

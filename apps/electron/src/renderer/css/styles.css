@@ -210,12 +210,16 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 /* Pinned-group wrapper sits above the "Recents" section label. A small
  * bottom margin gives the label breathing room so it no longer reads as
  * a sub-header of the cron group. */
-.cron-pinned-wrap { margin-bottom: 8px; }
+.cron-pinned-wrap {
+  margin-bottom: 8px;
+  -webkit-app-region: no-drag;
+}
 
-/* ---- Pinned 定时任务 sidebar group ---- */
+/* ---- Pinned 定时任务 / IM 会话 sidebar groups ---- */
 /*
- * Visual hierarchy (per the reference mock):
- *   - Group header sits as a faint section label, title first, caret right.
+ * Visual hierarchy:
+ *   - Group header reuses .sidebar-section-label so 定时任务 / IM 会话 / 最近
+ *     all read as the same section divider — static, no toggle affordance.
  *   - Task rows look like flat leaves with clock icon + title; the expand
  *     caret only appears on :hover or when open, so collapsed rows don't
  *     advertise a hidden second level.
@@ -223,20 +227,6 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
  *     failed runs go red. Dots disappear once the session has been opened.
  */
 .cron-sb-group { margin-bottom: 6px; }
-.cron-sb-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  color: var(--fg-quaternary);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: .2px;
-  user-select: none;
-}
-.cron-sb-head:hover { color: var(--fg-tertiary); }
 .cron-sb-caret {
   width: 10px;
   height: 10px;
@@ -245,10 +235,6 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   color: currentColor;
   opacity: 0.7;
 }
-.cron-sb-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Group caret sits on the right and rotates when open — read as "this
- * folder is currently expanded" the same way the group list does. */
-.cron-sb-group.open > .cron-sb-head .cron-sb-caret { transform: rotate(180deg); }
 .cron-sb-body {
   display: flex;
   flex-direction: column;
@@ -263,11 +249,12 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   padding: 7px 10px 7px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  color: var(--fg);
-  font-size: 13px;
+  color: var(--fg-tertiary);
+  font-size: 12px;
+  font-weight: 500;
   user-select: none;
 }
-.cron-sb-task-head:hover { background: var(--bg-hover); }
+.cron-sb-task-head:hover { background: var(--bg-hover); color: var(--fg); }
 /* Leaf-mode: caret hidden, clock icon stands in as the row's left gutter.
  * On hover (or when open) the caret fades in and the clock slides out —
  * collapsed rows read as leaves, open rows read as tree nodes. */
@@ -310,6 +297,12 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .cron-sb-run:hover { background: var(--bg-hover); color: var(--fg); }
 .cron-sb-run.active { background: var(--bg-hover); color: var(--fg); font-weight: 500; }
 .cron-sb-run-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.cron-sb-run-empty {
+  padding: 6px 10px 6px 32px;
+  font-size: 12px;
+  color: var(--fg-quaternary);
+  font-style: italic;
+}
 /* Unified unread/running/failed dot used on both task rows (aggregate
  * from child runs) and run rows themselves. Default is the "unread" blue;
  * modifier classes override color / add animation. */
@@ -322,18 +315,6 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 }
 .cron-sb-dot.failed { background: #dc2626; }
 .cron-sb-dot.running { animation: cron-sb-pulse 1.2s ease-in-out infinite; }
-.cron-sb-run-empty {
-  padding: 6px 10px 6px 32px;
-  font-size: 12px;
-  color: var(--fg-quaternary);
-  font-style: italic;
-}
-.cron-sb-task-empty {
-  padding: 8px 10px;
-  font-size: 12px;
-  color: var(--fg-quaternary);
-  font-style: italic;
-}
 @keyframes cron-sb-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.3; }
@@ -2322,6 +2303,13 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   color: var(--fg-tertiary);
   margin-top: 5px;
   line-height: 1.5;
+}
+.cron-form-hint.is-warning {
+  color: #b45309;
+  background: rgba(180, 83, 9, 0.08);
+  border-left: 2px solid #b45309;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
 }
 
 .cron-modal-footer {
