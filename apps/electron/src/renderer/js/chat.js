@@ -439,7 +439,7 @@ function buildSessionItem(s) {
   const ch = detectChannelPrefix(s.id)
   const badgeHtml = ch ? `<span class="s-channel-badge">${escapeHtml(tt('settings_ch_' + ch))}</span>` : ''
   const hasDraft = (sessionDrafts.get(s.id) || '').trim().length > 0
-  const showDraft = hasDraft && !sessionHasMessages(s)
+  const showDraft = hasDraft && !sessionHasMessages(s) && s.id !== currentSessionId
   const draftHtml = showDraft ? `<span class="s-draft-badge">${escapeHtml(tt('draft_badge'))}</span>` : ''
   div.innerHTML = `${badgeHtml}<div class="s-title">${escapeHtml(displayTitle)}</div>${draftHtml}<button class="s-del" title="${escapeHtml(tt('delete_title'))}">&times;</button>`
   div.onclick = () => switchSession(s.id)
