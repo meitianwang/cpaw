@@ -791,7 +791,7 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   flex-shrink: 0;
 }
 .tool-item-header:hover .tool-chevron { opacity: 1; }
-.tool-item.open .tool-chevron { transform: rotate(180deg); opacity: 1; }
+.tool-item.open .tool-chevron { transform: rotate(90deg); opacity: 1; }
 
 /* 完成态淡化主信息（label/value），但不动 icon 颜色（仍是分类锚点） */
 .tool-item.done .tool-label { color: var(--fg-tertiary); font-weight: 500; }
