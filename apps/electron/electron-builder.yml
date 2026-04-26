@@ -12,10 +12,12 @@ files:
   - src/renderer/**/*
   - node_modules/**/*
   - package.json
-# Bundled connector scripts must be spawnable — asar blocks execution of
-# JS files packed inside it, so unpack them to app.asar.unpacked/.
+# Bundled connector scripts and vendor binaries must be spawnable — asar
+# blocks execution of files packed inside it, so unpack them to
+# app.asar.unpacked/. vendor includes ripgrep used by Glob/Grep tools.
 asarUnpack:
   - dist/connectors/**/*
+  - dist/main/vendor/**/*
 # Ship the skills marketplace alongside the app — SkillsManager resolves it
 # from process.resourcesPath in production.
 extraResources:

@@ -67,7 +67,9 @@ export default defineConfig([
     // Copy bundled connector scripts (ESM .mjs spawned as child processes) to
     // dist/connectors/. They are NOT bundled by tsup — ConnectorManager
     // spawns them directly via process.execPath (+ ELECTRON_RUN_AS_NODE).
-    onSuccess: 'mkdir -p dist/connectors && cp src/connectors/*.mjs dist/connectors/',
+    // Also copy vendor/ripgrep next to main/index.js — engine's ripgrep.ts
+    // resolves rg relative to its own dirname, which after bundling is dist/main/.
+    onSuccess: 'mkdir -p dist/connectors && cp src/connectors/*.mjs dist/connectors/ && cp -R src/engine/utils/vendor dist/main/',
   },
   // Preload
   {
