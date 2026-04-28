@@ -52,6 +52,10 @@ const I18N = {
     sys_auth_restart_later: 'Later',
     loading: 'Loading…',
     cancel: 'Cancel', delete_title: 'Delete', dialog_ok: 'OK',
+    untitled: '(untitled)',
+    delete_session_title: 'Delete conversation',
+    delete_session_message: 'Delete this conversation? This cannot be undone.\n\n{title}',
+    delete_session_wipe_workspace: "Also delete files in this conversation's workspace",
     settings_saved: 'Saved', settings_failed: 'Failed', settings_deleted: 'Deleted',
     settings_confirm_delete: 'Are you sure?',
     // Profile
@@ -482,6 +486,10 @@ const I18N = {
     sys_auth_restart_later: '稍后',
     loading: '加载中…',
     cancel: '取消', delete_title: '删除', dialog_ok: '确定',
+    untitled: '（未命名）',
+    delete_session_title: '删除会话',
+    delete_session_message: '确定删除该会话？此操作无法恢复。\n\n{title}',
+    delete_session_wipe_workspace: '同时删除该会话工作目录中的所有文件',
     settings_saved: '已保存', settings_failed: '失败', settings_deleted: '已删除',
     settings_confirm_delete: '确定要删除吗？',
     // Profile

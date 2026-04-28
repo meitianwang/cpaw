@@ -28,6 +28,7 @@
       confirmText,
       cancelText,
       danger = false,
+      checkbox = null, // { label: string, defaultChecked?: boolean } — when set, confirm result is { confirmed, checked }
     } = opts || {}
 
     return new Promise((resolve) => {
@@ -38,12 +39,19 @@
       const okFallback = danger ? tt('delete_title', 'Delete') : tt('dialog_ok', 'OK')
       const ct = esc(confirmText ?? okFallback)
       const cx = esc(cancelText ?? tt('cancel', 'Cancel'))
+      const checkboxId = checkbox ? `klaus-dialog-cb-${Math.random().toString(36).slice(2, 8)}` : ''
 
       overlay.innerHTML = `
         <div class="klaus-dialog-backdrop"></div>
         <div class="klaus-dialog-card" role="dialog" aria-modal="true">
           ${title ? `<div class="klaus-dialog-title">${esc(title)}</div>` : ''}
           <div class="klaus-dialog-message">${esc(message)}</div>
+          ${checkbox ? `
+            <label class="klaus-dialog-checkbox" for="${checkboxId}">
+              <input type="checkbox" id="${checkboxId}" ${checkbox.defaultChecked ? 'checked' : ''} />
+              <span>${esc(checkbox.label || '')}</span>
+            </label>
+          ` : ''}
           <div class="klaus-dialog-footer">
             ${type === 'confirm' ? `<button class="klaus-dialog-btn klaus-dialog-cancel" type="button">${cx}</button>` : ''}
             <button class="klaus-dialog-btn klaus-dialog-confirm${danger ? ' klaus-dialog-danger' : ''}" type="button">${ct}</button>
@@ -53,14 +61,20 @@
       root.appendChild(overlay)
       requestAnimationFrame(() => overlay.classList.add('active'))
 
+      const cb = checkbox ? overlay.querySelector(`#${checkboxId}`) : null
+
       let closed = false
-      const close = (result) => {
+      const close = (confirmed) => {
         if (closed) return
         closed = true
         overlay.classList.remove('active')
         document.removeEventListener('keydown', onKey, true)
         setTimeout(() => overlay.remove(), 160)
-        resolve(result)
+        if (checkbox && type === 'confirm') {
+          resolve({ confirmed, checked: !!(confirmed && cb?.checked) })
+        } else {
+          resolve(confirmed)
+        }
       }
       const cancelValue = type === 'confirm' ? false : undefined
       const confirmValue = type === 'confirm' ? true : undefined

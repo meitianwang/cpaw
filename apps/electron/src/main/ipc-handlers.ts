@@ -70,7 +70,7 @@ export function registerIpcHandlers(
   // is the user's call. Mirrors CC CLI's /clear (fresh uuid, no rotation).
   ipcMain.handle('session:new', async () => engine.newSession())
   ipcMain.handle('session:list', async () => engine.listSessions())
-  ipcMain.handle('session:delete', async (_e, { sessionId }) => engine.deleteSession(sessionId))
+  ipcMain.handle('session:delete', async (_e, { sessionId, wipeWorkspace }) => engine.deleteSession(sessionId, { wipeWorkspace: !!wipeWorkspace }))
   ipcMain.handle('session:rename', async (_e, { sessionId, title }) => engine.renameSession(sessionId, title))
   ipcMain.handle('session:history', async (_e, { sessionId }) => engine.getHistory(sessionId))
 

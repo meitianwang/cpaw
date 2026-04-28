@@ -19,7 +19,8 @@ contextBridge.exposeInMainWorld('klaus', {
   session: {
     new: () => ipcRenderer.invoke('session:new'),
     list: () => ipcRenderer.invoke('session:list'),
-    delete: (sessionId: string) => ipcRenderer.invoke('session:delete', { sessionId }),
+    delete: (sessionId: string, opts?: { wipeWorkspace?: boolean }) =>
+      ipcRenderer.invoke('session:delete', { sessionId, wipeWorkspace: !!opts?.wipeWorkspace }),
     rename: (sessionId: string, title: string) => ipcRenderer.invoke('session:rename', { sessionId, title }),
     history: (sessionId: string) => ipcRenderer.invoke('session:history', { sessionId }),
   },

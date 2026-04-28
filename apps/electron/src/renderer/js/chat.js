@@ -760,7 +760,19 @@ async function newChat() {
 }
 
 async function deleteSession(id) {
-  await klausApi.session.delete(id)
+  const target = sessions.find(s => s.id === id)
+  const titleStr = (target?.title || '').trim() || tt('untitled') || '(untitled)'
+  const result = await window.klausDialog.confirm({
+    title: tt('delete_session_title') || 'Delete conversation',
+    message: (tt('delete_session_message') || 'Delete this conversation? This cannot be undone.\n\n{title}').replace('{title}', titleStr),
+    danger: true,
+    checkbox: {
+      label: tt('delete_session_wipe_workspace') || 'Also delete files in this conversation\'s workspace',
+      defaultChecked: false,
+    },
+  })
+  if (!result || !result.confirmed) return
+  await klausApi.session.delete(id, { wipeWorkspace: !!result.checked })
   sessions = sessions.filter(s => s.id !== id)
   sessionDom.delete(id)
   if (sessionDrafts.has(id)) { sessionDrafts.delete(id); persistDrafts() }

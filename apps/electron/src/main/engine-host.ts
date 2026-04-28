@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { join, basename as pathBasename } from 'path'
 import { homedir } from 'os'
-import { mkdirSync, unlinkSync, existsSync } from 'fs'
+import { mkdirSync, unlinkSync, existsSync, rmSync } from 'fs'
 import type { BrowserWindow } from 'electron'
 import type { SettingsStore } from './settings-store.js'
 import { SessionKeyRegistry } from './session-registry.js'
@@ -587,7 +587,7 @@ export class EngineHost {
     return sessionDirFor(sessionId)
   }
 
-  deleteSession(sessionId: string): void {
+  deleteSession(sessionId: string, opts?: { wipeWorkspace?: boolean }): void {
     const entry = this.sessions.get(sessionId)
     const uuid = entry?.uuid ?? this.registry.lookupUuid(sessionId)
     // Stop the in-flight query first: set the tombstone so any event that
@@ -608,6 +608,15 @@ export class EngineHost {
     this.registry.forgetUuid(uuid)
     // Cascade: drop recorded artifacts for this session.
     try { this.store.deleteArtifactsBySession(sessionId) } catch {}
+    // Optionally wipe the session's workspace directory and all its files.
+    // Guard: never let this escape SESSIONS_DIR (defense against weird sessionIds).
+    if (opts?.wipeWorkspace) {
+      const dir = sessionDirFor(sessionId)
+      if (dir.startsWith(SESSIONS_DIR + '/') && existsSync(dir)) {
+        try { rmSync(dir, { recursive: true, force: true }) }
+        catch (err) { console.warn('[Engine] deleteSession rm workspace failed:', err) }
+      }
+    }
     clearSystemPromptSections()
   }
 
