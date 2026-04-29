@@ -54,6 +54,17 @@ export function registerIpcHandlers(
     engine.interrupt(sessionId)
   })
 
+  // Truncate session transcript at a target user message — host-level splice
+  // on top of CC's append-only JSONL (engine has no public "rewind to message"
+  // primitive). 'rewind' = conversation cut + file-history rollback (CC's
+  // /rewind semantics), and returns the deleted user text so the renderer can
+  // populate the input box for editing. 'delete' = conversation cut only;
+  // files on disk and the artifacts table are left untouched.
+  ipcMain.handle('chat:rewind-from', async (_e, { sessionId, messageUuid }) =>
+    engine.truncateAtMessage(sessionId, messageUuid, { mode: 'rewind', returnText: true }))
+  ipcMain.handle('chat:delete-from', async (_e, { sessionId, messageUuid }) =>
+    engine.truncateAtMessage(sessionId, messageUuid, { mode: 'delete', returnText: false }))
+
   ipcMain.handle('chat:upload', async (_e, { name, type, buffer }) => {
     const uploadDir = join(homedir(), '.klaus', 'uploads')
     mkdirSync(uploadDir, { recursive: true })

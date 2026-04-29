@@ -9,6 +9,10 @@ export interface SessionInfo {
 
 export interface ChatMessage {
   id: string
+  /** CC-engine UUID of the underlying transcript line. Used by chat:rewind-from
+   *  / chat:delete-from to address a specific message for truncation. May be
+   *  undefined for legacy entries that lacked a uuid in the source JSONL. */
+  uuid?: string
   role: 'user' | 'assistant'
   text: string
   // When present, carries the original engine Message.content block array

@@ -59,6 +59,12 @@ import {
   buildConversationChain,
   clearSessionMetadata,
 } from '../engine/utils/sessionStorage.js'
+import {
+  fileHistoryRewind,
+  fileHistoryRestoreStateFromLog,
+  type FileHistoryState,
+  type FileHistorySnapshot,
+} from '../engine/utils/fileHistory.js'
 
 const CONFIG_DIR = join(homedir(), '.klaus')
 const SESSIONS_DIR = join(CONFIG_DIR, 'sessions')
@@ -728,6 +734,7 @@ export class EngineHost {
         if (m.type === 'user' && !text.trim() && !blocks?.length) continue
         out.push({
           id: `${sessionId}-${i++}`,
+          uuid: typeof (m as any).uuid === 'string' ? (m as any).uuid : undefined,
           role: (m as any).message?.role ?? m.type,
           text,
           contentBlocks: blocks,
@@ -740,6 +747,218 @@ export class EngineHost {
     } catch (err) {
       console.warn('[Engine] getHistory failed:', err)
       return []
+    }
+  }
+
+  /**
+   * Truncate a session's JSONL transcript at the line whose `uuid` matches
+   * `targetUuid`. Everything from that line onward (the user message itself +
+   * every assistant turn / tool result that followed) is dropped.
+   *
+   * This is two related operations sharing the same plumbing — `mode` picks:
+   *
+   *   - `'delete'`: pure conversation cut. Files on disk and the artifacts
+   *     table are left untouched; the produced files outlive the deleted
+   *     turns by design (user said "删除只删除对话").
+   *
+   *   - `'rewind'`: CC's /rewind semantics — conversation cut PLUS file-system
+   *     rollback via `fileHistoryRewind` (engine snapshots files before each
+   *     turn that edits them, keyed by the user-message uuid). The artifacts
+   *     table is then rebuilt from the surviving transcript so panel rows
+   *     don't dangle to files the rewind just deleted.
+   *
+   * Why we do the file rewind BEFORE truncating: the snapshot records
+   * (`type: 'file-history-snapshot'`) live in the same JSONL — if the target
+   * line lands above its snapshot record, truncation would orphan it.
+   *
+   * Implemented as a host-level splice on top of CC's append-only JSONL
+   * without touching engine code: engine exposes `removeMessageByUuid` (single
+   * line) and `fileHistoryRewind` (file-system part), but no public combined
+   * "rewind to message" primitive. We compose them here.
+   *
+   * @param opts.returnText  When true, parse the about-to-be-deleted line and
+   *   return its user-message text so the renderer can stuff it back into the
+   *   input box for editing (the "rewind" UX path).
+   */
+  async truncateAtMessage(
+    sessionId: string,
+    targetUuid: string,
+    opts: { returnText?: boolean; mode?: 'delete' | 'rewind' } = {},
+  ): Promise<{ ok: boolean; text: string | null }> {
+    const uuid = this.registry.lookupUuid(sessionId)
+    if (!uuid || !targetUuid) return { ok: false, text: null }
+    const filePath = join(getProjectDir(CANONICAL_CWD), `${uuid}.jsonl`)
+    if (!existsSync(filePath)) return { ok: false, text: null }
+    const mode = opts.mode ?? 'delete'
+
+    // Phase 1 (rewind only): file-system rollback. Read the FULL pre-truncation
+    // transcript so we can grab snapshots regardless of whether their JSONL
+    // record sits above or below the truncate point.
+    if (mode === 'rewind') {
+      try { await this.applyFileHistoryRewind(uuid, filePath, targetUuid) }
+      catch (err) { console.warn('[Engine] file history rewind failed:', err) }
+    }
+
+    // Phase 2: byte-level transcript splice.
+    let extractedText: string | null = null
+    let cutOffset = -1
+    const fsp = await import('fs/promises')
+    const fh = await fsp.open(filePath, 'r+')
+    try {
+      const stat = await fh.stat()
+      const size = stat.size
+      if (size === 0) return { ok: false, text: null }
+      const buf = Buffer.allocUnsafe(size)
+      await fh.read(buf, 0, size, 0)
+      const haystack = buf.toString('utf-8')
+      // First match wins: a line's own `uuid` appears before any child's
+      // `parentUuid` reference. Belt-and-suspenders verify by parsing.
+      const needle = `"uuid":"${targetUuid}"`
+      let idx = 0
+      while (idx < size) {
+        const nl = haystack.indexOf('\n', idx)
+        const lineEnd = nl >= 0 ? nl : size
+        const line = haystack.slice(idx, lineEnd)
+        if (line.includes(needle)) {
+          try {
+            const msg = JSON.parse(line)
+            if (msg?.uuid === targetUuid) {
+              cutOffset = idx
+              if (opts.returnText) {
+                const c = msg?.message?.content
+                if (typeof c === 'string') extractedText = c
+                else if (Array.isArray(c)) {
+                  extractedText = c
+                    .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+                    .map((b: any) => b.text)
+                    .join('')
+                }
+              }
+              break
+            }
+          } catch {}
+        }
+        idx = nl >= 0 ? nl + 1 : size
+      }
+      if (cutOffset < 0) return { ok: false, text: null }
+      await fh.truncate(cutOffset)
+    } finally {
+      await fh.close()
+    }
+
+    // Drop in-memory session state so the next chat()/getHistory() loads from
+    // the truncated transcript. SessionEntry holds a cached `messages[]` that
+    // would otherwise carry the now-deleted turns into the next prompt.
+    this.sessions.delete(sessionId)
+
+    // Phase 3 (rewind only): rebuild the artifacts table. After file rewind
+    // the files those records pointed to may have been deleted/reverted, so
+    // a panel row pointing to a phantom file is worse than no row. For pure
+    // delete we leave the table alone — the files still exist on disk, and
+    // "delete touches only the conversation" is the explicit ask.
+    if (mode === 'rewind') {
+      try { await this.rebuildArtifactsFromTranscript(sessionId) }
+      catch (err) { console.warn('[Engine] artifact rebuild failed:', err) }
+    }
+
+    return { ok: true, text: extractedText }
+  }
+
+  /**
+   * Roll the file system back to the state captured before `targetUuid`'s
+   * turn ran. Loads the JSONL's `file-history-snapshot` records, hands them
+   * to `fileHistoryRestoreStateFromLog` to reconstruct an in-memory
+   * `FileHistoryState`, then calls `fileHistoryRewind`.
+   *
+   * `fileHistoryRewind` resolves backup paths via the ambient session id
+   * (`getSessionId()`), so we mirror chat()'s `switchSession(uuid, projectDir)`
+   * to point the engine at this session before invoking it.
+   */
+  private async applyFileHistoryRewind(
+    engineUuid: string,
+    transcriptPath: string,
+    targetUuid: string,
+  ): Promise<void> {
+    const { fileHistorySnapshots } = await loadTranscriptFile(transcriptPath, { keepAllLeaves: true })
+    if (!fileHistorySnapshots || fileHistorySnapshots.size === 0) return
+    const snapshotList: FileHistorySnapshot[] = []
+    for (const m of fileHistorySnapshots.values()) {
+      if (m?.snapshot) snapshotList.push(m.snapshot)
+    }
+    if (snapshotList.length === 0) return
+    if (!snapshotList.some(s => s.messageId === targetUuid)) return
+
+    let state: FileHistoryState = { snapshots: [], trackedFiles: new Set(), snapshotSequence: 0 }
+    fileHistoryRestoreStateFromLog(snapshotList, (newState) => { state = newState })
+    if (state.snapshots.length === 0) return // file history disabled — restore was a no-op
+
+    const updateState = (updater: (prev: FileHistoryState) => FileHistoryState) => {
+      state = updater(state)
+    }
+    // Backup files live under <claude-config>/file-history/<sessionId>/...,
+    // resolved via getSessionId() unless overridden — point the engine at this
+    // session the same way chat() does.
+    switchSession(engineUuid as any, getProjectDir(CANONICAL_CWD))
+    await fileHistoryRewind(updateState, targetUuid as any)
+  }
+
+  /**
+   * Walk the on-disk transcript and re-populate `session_artifacts` to match.
+   * Mirrors the live `tool_end → upsertArtifact` path: only non-error
+   * tool_results count, and Write/Edit/NotebookEdit are the only artifact
+   * producers. Per file path, the latest non-error op wins (matches the
+   * `ON CONFLICT … last_op = excluded.last_op` upsert).
+   */
+  private async rebuildArtifactsFromTranscript(sessionId: string): Promise<void> {
+    const uuid = this.registry.lookupUuid(sessionId)
+    if (!uuid) return
+    const filePath = join(getProjectDir(CANONICAL_CWD), `${uuid}.jsonl`)
+    if (!existsSync(filePath)) {
+      this.store.deleteArtifactsBySession(sessionId)
+      return
+    }
+    const { messages } = await loadTranscriptFile(filePath, { keepAllLeaves: true })
+    // First pass: index every tool_use by id across all assistant messages.
+    const toolUseById = new Map<string, { name: string; input: Record<string, unknown> }>()
+    for (const m of messages.values()) {
+      if ((m as any).type !== 'assistant') continue
+      const blocks = (m as any).message?.content
+      if (!Array.isArray(blocks)) continue
+      for (const b of blocks) {
+        if (b?.type === 'tool_use' && typeof b.id === 'string') {
+          toolUseById.set(b.id, { name: b.name || '', input: (b.input ?? {}) as any })
+        }
+      }
+    }
+    // Second pass: for every successful tool_result, see if its tool_use was a
+    // file-writer; collect filePath → op preserving append order so the last
+    // write wins (the live path's upsert has the same effect).
+    const ordered: Array<{ filePath: string; op: ArtifactOp }> = []
+    for (const m of messages.values()) {
+      if ((m as any).type !== 'user') continue
+      if ((m as any).isSidechain) continue
+      const blocks = (m as any).message?.content
+      if (!Array.isArray(blocks)) continue
+      for (const b of blocks) {
+        if (b?.type !== 'tool_result' || b.is_error) continue
+        const tu = toolUseById.get(b.tool_use_id)
+        if (!tu) continue
+        if (tu.name === 'Write' || tu.name === 'Edit') {
+          const fp = tu.input['file_path']
+          if (typeof fp === 'string' && fp.length > 0) {
+            ordered.push({ filePath: fp, op: tu.name === 'Write' ? 'write' : 'edit' })
+          }
+        } else if (tu.name === 'NotebookEdit') {
+          const fp = tu.input['notebook_path']
+          if (typeof fp === 'string' && fp.length > 0) {
+            ordered.push({ filePath: fp, op: 'notebook_edit' })
+          }
+        }
+      }
+    }
+    this.store.deleteArtifactsBySession(sessionId)
+    for (const { filePath: fp, op } of ordered) {
+      try { this.store.upsertArtifact(sessionId, fp, op) } catch {}
     }
   }
 

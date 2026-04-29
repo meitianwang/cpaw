@@ -13,6 +13,13 @@ contextBridge.exposeInMainWorld('klaus', {
       ipcRenderer.invoke('chat:interrupt', { sessionId }),
     uploadFile: (name: string, type: string, buffer: ArrayBuffer) =>
       ipcRenderer.invoke('chat:upload', { name, type, buffer }),
+    /** Truncate transcript at the target user message. Returns the deleted
+     *  user text so the renderer can put it back in the input box. */
+    rewindFrom: (sessionId: string, messageUuid: string) =>
+      ipcRenderer.invoke('chat:rewind-from', { sessionId, messageUuid }),
+    /** Delete the target user message + everything after it. */
+    deleteFrom: (sessionId: string, messageUuid: string) =>
+      ipcRenderer.invoke('chat:delete-from', { sessionId, messageUuid }),
   },
 
   // Sessions

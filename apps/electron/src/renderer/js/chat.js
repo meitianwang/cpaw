@@ -712,7 +712,7 @@ async function switchSession(id) {
       }
     }
     for (const msg of history) {
-      if (msg.role === 'user') appendUserMsg(msg.text, msg.timestamp)
+      if (msg.role === 'user') appendUserMsg(msg.text, msg.timestamp, msg.uuid)
       else if (Array.isArray(msg.contentBlocks)) appendAssistantFromBlocks(msg.contentBlocks, msg.timestamp)
       else appendFinalAssistantMsg(msg.text, msg.timestamp)
     }
@@ -869,6 +869,118 @@ function ensureMsgActions(group) {
   return bar
 }
 
+// Rewind = curved-arrow back; Delete = trash. Same 24x24 viewBox + stroke
+// style as the copy icon so the row stays visually homogeneous.
+const REWIND_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-15-6.7L3 13"></path></svg>'
+const TRASH_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"></path></svg>'
+
+function makeIconActionBtn(svg, label, onClick, opts = {}) {
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.className = 'msg-action-btn' + (opts.danger ? ' danger' : '')
+  btn.innerHTML = svg
+  btn.title = label
+  btn.setAttribute('aria-label', label)
+  btn.onclick = (e) => { e.stopPropagation(); onClick(btn) }
+  return btn
+}
+
+// Rewind/delete buttons for a user bubble. The user message must already have
+// been written to the JSONL — i.e. uuid is present. For just-sent live
+// messages the buttons are attached lazily after the `done` event via
+// refreshLiveUserUuids() once the host has flushed the line.
+function attachUserMessageActions(group, uuid, originalText) {
+  if (!group || !uuid) return
+  const bar = ensureMsgActions(group)
+  if (!bar || bar.querySelector('[data-action="rewind"]')) return
+  const sessionAtBind = currentSessionId
+  const rewindBtn = makeIconActionBtn(REWIND_ICON_SVG, tt('msg_rewind'), async () => {
+    if (busy) return
+    if (!(await window.klausDialog.confirm({ message: tt('msg_rewind_confirm') }))) return
+    try {
+      const res = await klausApi.chat.rewindFrom(sessionAtBind, uuid)
+      if (res && typeof res.text === 'string' && res.text) {
+        inputEl.value = res.text
+        autoResize()
+        inputEl.focus()
+      }
+      await reloadSessionTranscript(sessionAtBind)
+    } catch (err) {
+      await window.klausDialog.alert(String(err?.message || err))
+    }
+  })
+  rewindBtn.dataset.action = 'rewind'
+  const deleteBtn = makeIconActionBtn(TRASH_ICON_SVG, tt('msg_delete'), async () => {
+    if (busy) return
+    if (!(await window.klausDialog.confirm({ message: tt('msg_delete_confirm'), danger: true }))) return
+    try {
+      await klausApi.chat.deleteFrom(sessionAtBind, uuid)
+      await reloadSessionTranscript(sessionAtBind)
+    } catch (err) {
+      await window.klausDialog.alert(String(err?.message || err))
+    }
+  }, { danger: true })
+  deleteBtn.dataset.action = 'delete'
+  // Insert before the copy button so the row reads: time, rewind, delete, copy.
+  const copyBtn = bar.querySelector('.msg-action-btn:not([data-action])')
+  if (copyBtn) {
+    bar.insertBefore(rewindBtn, copyBtn)
+    bar.insertBefore(deleteBtn, copyBtn)
+  } else {
+    bar.appendChild(rewindBtn)
+    bar.appendChild(deleteBtn)
+  }
+}
+
+// After rewind/delete (host truncated the JSONL), repaint the current view
+// from the freshly-loaded transcript. Drops cached DOM fragments so a future
+// switchSession picks up the updated state too.
+async function reloadSessionTranscript(sessionId) {
+  if (!sessionId || sessionId !== currentSessionId) return
+  sessionDom.delete(sessionId)
+  const history = await klausApi.session.history(sessionId)
+  messagesEl.innerHTML = ''
+  resetStreamState()
+  if (history.length === 0) {
+    messagesEl.style.display = 'none'
+    welcomeEl.style.display = 'flex'
+    return
+  }
+  messagesEl.style.display = 'block'
+  welcomeEl.style.display = 'none'
+  for (const msg of history) {
+    if (msg.role === 'user') appendUserMsg(msg.text, msg.timestamp, msg.uuid)
+    else if (Array.isArray(msg.contentBlocks)) appendAssistantFromBlocks(msg.contentBlocks, msg.timestamp)
+    else appendFinalAssistantMsg(msg.text, msg.timestamp)
+  }
+  // Artifacts panel — host rebuilt the session_artifacts table from the
+  // truncated transcript, so refresh the panel to drop ghost rows.
+  try { if (typeof loadArtifacts === 'function') await loadArtifacts(sessionId) } catch {}
+}
+
+// Live-stream user bubbles render before the engine has flushed their line to
+// disk, so they don't carry a uuid. After the turn finishes (`done` event)
+// pull a fresh history snapshot and patch user bubbles in DOM order — same
+// filter rules as getHistory so positional matching is stable.
+async function refreshLiveUserUuids(sessionId) {
+  if (!sessionId || sessionId !== currentSessionId) return
+  let history
+  try { history = await klausApi.session.history(sessionId) } catch { return }
+  if (!Array.isArray(history)) return
+  if (sessionId !== currentSessionId) return
+  const userMsgs = history.filter(m => m && m.role === 'user')
+  const groups = messagesEl.querySelectorAll('.msg-group.user')
+  const n = Math.min(groups.length, userMsgs.length)
+  for (let i = 0; i < n; i++) {
+    const group = groups[i]
+    if (group.dataset.uuid) continue
+    const u = userMsgs[i]?.uuid
+    if (!u) continue
+    group.dataset.uuid = u
+    attachUserMessageActions(group, u, userMsgs[i].text || '')
+  }
+}
+
 // ==================== Send ====================
 
 async function send() {
@@ -974,9 +1086,10 @@ function navigateSlashMenu(dir) {
 const fileSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>'
 const imgSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>'
 
-function appendUserMsg(text, ts) {
+function appendUserMsg(text, ts, uuid) {
   const group = document.createElement('div')
   group.className = 'msg-group user'
+  if (uuid) group.dataset.uuid = uuid
   let html = escapeHtml(text)
   // File badges
   html = html.replace(/\[Files?: (.+?)\]/g, (_, names) =>
@@ -994,6 +1107,9 @@ function appendUserMsg(text, ts) {
   const bar = ensureMsgActions(group)
   appendTimeLabel(bar, ts ?? Date.now())
   bar.appendChild(makeCopyButton(() => text))
+  // Rewind/delete only available once the message has a uuid — live (just-sent)
+  // bubbles get the buttons retroactively in refreshLiveUserUuids() after `done`.
+  if (uuid) attachUserMessageActions(group, uuid, text)
   messagesEl.appendChild(group)
   scrollToBottom()
 }
@@ -2194,6 +2310,9 @@ klausApi.on.chatEvent((event) => {
     }
     case 'done':
       thinkingUI.finalize(); finalizeStream()
+      // Just-sent user bubbles missed the uuid in appendUserMsg; the host has
+      // now flushed their JSONL line, so backfill uuids + delete/rewind buttons.
+      refreshLiveUserUuids(event.sessionId)
       busy = false
       btnSend.classList.remove('busy')
       btnSend.disabled = !inputEl.value.trim()
