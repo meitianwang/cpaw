@@ -537,8 +537,8 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   margin: 0 auto;
   animation: fade-in .2s ease;
 }
-.msg-group.user { padding: 12px 0; }
-.msg-group.assistant { padding: 16px 0; }
+.msg-group.user { padding: 12px 0 4px; }
+.msg-group.assistant { padding: 4px 0; }
 
 /* Per-message action toolbar (single icon-only copy button). Appears on hover,
  * similar to code-block .code-copy. User group right-aligns; assistant left. */
@@ -597,6 +597,8 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 
 /* Markdown */
 .msg.assistant p { margin: 6px 0; }
+.msg.assistant > p:first-child { margin-top: 0; }
+.msg.assistant > p:last-child { margin-bottom: 0; }
 .msg.assistant h1, .msg.assistant h2, .msg.assistant h3, .msg.assistant h4 { margin: 16px 0 8px; font-weight: 600; }
 .msg.assistant h1 { font-size: 20px; }
 .msg.assistant h2 { font-size: 18px; }
@@ -656,6 +658,23 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 }
 .thinking-dots span:nth-child(2) { animation-delay: 0.16s; }
 .thinking-dots span:nth-child(3) { animation-delay: 0.32s; }
+/* 流式三点：inline 跟在文字末尾，停笔后随 .msg 移除 .streaming class 隐藏 */
+.streaming-dots {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.streaming-dots > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-quaternary);
+  animation: thinking-bounce 1.4s infinite;
+}
+.streaming-dots > span:nth-child(2) { animation-delay: 0.16s; }
+.streaming-dots > span:nth-child(3) { animation-delay: 0.32s; }
+.msg:not(.streaming) .streaming-dots { display: none; }
 .thinking-label { font-weight: 500; }
 .thinking-content {
   flex-basis: 100%;           /* 占满整行宽度，配合 flex-wrap 自动换行 */
@@ -675,7 +694,7 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 
 .thinking-done {
   max-width: 720px;
-  margin: 4px auto 0;
+  margin: 0 auto;
 }
 .thinking-toggle {
   display: flex;
@@ -712,7 +731,7 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
  * 持极简，不引入卡片/阴影，与 thinking 胶囊和 agent-row 同档视觉重量。 */
 .tool-container {
   max-width: 720px;
-  margin: 6px auto;
+  margin: 2px auto;
   display: flex;
   flex-direction: column;
   gap: 2px;

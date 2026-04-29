@@ -1264,6 +1264,9 @@ function postProcessMsg(container) {
 
 // --- Streaming text ---
 function appendStreamText(text) {
+  // 防御：text 开始流但 thinking 还没收口（mode 跳过 responding 直接进 tool-use/text）。
+  // 不主动 finalize 的话，thinking-indicator 720px 大盒子就一直挂在 user 和 assistant 之间。
+  if (thinkingUI.el) thinkingUI.finalize()
   streamBuffer += text
   const group = ensureAssistantGroup()
   let msgEl = group.querySelector('.msg.assistant')
@@ -1275,22 +1278,16 @@ function appendStreamText(text) {
   msgEl.innerHTML = renderMarkdown(streamBuffer)
   msgEl.dataset.md = streamBuffer
   msgEl.classList.add('streaming')
-  // 流式三点指示器：复用 thinking-dots 视觉，挂在气泡之后；innerHTML 重渲染不会影响它。
-  let dots = group.querySelector(':scope > .streaming-dots')
-  if (!dots) {
-    dots = document.createElement('div')
-    dots.className = 'thinking-indicator streaming-dots'
-    dots.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>'
-    group.appendChild(dots)
-  } else if (group.lastElementChild !== dots) {
-    group.appendChild(dots)
-  }
+  // 流式三点指示器：紧贴文字末尾 inline，每次 innerHTML 重渲染后重新追加。
+  const dots = document.createElement('span')
+  dots.className = 'streaming-dots'
+  dots.innerHTML = '<span></span><span></span><span></span>'
+  msgEl.appendChild(dots)
   scrollToBottom()
 }
 
 function finalizeStream() {
   if (!currentMsgGroup) return
-  currentMsgGroup.querySelector(':scope > .streaming-dots')?.remove()
   const msgEl = currentMsgGroup.querySelector('.msg.assistant.streaming')
   if (msgEl) {
     msgEl.classList.remove('streaming')
@@ -2331,7 +2328,7 @@ klausApi.on.chatEvent((event) => {
     case 'stream_mode':
       if (event.mode === 'requesting') thinkingUI.show() // 幂等，已有就是 no-op
       else if (event.mode === 'responding') thinkingUI.finalize()
-      else if (event.mode === 'tool-use') finalizeStream()
+      else if (event.mode === 'tool-use') { thinkingUI.finalize(); finalizeStream() }
       break
     case 'context_collapse_stats': {
       const el = document.getElementById('collapse-stats')
