@@ -1273,11 +1273,22 @@ function appendStreamText(text) {
   msgEl.innerHTML = renderMarkdown(streamBuffer)
   msgEl.dataset.md = streamBuffer
   msgEl.classList.add('streaming')
+  // 流式三点指示器：复用 thinking-dots 视觉，挂在气泡之后；innerHTML 重渲染不会影响它。
+  let dots = group.querySelector(':scope > .streaming-dots')
+  if (!dots) {
+    dots = document.createElement('div')
+    dots.className = 'thinking-indicator streaming-dots'
+    dots.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>'
+    group.appendChild(dots)
+  } else if (group.lastElementChild !== dots) {
+    group.appendChild(dots)
+  }
   scrollToBottom()
 }
 
 function finalizeStream() {
   if (!currentMsgGroup) return
+  currentMsgGroup.querySelector(':scope > .streaming-dots')?.remove()
   const msgEl = currentMsgGroup.querySelector('.msg.assistant.streaming')
   if (msgEl) {
     msgEl.classList.remove('streaming')

@@ -634,18 +634,6 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
   position: relative;
 }
 
-/* Streaming cursor */
-.msg.streaming::after {
-  content: '';
-  display: inline-block;
-  width: 2px;
-  height: 16px;
-  background: var(--fg);
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: blink 1s step-end infinite;
-}
-
 /* ===== Thinking ===== */
 .thinking-indicator {
   max-width: 720px;
