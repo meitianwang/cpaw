@@ -894,12 +894,22 @@ function attachUserMessageActions(group, uuid, originalText) {
   const bar = ensureMsgActions(group)
   if (!bar || bar.querySelector('[data-action="rewind"]')) return
   const sessionAtBind = currentSessionId
+  // Per-bubble re-entry lock — without this a second click while the dialog
+  // confirm is still awaiting fires a second IPC. Engine logs showed the same
+  // truncate request twice in a row before this guard.
+  let inFlight = false
   const rewindBtn = makeIconActionBtn(REWIND_ICON_SVG, tt('msg_rewind'), async () => {
-    if (busy) return
+    if (busy || inFlight) return
     if (!(await window.klausDialog.confirm({ message: tt('msg_rewind_confirm') }))) return
+    if (inFlight) return
+    inFlight = true
     try {
       const res = await klausApi.chat.rewindFrom(sessionAtBind, uuid)
-      if (res && typeof res.text === 'string' && res.text) {
+      if (!res?.ok) {
+        await window.klausDialog.alert(`撤销失败：${res?.reason || 'unknown'}`)
+        return
+      }
+      if (typeof res.text === 'string' && res.text) {
         inputEl.value = res.text
         autoResize()
         inputEl.focus()
@@ -907,17 +917,27 @@ function attachUserMessageActions(group, uuid, originalText) {
       await reloadSessionTranscript(sessionAtBind)
     } catch (err) {
       await window.klausDialog.alert(String(err?.message || err))
+    } finally {
+      inFlight = false
     }
   })
   rewindBtn.dataset.action = 'rewind'
   const deleteBtn = makeIconActionBtn(TRASH_ICON_SVG, tt('msg_delete'), async () => {
-    if (busy) return
+    if (busy || inFlight) return
     if (!(await window.klausDialog.confirm({ message: tt('msg_delete_confirm'), danger: true }))) return
+    if (inFlight) return
+    inFlight = true
     try {
-      await klausApi.chat.deleteFrom(sessionAtBind, uuid)
+      const res = await klausApi.chat.deleteFrom(sessionAtBind, uuid)
+      if (!res?.ok) {
+        await window.klausDialog.alert(`删除失败：${res?.reason || 'unknown'}`)
+        return
+      }
       await reloadSessionTranscript(sessionAtBind)
     } catch (err) {
       await window.klausDialog.alert(String(err?.message || err))
+    } finally {
+      inFlight = false
     }
   }, { danger: true })
   deleteBtn.dataset.action = 'delete'

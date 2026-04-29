@@ -58,6 +58,8 @@ import {
   saveCustomTitle,
   buildConversationChain,
   clearSessionMetadata,
+  removeTranscriptMessage,
+  adoptResumedSessionFile,
 } from '../engine/utils/sessionStorage.js'
 import {
   fileHistoryRewind,
@@ -784,74 +786,111 @@ export class EngineHost {
     sessionId: string,
     targetUuid: string,
     opts: { returnText?: boolean; mode?: 'delete' | 'rewind' } = {},
-  ): Promise<{ ok: boolean; text: string | null }> {
+  ): Promise<{ ok: boolean; text: string | null; reason?: string }> {
     const uuid = this.registry.lookupUuid(sessionId)
-    if (!uuid || !targetUuid) return { ok: false, text: null }
+    if (!uuid || !targetUuid) return { ok: false, text: null, reason: 'no-session-or-uuid' }
     const filePath = join(getProjectDir(CANONICAL_CWD), `${uuid}.jsonl`)
-    if (!existsSync(filePath)) return { ok: false, text: null }
+    if (!existsSync(filePath)) return { ok: false, text: null, reason: 'no-transcript' }
     const mode = opts.mode ?? 'delete'
 
-    // Phase 1 (rewind only): file-system rollback. Read the FULL pre-truncation
-    // transcript so we can grab snapshots regardless of whether their JSONL
-    // record sits above or below the truncate point.
+    // Refuse mid-stream — engine is actively writing to this JSONL, racing it
+    // would leave the file half-spliced. Renderer also has a `busy` guard;
+    // this is the server-side belt.
+    if (this.sessions.get(sessionId)?.isRunning) {
+      console.warn(`[Engine] truncateAtMessage refused — session ${sessionId} is running`)
+      return { ok: false, text: null, reason: 'session-busy' }
+    }
+
+    // Phase 1: walk the transcript via the engine's own loader so we work on
+    // parsed JS objects, not raw bytes. This is what unblocks the UTF-8 trap
+    // a hand-rolled byte splice falls into — `loadTranscriptFile` returns a
+    // Map<uuid, message> in file order, and we just collect the suffix.
+    const { messages } = await loadTranscriptFile(filePath, { keepAllLeaves: true })
+    const orderedUuids: string[] = []
+    let target: any = null
+    let inSuffix = false
+    for (const m of messages.values()) {
+      const u = (m as any).uuid
+      if (typeof u !== 'string') continue
+      if (!inSuffix && u === targetUuid) {
+        target = m
+        inSuffix = true
+      }
+      if (inSuffix) orderedUuids.push(u)
+    }
+    if (!target) {
+      console.warn(`[Engine] truncateAtMessage: uuid ${targetUuid} not found`)
+      return { ok: false, text: null, reason: 'uuid-not-found' }
+    }
+    // Only user-message lines are valid anchors — the renderer's UX contract
+    // is "delete this user message + every reply that followed". If we ever
+    // get an assistant uuid (a renderer bug), refuse instead of nuking half
+    // the conversation.
+    if ((target as any).type !== 'user') {
+      console.error(
+        `[Engine] truncateAtMessage refused — uuid ${targetUuid} `
+        + `points at type=${(target as any).type}, not user`,
+      )
+      return { ok: false, text: null, reason: 'not-a-user-message' }
+    }
+
+    // Extract the user message text (rewind UX wants it back in the input box).
+    let extractedText: string | null = null
+    if (opts.returnText) {
+      const c = (target as any).message?.content
+      if (typeof c === 'string') extractedText = c
+      else if (Array.isArray(c)) {
+        extractedText = c
+          .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+          .map((b: any) => b.text)
+          .join('')
+      }
+    }
+
+    // Phase 2 (rewind only): file-system rollback BEFORE we delete any lines —
+    // `file-history-snapshot` records may live below the target inside the
+    // suffix that's about to be cut. Read snapshots from the still-intact
+    // transcript via loadTranscriptFile.
     if (mode === 'rewind') {
       try { await this.applyFileHistoryRewind(uuid, filePath, targetUuid) }
       catch (err) { console.warn('[Engine] file history rewind failed:', err) }
     }
 
-    // Phase 2: byte-level transcript splice.
-    let extractedText: string | null = null
-    let cutOffset = -1
-    const fsp = await import('fs/promises')
-    const fh = await fsp.open(filePath, 'r+')
-    try {
-      const stat = await fh.stat()
-      const size = stat.size
-      if (size === 0) return { ok: false, text: null }
-      const buf = Buffer.allocUnsafe(size)
-      await fh.read(buf, 0, size, 0)
-      const haystack = buf.toString('utf-8')
-      // First match wins: a line's own `uuid` appears before any child's
-      // `parentUuid` reference. Belt-and-suspenders verify by parsing.
-      const needle = `"uuid":"${targetUuid}"`
-      let idx = 0
-      while (idx < size) {
-        const nl = haystack.indexOf('\n', idx)
-        const lineEnd = nl >= 0 ? nl : size
-        const line = haystack.slice(idx, lineEnd)
-        if (line.includes(needle)) {
-          try {
-            const msg = JSON.parse(line)
-            if (msg?.uuid === targetUuid) {
-              cutOffset = idx
-              if (opts.returnText) {
-                const c = msg?.message?.content
-                if (typeof c === 'string') extractedText = c
-                else if (Array.isArray(c)) {
-                  extractedText = c
-                    .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
-                    .map((b: any) => b.text)
-                    .join('')
-                }
-              }
-              break
-            }
-          } catch {}
-        }
-        idx = nl >= 0 ? nl + 1 : size
-      }
-      if (cutOffset < 0) return { ok: false, text: null }
-      await fh.truncate(cutOffset)
-    } finally {
-      await fh.close()
+    // Phase 3: delete each suffix line via the engine's own `removeMessageByUuid`.
+    // - It uses byte-level searching internally (no UTF-8 surprises).
+    // - Walking from the END means each call hits the "tail entry" fast path
+    //   (single ftruncate, no rewrite).
+    //
+    // Three-step ambient ritual matters here:
+    //  1. switchSession      → swap ambient sessionId so getTranscriptPath()
+    //                          derives THIS session's file
+    //  2. resetSessionFilePointer → clear any stale sessionFile cache from a
+    //                          previous chat() call against another session
+    //  3. adoptResumedSessionFile → SET sessionFile = getTranscriptPath().
+    //                          Without this, removeMessageByUuid silently
+    //                          bails (`if (sessionFile === null) return`) —
+    //                          materializeSessionFile is normally lazy and
+    //                          fires only on the next user/assistant write.
+    //                          We're not writing, only deleting, so we have
+    //                          to materialize it ourselves.
+    switchSession(uuid as any, getProjectDir(CANONICAL_CWD))
+    await resetSessionFilePointer()
+    adoptResumedSessionFile()
+    console.log(
+      `[Engine] truncateAtMessage(${mode}) sessionId=${sessionId} `
+      + `target=${targetUuid} dropping ${orderedUuids.length} message(s)`,
+    )
+    for (let i = orderedUuids.length - 1; i >= 0; i--) {
+      try { await removeTranscriptMessage(orderedUuids[i] as any) }
+      catch (err) { console.warn('[Engine] removeTranscriptMessage failed:', orderedUuids[i], err) }
     }
 
     // Drop in-memory session state so the next chat()/getHistory() loads from
-    // the truncated transcript. SessionEntry holds a cached `messages[]` that
-    // would otherwise carry the now-deleted turns into the next prompt.
+    // the now-truncated transcript. SessionEntry holds a cached `messages[]`
+    // that would otherwise carry the now-deleted turns into the next prompt.
     this.sessions.delete(sessionId)
 
-    // Phase 3 (rewind only): rebuild the artifacts table. After file rewind
+    // Phase 4 (rewind only): rebuild the artifacts table. After file rewind
     // the files those records pointed to may have been deleted/reverted, so
     // a panel row pointing to a phantom file is worse than no row. For pure
     // delete we leave the table alone — the files still exist on disk, and
