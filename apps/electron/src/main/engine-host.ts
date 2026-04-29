@@ -37,7 +37,8 @@ import { loadAllPermissionRulesFromDisk } from '../engine/utils/permissions/perm
 import { applyPermissionRulesToPermissionContext } from '../engine/utils/permissions/permissions.js'
 import { applyPermissionUpdate } from '../engine/utils/permissions/PermissionUpdate.js'
 import { addPermissionRulesToSettings } from '../engine/utils/permissions/permissionsLoader.js'
-import { setOriginalCwd, setCwdState, setProjectRoot, setIsInteractive, switchSession, setQuestionPreviewFormat } from '../engine/bootstrap/state.js'
+import { setOriginalCwd, setCwdState, setProjectRoot, setIsInteractive, switchSession, setQuestionPreviewFormat, setMainThreadAgentType } from '../engine/bootstrap/state.js'
+import { getAgentDefinitionsWithOverrides, clearAgentDefinitionsCache } from '../engine/tools/AgentTool/loadAgentsDir.js'
 import { createContentReplacementState, type ContentReplacementState } from '../engine/utils/toolResultStorage.js'
 import { initContextCollapse } from '../engine/services/contextCollapse/index.js'
 import { runWithCwdOverride } from '../engine/utils/cwd.js'
@@ -384,6 +385,10 @@ export class EngineHost {
     setCwdState(defaultSessionDir)
     setProjectRoot(CONFIG_DIR)
     setIsInteractive(true)
+    // 桌面端没有"主线程切 agent"的 UI，但 CC bootstrap 期望这个值被显式设过：
+    // utils/hooks.ts 的 resolvedAgentType 会回退读 getMainThreadAgentType()，
+    // 没初始化的话首个 hook 调用拿到的是上次进程残留值（dev 模式 hot-reload 易出问题）。
+    setMainThreadAgentType(undefined)
     // AskUserQuestion: opt-in to preview markdown rendering so the tool prompt
     // includes the preview-field guidance and the renderer can show preview
     // snippets in a monospace box (see renderer/js/chat.js showAskUserQuestion).
@@ -484,6 +489,17 @@ export class EngineHost {
     }
     this.mcpState = { clients: [], tools: [], resources: {} }
     await this.initMcp()
+  }
+
+  /**
+   * Drop the memoized agent definitions cache so the next chat() reloads
+   * `~/.claude/agents/*.md`, `<sessionDir>/.claude/agents/*.md` and plugin
+   * agents from disk. Call after the user adds/edits/removes agent markdown
+   * files (CC parity: plugins/cacheUtils.ts:45 clears it on /reload-plugins).
+   * Doesn't affect in-flight chats — they hold their own snapshot.
+   */
+  reloadAgentDefinitions(): void {
+    clearAgentDefinitionsCache()
   }
 
   /** Revoke persisted OAuth tokens for a given MCP server (SSE/HTTP only) */
@@ -1222,6 +1238,36 @@ export class EngineHost {
       const systemPrompt = asSystemPrompt(systemPromptParts)
       console.log('[Engine] systemPrompt built, parts=', systemPromptParts?.length)
 
+      // CC main.tsx:2029 启动时调 getAgentDefinitionsWithOverrides(currentCwd) 拉
+      // built-in agents (general-purpose / Explore / Plan / …) + 用户/项目 .claude/agents/*.md
+      // + plugin agents。Klaus 桌面端必须保留这套，否则：
+      //   - AgentTool.ts:344 在 activeAgents 里 find('general-purpose') 拿到 undefined
+      //     → throw "Agent type 'general-purpose' not found"
+      //   - AgentTool/prompt.ts:198 "Available agent types: " 列空，但同一 prompt 仍告诉
+      //     模型"省略时用 general-purpose" → 模型按描述调用 → 必失败
+      //   - WebSearchTool / spawnMultiAgent / ExitPlanMode 等读 activeAgents 的工具描述
+      //     全部缺数据
+      //   - getAgentDefinitionsWithOverrides 内部还串起了 plugin agents 加载与 agent
+      //     memory snapshot 初始化 (loadAgentsDir.ts:347-354)，跳过等于把这两套也丢了
+      //
+      // memoize 按 cwd 缓存，同一 sessionDir 第二次 chat 命中缓存（无重复扫盘）；
+      // 必须 runWithCwdOverride，因为内部 loadMarkdownFilesForSubdir('agents', cwd)
+      // 用 cwd 解析 <cwd>/.claude/agents/*.md。
+      const agentDefinitions = await runWithCwdOverride(
+        sessionDir,
+        () => getAgentDefinitionsWithOverrides(sessionDir),
+      )
+      if (agentDefinitions.failedFiles && agentDefinitions.failedFiles.length > 0) {
+        for (const f of agentDefinitions.failedFiles) {
+          console.warn(`[Engine] Failed to parse agent definition ${f.path}: ${f.error}`)
+        }
+      }
+      console.log(
+        '[Engine] agentDefinitions loaded:',
+        `active=${agentDefinitions.activeAgents.length}`,
+        `all=${agentDefinitions.allAgents.length}`,
+      )
+
       // Build permission context
       let toolPermissionCtx: ToolPermissionContext = {
         ...getEmptyToolPermissionContext(),
@@ -1239,11 +1285,14 @@ export class EngineHost {
       // Store permission context and appState on session
       session.toolPermissionContext = toolPermissionCtx
 
-      // 把 EngineHost 外部维护的状态（MCP 连接、权限 ctx）同步进 session.appState，
-      // 这样 getAppState 返回的始终是一份完整、最新的 AppState（结构对齐 CC getDefaultAppState）
+      // 把 EngineHost 外部维护的状态（MCP 连接、权限 ctx、agent 定义）同步进 session.appState，
+      // 这样 getAppState 返回的始终是一份完整、最新的 AppState（结构对齐 CC getDefaultAppState）。
+      // agentDefinitions 也写到 appState：AgentTool.tsx:501 的 mainThreadAgentDefinition
+      // 解析、forkSubagent / spawnMultiAgent 的 allAgents lookup 都从 appState 读。
       session.appState = {
         ...session.appState,
         toolPermissionContext: toolPermissionCtx,
+        agentDefinitions,
         mcp: {
           ...session.appState.mcp,
           clients: this.mcpState.clients,
@@ -1425,8 +1474,9 @@ export class EngineHost {
             isNonInteractiveSession: false,
             customSystemPrompt: undefined,
             appendSystemPrompt: undefined,
-            // CC 结构：activeAgents = 当前可用列表，allAgents = 包含 disabled 的完整列表
-            agentDefinitions: { activeAgents: [], allAgents: [] },
+            // 与 session.appState.agentDefinitions 共享同一份引用，确保 AgentTool / WebSearchTool
+            // / spawnMultiAgent 等所有读 toolUseContext.options.agentDefinitions 的工具拿到一致数据。
+            agentDefinitions,
             theme: 'dark',
             maxBudgetUsd: undefined,
             hooksConfig: {},
