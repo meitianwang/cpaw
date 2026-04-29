@@ -544,7 +544,8 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
  * similar to code-block .code-copy. User group right-aligns; assistant left. */
 .msg-actions {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   margin-top: 4px;
   opacity: 0;
   transition: opacity var(--transition);
@@ -552,6 +553,12 @@ body { height: 100vh; overflow: hidden; -webkit-app-region: drag; }
 .msg-group:hover .msg-actions,
 .msg-actions:focus-within { opacity: 1; }
 .msg-group.user .msg-actions { justify-content: flex-end; }
+.msg-time {
+  font-size: 11px;
+  color: var(--fg-quaternary);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
 .msg-action-btn {
   background: transparent;
   border: none;

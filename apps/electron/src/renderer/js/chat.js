@@ -712,9 +712,9 @@ async function switchSession(id) {
       }
     }
     for (const msg of history) {
-      if (msg.role === 'user') appendUserMsg(msg.text)
-      else if (Array.isArray(msg.contentBlocks)) appendAssistantFromBlocks(msg.contentBlocks)
-      else appendFinalAssistantMsg(msg.text)
+      if (msg.role === 'user') appendUserMsg(msg.text, msg.timestamp)
+      else if (Array.isArray(msg.contentBlocks)) appendAssistantFromBlocks(msg.contentBlocks, msg.timestamp)
+      else appendFinalAssistantMsg(msg.text, msg.timestamp)
     }
   }
 
@@ -799,7 +799,32 @@ function resetStreamState() {
   if (agentPanelEl) agentPanelEl.style.display = 'none'
 }
 
-// ==================== Copy-button helper ====================
+// ==================== Message-meta (time + copy) helpers ====================
+
+// HH:MM for today, MM-DD HH:MM otherwise. Empty string if ts is missing/bad.
+function formatMsgTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => n.toString().padStart(2, '0')
+  const now = new Date()
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate()
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return sameDay ? hm : `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${hm}`
+}
+
+function appendTimeLabel(bar, ts) {
+  const text = formatMsgTime(ts)
+  if (!text) return
+  const span = document.createElement('span')
+  span.className = 'msg-time'
+  span.textContent = text
+  bar.appendChild(span)
+}
+
+
 
 const COPY_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
 const CHECK_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
@@ -949,7 +974,7 @@ function navigateSlashMenu(dir) {
 const fileSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>'
 const imgSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>'
 
-function appendUserMsg(text) {
+function appendUserMsg(text, ts) {
   const group = document.createElement('div')
   group.className = 'msg-group user'
   let html = escapeHtml(text)
@@ -965,13 +990,15 @@ function appendUserMsg(text) {
   html = html.replace(/@(\/[^\s]+\.(png|jpg|jpeg|gif|webp))/gi, (_, path) =>
     `<img src="file://${escapeHtml(path)}" style="max-height:200px;border-radius:8px;margin:4px 0;display:block">`)
   group.innerHTML = `<div class="msg user">${html}</div>`
-  // Copy button — copies the original (un-escaped) text the user sent.
-  ensureMsgActions(group).appendChild(makeCopyButton(() => text))
+  // Time label + copy button. Time first so it sits LEFT of the icon.
+  const bar = ensureMsgActions(group)
+  appendTimeLabel(bar, ts ?? Date.now())
+  bar.appendChild(makeCopyButton(() => text))
   messagesEl.appendChild(group)
   scrollToBottom()
 }
 
-function appendFinalAssistantMsg(text) {
+function appendFinalAssistantMsg(text, ts) {
   const group = document.createElement('div')
   group.className = 'msg-group assistant'
   const msgEl = document.createElement('div')
@@ -982,7 +1009,9 @@ function appendFinalAssistantMsg(text) {
   msgEl.dataset.md = text || ''
   group.appendChild(msgEl)
   postProcessMsg(msgEl)
-  ensureMsgActions(group).appendChild(makeCopyButton(() => msgEl.dataset.md || ''))
+  const bar = ensureMsgActions(group)
+  appendTimeLabel(bar, ts ?? Date.now())
+  bar.appendChild(makeCopyButton(() => msgEl.dataset.md || ''))
   messagesEl.appendChild(group)
 }
 
@@ -991,7 +1020,7 @@ function appendFinalAssistantMsg(text) {
 // Cmd+R reload looks identical to what the user saw during streaming. Block
 // shapes match CC: { type: 'thinking', thinking } / { type: 'text', text } /
 // { type: 'tool_use', name, id, input } / { type: 'tool_result', ... }.
-function appendAssistantFromBlocks(blocks) {
+function appendAssistantFromBlocks(blocks, ts) {
   if (!Array.isArray(blocks) || blocks.length === 0) return
   // Collect thinking & text separately so we can render one fold + one bubble
   // per turn, matching the live UI.
@@ -1051,7 +1080,7 @@ function appendAssistantFromBlocks(blocks) {
     rebuildAskUserQuestionCard(tb)
   }
   // Main text bubble
-  if (mainText.trim()) appendFinalAssistantMsg(mainText)
+  if (mainText.trim()) appendFinalAssistantMsg(mainText, ts)
 }
 
 function ensureAssistantGroup() {
@@ -1117,9 +1146,10 @@ function finalizeStream() {
   if (msgEl) {
     msgEl.classList.remove('streaming')
     postProcessMsg(msgEl)
-    // Attach the copy button once the bubble is finalized.
+    // Attach the time label + copy button once the bubble is finalized.
     const bar = ensureMsgActions(currentMsgGroup)
     if (!bar.querySelector('.msg-action-btn')) {
+      appendTimeLabel(bar, Date.now())
       bar.appendChild(makeCopyButton(() => msgEl.dataset.md || ''))
     }
   }
